@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>FlipLedger · Offline</title>
+<style>
+  body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #f7f6f3; color: #292524;
+    font-family: -apple-system, system-ui, sans-serif; text-align: center; padding: 24px; }
+  img { width: 72px; height: 72px; border-radius: 18px; }
+  h1 { font-size: 20px; margin: 16px 0 6px; }
+  p { color: #78716c; margin: 0 0 20px; }
+  button { background: #f5a623; border: 0; border-radius: 12px; padding: 12px 20px; font-weight: 600; font-size: 15px; }
+</style>
+</head>
+<body>
+  <div>
+    <img src="/icons/icon-192.png" alt="" />
+    <h1>You're offline</h1>
+    <p>Reconnect to sync your sales and inventory.</p>
+    <button onclick="location.reload()">Try again</button>
+  </div>
+</body>
+</html>
