@@ -16,7 +16,8 @@ const schema = z.object({
 async function callbackUrl() {
   const h = await headers()
   const host = h.get("x-forwarded-host") ?? h.get("host")
-  const proto = h.get("x-forwarded-proto") ?? (host?.startsWith("localhost") ? "http" : "https")
+  // Vercel always sets x-forwarded-proto; local dev (localhost or LAN IP) is plain http.
+  const proto = h.get("x-forwarded-proto") ?? "http"
   return `${proto}://${host}/auth/callback`
 }
 
