@@ -9,6 +9,7 @@ import { formatCents, formatPct, formatSignedCents } from "@/lib/money"
 import { itemSale } from "@/lib/profit"
 import type { Item } from "@/lib/types"
 import { cn } from "@/lib/utils"
+import { ListingBadges } from "./crosslist/listing-badges"
 
 export function ItemCard({ item, onOpen }: { item: Item; onOpen: () => void }) {
   const [pending, startTransition] = useTransition()
@@ -42,7 +43,11 @@ export function ItemCard({ item, onOpen }: { item: Item; onOpen: () => void }) {
           <span className="ml-auto font-mono text-sm text-muted-foreground">#{item.seq}</span>
         </div>
         <div className="mt-3 flex items-start justify-between gap-3">
-          <div className="min-w-0">
+          {item.photo_urls[0] && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={item.photo_urls[0]} alt="" loading="lazy" className="size-14 shrink-0 rounded-xl border bg-muted object-cover" />
+          )}
+          <div className="min-w-0 flex-1">
             <p className="line-clamp-2 text-lg leading-snug font-bold">{item.title || `Item #${item.seq}`}</p>
             <p className="mt-0.5 flex items-start gap-1.5 text-sm leading-snug text-muted-foreground">
               <Clock className="mt-0.5 size-3.5 shrink-0" />
@@ -51,6 +56,9 @@ export function ItemCard({ item, onOpen }: { item: Item; onOpen: () => void }) {
                 {sale && <> · sold {formatCents(sale.revenue)}</>}
               </span>
             </p>
+            {item.status === "inventory" && item.listings.length > 0 && (
+              <div className="mt-1.5"><ListingBadges listings={item.listings} /></div>
+            )}
           </div>
           <div className="shrink-0 text-right">
             {sale ? (

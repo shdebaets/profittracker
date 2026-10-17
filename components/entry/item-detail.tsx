@@ -1,6 +1,6 @@
 "use client"
 
-import { ExternalLink, Pencil, RotateCcw, Trash2, DollarSign } from "lucide-react"
+import { ExternalLink, Pencil, RotateCcw, Share2, Trash2, DollarSign } from "lucide-react"
 import { useTransition } from "react"
 import { toast } from "sonner"
 import { deleteItem, markReturned } from "@/app/(app)/actions/items"
@@ -9,14 +9,16 @@ import { formatCents, formatPct } from "@/lib/money"
 import { itemSale, presetFor } from "@/lib/profit"
 import type { Item } from "@/lib/types"
 import { cn } from "@/lib/utils"
+import { ListingBadges } from "@/components/crosslist/listing-badges"
 
 export function ItemDetail({
-  item, onSell, onEdit, onDone,
+  item, onSell, onEdit, onDone, onCrosslist,
 }: {
   item: Item
   onSell: () => void
   onEdit: () => void
   onDone: () => void
+  onCrosslist: () => void
 }) {
   const [pending, startTransition] = useTransition()
   const sale = item.status === "sold" ? itemSale(item) : null
@@ -54,6 +56,22 @@ export function ItemDetail({
 
   return (
     <div className="flex flex-col gap-4">
+      {item.photo_urls.length > 0 && (
+        <div className="-mx-5 flex snap-x snap-mandatory gap-2 overflow-x-auto px-5 [scrollbar-width:none]">
+          {item.photo_urls.map((url, i) => (
+            <a
+              key={item.photo_paths[i]} href={url} target="_blank" rel="noopener noreferrer"
+              className={cn(
+                "aspect-square shrink-0 snap-center overflow-hidden rounded-2xl border bg-muted",
+                item.photo_urls.length === 1 ? "w-full" : "w-[85%]",
+              )}
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={url} alt={`Photo ${i + 1}`} className="size-full object-cover" loading={i ? "lazy" : "eager"} />
+            </a>
+          ))}
+        </div>
+      )}
       {sale && (
         <div className="rounded-2xl border border-profit/30 bg-profit-soft p-4">
           <p className="text-xs font-bold tracking-wide text-profit uppercase">Net profit</p>
@@ -76,7 +94,19 @@ export function ItemDetail({
         </a>
       )}
 
+      {item.listings.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          <span className="text-muted-foreground">Listed on</span>
+          <ListingBadges listings={item.listings} showEnded />
+        </div>
+      )}
+
       <div className="grid grid-cols-2 gap-2">
+        {item.status === "inventory" && (
+          <button onClick={onCrosslist} className="col-span-2 flex h-12 items-center justify-center gap-2 rounded-2xl bg-brand font-bold text-ink">
+            <Share2 className="size-4" /> {item.listings.some((l) => l.status === "active") ? "Manage listings" : "Cross-list"}
+          </button>
+        )}
         {item.status === "inventory" && (
           <button onClick={onSell} className="col-span-2 flex h-14 items-center justify-center gap-2 rounded-2xl bg-profit text-lg font-bold text-white">
             <DollarSign className="size-5" /> Mark Sold

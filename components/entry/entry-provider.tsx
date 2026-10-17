@@ -1,8 +1,9 @@
 "use client"
 
-import { DollarSign, Package, PackagePlus, Pencil, Sparkles } from "lucide-react"
-import { createContext, useCallback, useContext, useMemo, useState } from "react"
+import { DollarSign, Package, PackagePlus, Pencil, Share2, Sparkles } from "lucide-react"
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react"
 import { BottomSheet } from "@/components/bottom-sheet"
+import { CrosslistPanel } from "@/components/crosslist/crosslist-panel"
 import type { Item } from "@/lib/types"
 import { EntryForm, type EntryMode, type Prefill } from "./entry-form"
 import { HaulForm } from "./haul-form"
@@ -15,11 +16,14 @@ type SheetState =
   | { kind: "item"; item: Item }
   | { kind: "sell"; item: Item }
   | { kind: "edit"; item: Item }
+  | { kind: "crosslist"; item: Item }
 
 type Ctx = {
   openEntry: (mode?: EntryMode, prefill?: Prefill) => void
   openHaul: () => void
   openItem: (item: Item) => void
+  /** Pages hand over their latest items so an open sheet re-renders after a save. */
+  syncItems: (items: Item[]) => void
 }
 
 const EntryContext = createContext<Ctx | null>(null)
@@ -30,11 +34,18 @@ export function useEntry() {
   return ctx
 }
 
+/** Keep any open item sheet in step with fresh server data. */
+export function useSyncItems(items: Item[]) {
+  const { syncItems } = useEntry()
+  useEffect(() => syncItems(items), [items, syncItems])
+}
+
 export function EntryProvider({ defaultReturnDays, children }: { defaultReturnDays: number; children: React.ReactNode }) {
   const [state, setState] = useState<SheetState>({ kind: "none" })
   // Keep the last content mounted while the sheet animates closed.
   const [shown, setShown] = useState<Exclude<SheetState, { kind: "none" }> | null>(null)
   const [formKey, setFormKey] = useState(0)
+  const [fresh, setFresh] = useState<Map<string, Item>>(new Map())
 
   const show = useCallback((s: Exclude<SheetState, { kind: "none" }>) => {
     setFormKey((k) => k + 1)
@@ -48,11 +59,12 @@ export function EntryProvider({ defaultReturnDays, children }: { defaultReturnDa
       openEntry: (mode = "sold", prefill) => show({ kind: "create", mode, prefill }),
       openHaul: () => show({ kind: "haul" }),
       openItem: (item) => show({ kind: "item", item }),
+      syncItems: (items) => setFresh(new Map(items.map((i) => [i.id, i]))),
     }),
     [show],
   )
 
-  const s = shown
+  const s = shown && "item" in shown ? { ...shown, item: fresh.get(shown.item.id) ?? shown.item } : shown
   let header: { title: string; description: string; icon: React.ReactNode; iconClass: string } = {
     title: "", description: "", icon: null, iconClass: "",
   }
@@ -89,11 +101,15 @@ export function EntryProvider({ defaultReturnDays, children }: { defaultReturnDa
         item={s.item} onDone={close}
         onSell={() => show({ kind: "sell", item: s.item })}
         onEdit={() => show({ kind: "edit", item: s.item })}
+        onCrosslist={() => show({ kind: "crosslist", item: s.item })}
       />
     )
   } else if (s?.kind === "sell") {
     header = { title: "Mark as Sold", description: "Sell some or all units from this lot", icon: <DollarSign className="size-5 text-profit" />, iconClass: "bg-profit-soft" }
     body = <EntryForm key={formKey} variant="sell" item={s.item} defaultReturnDays={defaultReturnDays} onDone={close} />
+  } else if (s?.kind === "crosslist") {
+    header = { title: "Cross-list", description: s.item.title || `Item #${s.item.seq}`, icon: <Share2 className="size-5 text-brand" />, iconClass: "bg-brand-soft" }
+    body = <CrosslistPanel key={formKey} item={s.item} onBack={() => show({ kind: "item", item: s.item })} />
   } else if (s?.kind === "edit") {
     header = { title: "Edit Entry", description: `#${s.item.seq}`, icon: <Pencil className="size-5 text-muted-foreground" />, iconClass: "bg-muted" }
     body = <EntryForm key={formKey} variant="edit" item={s.item} defaultReturnDays={defaultReturnDays} onDone={close} />

@@ -3,7 +3,8 @@
 import { Award, Box, Plus, Sparkles, TrendingUp } from "lucide-react"
 import { useState } from "react"
 import { PageTitle } from "@/components/app-header"
-import { useEntry } from "@/components/entry/entry-provider"
+import { DelistAlerts } from "@/components/crosslist/delist-alerts"
+import { useEntry, useSyncItems } from "@/components/entry/entry-provider"
 import { Segmented } from "@/components/fields"
 import { StatCard } from "@/components/stat-card"
 import { formatDateAt, RANGE_LABELS, type Range } from "@/lib/dates"
@@ -18,6 +19,7 @@ const SHORT_RANGE: Record<Range, string> = { all: "All Time", today: "Today", we
 export function Dashboard({ items, expenses, subs }: { items: Item[]; expenses: Expense[]; subs: Subscription[] }) {
   const [range, setRange] = useState<Range>("all")
   const { openEntry, openItem } = useEntry()
+  useSyncItems(items)
   const s = summarize(items, range)
   const overhead = expenseTotals(expenses, range).total + subscriptionCost(subs, range)
   const afterOverhead = s.net - overhead
@@ -36,6 +38,8 @@ export function Dashboard({ items, expenses, subs }: { items: Item[]; expenses: 
           <Plus className="size-5" /> New Entry
         </button>
       </PageTitle>
+
+      <DelistAlerts items={items} />
 
       <Segmented
         value={range}

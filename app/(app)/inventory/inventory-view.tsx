@@ -1,9 +1,10 @@
 "use client"
 
-import { Boxes, Cloud, Download, Package, RotateCcw, Search, ShoppingBag, Sparkles } from "lucide-react"
+import { Boxes, Cloud, Download, Package, RotateCcw, Search, Share2, ShoppingBag, Sparkles } from "lucide-react"
 import { useState } from "react"
 import { PageTitle } from "@/components/app-header"
-import { useEntry } from "@/components/entry/entry-provider"
+import { DelistAlerts } from "@/components/crosslist/delist-alerts"
+import { useEntry, useSyncItems } from "@/components/entry/entry-provider"
 import { ItemCard } from "@/components/item-card"
 import { dollars, exportCsv } from "@/lib/csv"
 import { daysUntil, inRange, toDateInput, type Range } from "@/lib/dates"
@@ -23,13 +24,15 @@ const TIME: { value: Range; label: string }[] = [
 const itemDate = (i: Item) => (i.status === "sold" ? i.sold_at : i.purchased_at)
 const isReturnEligible = (i: Item) =>
   i.status === "inventory" && !!i.return_deadline && daysUntil(i.return_deadline) >= 0
+const isUnlisted = (i: Item) => i.status === "inventory" && !i.listings.some((l) => l.status === "active")
 
 export function InventoryView({ items, email, focusSearch = false }: { items: Item[]; email?: string; focusSearch?: boolean }) {
   const { openItem, openHaul, openEntry } = useEntry()
   const [tab, setTab] = useState<Tab>("all")
   const [time, setTime] = useState<Range>("all")
   const [query, setQuery] = useState("")
-  const [returnsOnly, setReturnsOnly] = useState(false)
+  const [chip, setChip] = useState<"all" | "returns" | "unlisted">("all")
+  useSyncItems(items)
 
   const sales = items.filter((i) => i.status === "sold")
   const stock = items.filter((i) => i.status === "inventory")
@@ -39,11 +42,13 @@ export function InventoryView({ items, email, focusSearch = false }: { items: It
   const byTab = tab === "sales" ? sales : tab === "stock" ? stock : items
   const timeCounts = Object.fromEntries(TIME.map((t) => [t.value, byTab.filter((i) => inRange(itemDate(i), t.value)).length]))
   const returnCount = byTab.filter(isReturnEligible).length
+  const unlistedCount = byTab.filter(isUnlisted).length
 
   const q = query.trim().toLowerCase()
   const visible = byTab.filter((i) => {
     if (!inRange(itemDate(i), time)) return false
-    if (returnsOnly && !isReturnEligible(i)) return false
+    if (chip === "returns" && !isReturnEligible(i)) return false
+    if (chip === "unlisted" && !isUnlisted(i)) return false
     if (!q) return true
     return (
       (i.title ?? "").toLowerCase().includes(q) ||
@@ -78,6 +83,7 @@ export function InventoryView({ items, email, focusSearch = false }: { items: It
           net_profit: s ? dollars(s.net) : "",
           return_deadline: i.return_deadline ?? "",
           link: i.link_url ?? "",
+          listed_on: i.listings.filter((l) => l.status === "active").map((l) => l.marketplace).join(" "),
         }
       }),
     )
@@ -131,6 +137,8 @@ export function InventoryView({ items, email, focusSearch = false }: { items: It
         </p>
       )}
 
+      <DelistAlerts items={items} />
+
       {tab !== "sales" && (
         <div className="rounded-3xl border bg-card p-5 shadow-sm">
           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -181,22 +189,33 @@ export function InventoryView({ items, email, focusSearch = false }: { items: It
         />
       </label>
 
-      <div className="flex gap-2">
+      <div className="-mx-4 flex gap-2 overflow-x-auto px-4 [scrollbar-width:none]">
         <button
-          onClick={() => setReturnsOnly(false)}
-          className={cn("rounded-full px-4 py-2 text-sm font-semibold", !returnsOnly ? "bg-ink text-white" : "border bg-card")}
+          onClick={() => setChip("all")}
+          className={cn("shrink-0 rounded-full px-4 py-2 text-sm font-semibold", chip === "all" ? "bg-ink text-white" : "border bg-card")}
         >
           All Items ({byTab.length})
         </button>
         <button
-          onClick={() => setReturnsOnly(true)}
+          onClick={() => setChip("returns")}
           className={cn(
-            "flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-semibold",
-            returnsOnly ? "bg-blue-600 text-white" : "border border-blue-200 bg-card text-blue-700",
+            "flex shrink-0 items-center gap-1.5 rounded-full px-4 py-2 text-sm font-semibold",
+            chip === "returns" ? "bg-blue-600 text-white" : "border border-blue-200 bg-card text-blue-700",
           )}
         >
           <RotateCcw className="size-4" /> Return Eligible ({returnCount})
         </button>
+        {tab !== "sales" && (
+          <button
+            onClick={() => setChip("unlisted")}
+            className={cn(
+              "flex shrink-0 items-center gap-1.5 rounded-full px-4 py-2 text-sm font-semibold",
+              chip === "unlisted" ? "bg-brand text-ink" : "border bg-card",
+            )}
+          >
+            <Share2 className="size-4" /> Not Listed ({unlistedCount})
+          </button>
+        )}
       </div>
 
       <div className="flex flex-col gap-3">

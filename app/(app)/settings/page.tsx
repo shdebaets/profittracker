@@ -1,11 +1,16 @@
 import { Cloud } from "lucide-react"
 import { PageTitle } from "@/components/app-header"
-import { getSettings } from "@/lib/data"
+import { getConnections, getSettings } from "@/lib/data"
+import { ebayConfig } from "@/lib/marketplaces/ebay/client"
 import { requireUser } from "@/lib/supabase/server"
+import { MarketplacesSettings } from "./marketplaces"
 import { SettingsForm } from "./settings-form"
 
-export default async function SettingsPage() {
-  const [{ email }, settings] = await Promise.all([requireUser(), getSettings()])
+export default async function SettingsPage({ searchParams }: PageProps<"/settings">) {
+  const [{ email }, settings, connections, params] = await Promise.all([
+    requireUser(), getSettings(), getConnections(), searchParams,
+  ])
+  const cfg = ebayConfig()
   return (
     <>
       <PageTitle title="Settings" subtitle="Account, tax rates & preferences" />
@@ -15,6 +20,12 @@ export default async function SettingsPage() {
         <span className="ml-auto size-2 shrink-0 rounded-full bg-profit" />
       </p>
       <SettingsForm settings={settings} />
+      <MarketplacesSettings
+        ebay={connections.find((c) => c.marketplace === "ebay") ?? null}
+        configured={cfg.configured}
+        sandbox={cfg.sandbox}
+        connectStatus={typeof params.ebay === "string" ? params.ebay : undefined}
+      />
       <div className="rounded-3xl border bg-card p-5 text-sm text-muted-foreground">
         <p className="font-semibold text-foreground">Install on Your Phone</p>
         <p className="mt-1">

@@ -2,7 +2,8 @@ import { createServerClient } from "@supabase/ssr"
 import { NextResponse, type NextRequest } from "next/server"
 import { SUPABASE_KEY, SUPABASE_URL } from "@/lib/supabase/env"
 
-const PUBLIC_PATHS = ["/login", "/auth"]
+// Machine endpoints authenticate themselves (CRON_SECRET / eBay signature).
+const PUBLIC_PATHS = ["/login", "/auth", "/api/cron", "/api/marketplaces/ebay/account-deletion"]
 
 export async function proxy(request: NextRequest) {
   let response = NextResponse.next({ request })
