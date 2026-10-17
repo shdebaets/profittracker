@@ -8,7 +8,9 @@ const base: Item = {
   purchased_at: "2026-09-01T12:00:00Z", store: null, link_url: null, haul_id: null,
   sale_price_cents: 5000, buyer_shipping_cents: 0, label_cost_cents: 0, fee_pct: 0,
   fee_fixed_cents: 0, platform: "cash", sold_at: "2026-09-20T12:00:00Z",
-  returnable: false, return_deadline: null, created_at: "2026-09-01T12:00:00Z",
+  returnable: false, return_deadline: null, photo_paths: [], photo_urls: [],
+  description: null, condition: null, brand: null, size: null, list_price_cents: null, listings: [],
+  created_at: "2026-09-01T12:00:00Z",
 }
 
 describe("calcSale", () => {

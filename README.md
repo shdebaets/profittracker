@@ -57,3 +57,21 @@ net     = revenue − fees − label_cost − unit_cost × qty
 ## Not in v1 (candidates for later)
 
 Receipt OCR, photo item ID, eBay sold-comps lookup, GPS auto mileage tracking, barcode scanning, and offline data entry.
+
+## Cross-listing setup (eBay)
+
+eBay is listed and delisted automatically. Mercari, Facebook Marketplace, Depop, Vinted and Poshmark have no public API, so they get a copy-and-paste listing kit plus "delist this" reminders when an item sells elsewhere.
+
+1. Create an account at developer.ebay.com and generate a **Sandbox** keyset. Set `EBAY_CLIENT_ID` and `EBAY_CLIENT_SECRET`, and leave `EBAY_ENV=sandbox`.
+2. Under *User Tokens*, create a RuName. Set its accept URL to `https://<your-app>/api/marketplaces/ebay/callback` and put the RuName in `EBAY_RUNAME`. eBay needs an https URL, so test against a deployed preview or an https tunnel, not plain localhost.
+3. Set `SUPABASE_SERVICE_ROLE_KEY`, `TOKEN_ENCRYPTION_KEY` (any long random string) and `CRON_SECRET`.
+4. Apply the migrations: `0002_item_photos.sql` (creates the `item-photos` bucket) and `0003_crosslisting.sql`.
+5. In the app, open Settings → Marketplaces → Connect eBay. Pick shipping, payment and return policies, and enter a ship-from ZIP.
+6. Before you can get **production** keys:
+   - deploy the app
+   - register `https://<your-app>/api/marketplaces/ebay/account-deletion` under *Alerts & Notifications → Marketplace account deletion*, with `EBAY_VERIFICATION_TOKEN` (and `EBAY_DELETION_ENDPOINT` set to that exact URL)
+   - then switch to `EBAY_ENV=production` with the production keyset
+
+**Sale sync:**
+- eBay sales are pulled when the app opens (at most every 5 minutes), from *Sync sales now* in Settings, and by a daily Vercel Cron (`vercel.json`).
+- On Vercel Pro, change the schedule to `*/10 * * * *` for near-real-time delisting.

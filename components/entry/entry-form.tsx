@@ -1,16 +1,19 @@
 "use client"
 
 import { Link2, PackagePlus, RotateCcw, Sparkles, TrendingUp, DollarSign, ChevronDown } from "lucide-react"
-import { useState, useTransition } from "react"
+import { useEffect, useRef, useState, useTransition } from "react"
 import { toast } from "sonner"
 import { createItem, markSold, updateItem, type ItemInput } from "@/app/(app)/actions/items"
+import { discardPhotos } from "@/app/(app)/actions/photos"
 import { FeePresetGrid } from "@/components/fee-preset-grid"
 import { FieldLabel, MoneyInput, QtyPicker, Segmented, TextInput, Toggle } from "@/components/fields"
 import { addDays, dateInputToIso, toDateInput } from "@/lib/dates"
 import { centsToInput, formatCents, formatPct, toCents } from "@/lib/money"
 import { calcSale, presetFor } from "@/lib/profit"
 import type { Item, Platform } from "@/lib/types"
+import { marketplace, type MarketplaceId } from "@/lib/marketplaces/registry"
 import { cn } from "@/lib/utils"
+import { PhotoPicker, type Photo } from "./photo-picker"
 
 export type EntryMode = "sold" | "inventory"
 
@@ -45,6 +48,7 @@ function initialFromItem(item: Item) {
     returnable: item.returnable,
     returnDeadline: item.return_deadline ?? "",
     purchasedAt: toDateInput(new Date(item.purchased_at)),
+    photos: item.photo_paths.map((path, i) => ({ path, url: item.photo_urls[i] ?? "" })),
   }
 }
 
@@ -62,6 +66,7 @@ export function EntryForm(props: Props) {
         platform: (props.variant === "create" ? props.prefill?.platform : undefined) ?? ("cash" as Platform),
         customPct: props.variant === "create" ? (props.prefill?.customPct ?? "") : "",
         returnable: false, returnDeadline: "", purchasedAt: toDateInput(new Date()),
+        photos: [] as Photo[],
       }
 
   const [mode, setModeState] = useState<EntryMode>(
@@ -82,6 +87,24 @@ export function EntryForm(props: Props) {
   const [returnable, setReturnable] = useState(init.returnable)
   const [returnDeadline, setReturnDeadline] = useState(init.returnDeadline)
   const [purchasedAt, setPurchasedAt] = useState(init.purchasedAt)
+  const [photos, setPhotos] = useState<Photo[]>(init.photos)
+  // Photos uploaded in this form but not saved yet; discarded if the sheet closes without saving.
+  const unsaved = useRef(new Set<string>())
+  useEffect(() => {
+    const pendingUploads = unsaved.current
+    return () => {
+      if (pendingUploads.size) void discardPhotos([...pendingUploads])
+    }
+  }, [])
+  const liveListings = props.variant === "sell" ? props.item.listings.filter((l) => l.status === "active") : []
+  const [soldOn, setSoldOnState] = useState<MarketplaceId | null>(null)
+  const setSoldOn = (m: MarketplaceId | null) => {
+    setSoldOnState(m)
+    if (m) {
+      setPlatform(marketplace(m).feePreset)
+      setShowMore(true)
+    }
+  }
   const [pending, startTransition] = useTransition()
 
   const setMode = (m: EntryMode) => {
@@ -127,7 +150,14 @@ export function EntryForm(props: Props) {
     startTransition(async () => {
       let res
       if (props.variant === "sell") {
-        res = await markSold(props.item.id, { quantity: qty, ...saleInput })
+        res = await markSold(props.item.id, { quantity: qty, soldOn, ...saleInput })
+        const o = res.ok ? res.outcome : undefined
+        if (o && o.remaining === 0) {
+          const name = (id: MarketplaceId) => marketplace(id).short
+          if (o.ended.length) toast.success(`Ended on ${o.ended.map(name).join(", ")}`)
+          if (o.needsDelist.length) toast.warning(`Now delist it on ${o.needsDelist.map(name).join(", ")}`, { duration: 8000 })
+          for (const f of o.failed) toast.error(`Couldn't end on ${name(f.marketplace)}: ${f.error}`, { duration: 10000 })
+        }
       } else {
         const input: ItemInput = {
           mode,
@@ -139,6 +169,7 @@ export function EntryForm(props: Props) {
           returnable,
           returnDeadline: returnable ? returnDeadline || null : null,
           purchasedAt: item && purchasedAt === init.purchasedAt ? item.purchased_at : dateInputToIso(purchasedAt),
+          photoPaths: photos.map((p) => p.path),
           sale: isSale
             ? {
                 ...saleInput,
@@ -153,6 +184,7 @@ export function EntryForm(props: Props) {
         toast.error(res.error)
         return
       }
+      unsaved.current.clear()
       toast.success(
         props.variant === "edit" ? "Saved" : isSale ? `Cha-ching! ${formatCents(sale.net)} profit logged` : "Added to inventory",
       )
@@ -211,6 +243,20 @@ export function EntryForm(props: Props) {
             )}
           </div>
           <div>
+            <FieldLabel>Photos <span className="font-normal text-muted-foreground">(Optional)</span></FieldLabel>
+            <PhotoPicker
+              value={photos}
+              onChange={(next) => {
+                // A fresh upload removed before saving can go right away.
+                const removed = photos.filter((p) => !next.some((n) => n.path === p.path) && unsaved.current.has(p.path))
+                removed.forEach((p) => unsaved.current.delete(p.path))
+                if (removed.length) void discardPhotos(removed.map((p) => p.path))
+                setPhotos(next)
+              }}
+              onUploaded={(paths) => paths.forEach((p) => unsaved.current.add(p))}
+            />
+          </div>
+          <div>
             <FieldLabel htmlFor="cost">Purchase Cost (COG) {qty > 1 && <span className="font-normal text-muted-foreground">per unit</span>}</FieldLabel>
             <MoneyInput id="cost" big value={cost} onChange={setCost} />
           </div>
@@ -226,6 +272,36 @@ export function EntryForm(props: Props) {
         <div className="rounded-2xl border border-brand/40 bg-brand-soft p-4">
           <p className="font-bold text-brand">Inventory Item</p>
           <p className="text-sm text-muted-foreground">Sale price will be recorded when this item is marked as sold.</p>
+        </div>
+      )}
+
+      {selling && liveListings.length > 0 && (
+        <div>
+          <FieldLabel>Where did it sell?</FieldLabel>
+          <div className="flex flex-wrap gap-2">
+            {liveListings.map((l) => (
+              <button
+                key={l.id} type="button" onClick={() => setSoldOn(l.marketplace)}
+                className={cn(
+                  "rounded-full px-4 py-2 text-sm font-semibold",
+                  soldOn === l.marketplace ? marketplace(l.marketplace).badge : "border bg-card",
+                )}
+              >
+                {marketplace(l.marketplace).label}
+              </button>
+            ))}
+            <button
+              type="button" onClick={() => setSoldOn(null)}
+              className={cn("rounded-full px-4 py-2 text-sm font-semibold", soldOn === null ? "bg-ink text-white" : "border bg-card")}
+            >
+              Somewhere else
+            </button>
+          </div>
+          <p className="mt-1.5 text-xs text-muted-foreground">
+            {qty < props.item.quantity
+              ? "Units left stay listed."
+              : "We'll take it down on your other marketplaces."}
+          </p>
         </div>
       )}
 

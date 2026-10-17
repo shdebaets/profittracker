@@ -1,5 +1,6 @@
 import { AppHeader } from "@/components/app-header"
 import { BottomNav } from "@/components/bottom-nav"
+import { AutoSync } from "@/components/crosslist/auto-sync"
 import { EntryProvider } from "@/components/entry/entry-provider"
 import { requireUser } from "@/lib/supabase/server"
 import { getSettings } from "@/lib/data"
@@ -18,6 +19,7 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
         <AppHeader />
         {children}
       </div>
+      <AutoSync />
       <BottomNav inventoryCount={inv.count ?? 0} expenseCount={exp.count ?? 0} />
     </EntryProvider>
   )

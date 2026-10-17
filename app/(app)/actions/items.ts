@@ -3,11 +3,17 @@
 import { revalidatePath } from "next/cache"
 import { z } from "zod"
 import { requireUser } from "@/lib/supabase/server"
+import { recordSale, takeDown, type SaleOutcome } from "@/lib/crosslist/engine"
+import { adapters, supabaseStore } from "@/lib/crosslist/store"
+import type { SaleColumns } from "@/lib/items/sell"
+import type { MarketplaceId } from "@/lib/marketplaces/registry"
+import { removeUnreferencedPhotos } from "@/lib/photos"
 import { distributeHaul } from "@/lib/profit"
 import { fail, type ActionResult } from "./result"
 
 const cents = z.number().int().min(0).max(100_000_000)
 const platform = z.enum(["cash", "card", "mercari_depop", "ebay", "poshmark_amz", "custom"])
+const marketplaceId = z.enum(["ebay", "mercari", "facebook", "depop", "vinted", "poshmark", "etsy"])
 
 const saleFields = z.object({
   salePriceCents: cents,
@@ -30,10 +36,11 @@ const itemSchema = z.object({
   returnDeadline: z.string().nullable().optional(),
   purchasedAt: z.string().optional(),
   sale: saleFields.optional(),
+  photoPaths: z.array(z.string().max(200)).max(12).default([]),
 })
 export type ItemInput = z.input<typeof itemSchema>
 
-function saleColumns(s: z.output<typeof saleFields>) {
+function saleColumns(s: z.output<typeof saleFields>): SaleColumns {
   return {
     sale_price_cents: s.salePriceCents,
     buyer_shipping_cents: s.buyerShippingCents,
@@ -54,6 +61,7 @@ function baseColumns(i: z.output<typeof itemSchema>) {
     quantity: i.quantity,
     returnable: i.returnable,
     return_deadline: i.returnable ? i.returnDeadline || null : null,
+    photo_paths: i.photoPaths,
     ...(i.purchasedAt ? { purchased_at: new Date(i.purchasedAt).toISOString() } : {}),
   }
 }
@@ -84,56 +92,33 @@ export async function updateItem(id: string, input: ItemInput): Promise<ActionRe
   try {
     const i = itemSchema.parse(input)
     const { supabase } = await requireUser()
+    const { data: before } = await supabase.from("items").select("photo_paths").eq("id", id).single()
     const { error } = await supabase
       .from("items")
       .update({ ...baseColumns(i), ...(i.sale ? saleColumns(i.sale) : {}) })
       .eq("id", id)
     if (error) throw error
+    const dropped = ((before?.photo_paths as string[] | undefined) ?? []).filter((p) => !i.photoPaths.includes(p))
+    await removeUnreferencedPhotos(supabase, dropped)
     return done()
   } catch (e) {
     return fail(e)
   }
 }
 
-/** Sell some or all units of an inventory lot. A partial sale splits the row. */
+/** Sell some or all units of an inventory lot, then take it down on the other marketplaces. */
 export async function markSold(
   id: string,
-  input: { quantity: number } & z.input<typeof saleFields>,
-): Promise<ActionResult> {
+  input: { quantity: number; soldOn?: MarketplaceId | null } & z.input<typeof saleFields>,
+): Promise<ActionResult & { outcome?: SaleOutcome }> {
   try {
     const qty = z.number().int().min(1).parse(input.quantity)
+    const soldOn = marketplaceId.nullable().optional().parse(input.soldOn)
     const sale = saleColumns(saleFields.parse(input))
     const { supabase } = await requireUser()
-    const { data: item, error: readErr } = await supabase.from("items").select("*").eq("id", id).single()
-    if (readErr) throw readErr
-    if (item.status !== "inventory") throw new Error("Item is not in inventory")
-    if (qty > item.quantity) throw new Error(`Only ${item.quantity} units in stock`)
-
-    if (qty === item.quantity) {
-      const { error } = await supabase.from("items").update({ status: "sold", ...sale }).eq("id", id)
-      if (error) throw error
-    } else {
-      const { error: decErr } = await supabase
-        .from("items")
-        .update({ quantity: item.quantity - qty })
-        .eq("id", id)
-        .eq("quantity", item.quantity) // optimistic guard against double-submit
-      if (decErr) throw decErr
-      const { error } = await supabase.from("items").insert({
-        title: item.title,
-        store: item.store,
-        link_url: item.link_url,
-        haul_id: item.haul_id,
-        cost_cents: item.cost_cents,
-        purchased_at: item.purchased_at,
-        returnable: false,
-        quantity: qty,
-        status: "sold",
-        ...sale,
-      })
-      if (error) throw error
-    }
-    return done()
+    const outcome = await recordSale(supabaseStore(supabase), adapters, { itemId: id, qty, sale, soldOn })
+    revalidatePath("/", "layout")
+    return { ok: true, outcome }
   } catch (e) {
     return fail(e)
   }
@@ -142,6 +127,7 @@ export async function markSold(
 export async function markReturned(id: string): Promise<ActionResult> {
   try {
     const { supabase } = await requireUser()
+    await takeDown(supabaseStore(supabase), adapters, id)
     const { error } = await supabase.from("items").update({ status: "returned" }).eq("id", id)
     if (error) throw error
     return done()
@@ -153,8 +139,12 @@ export async function markReturned(id: string): Promise<ActionResult> {
 export async function deleteItem(id: string): Promise<ActionResult> {
   try {
     const { supabase } = await requireUser()
-    const { error } = await supabase.from("items").delete().eq("id", id)
+    // Listings cascade-delete with the item, so end any live API listing first.
+    const down = await takeDown(supabaseStore(supabase), adapters, id)
+    if (down.failed.length) throw new Error(`Couldn't end the ${down.failed[0].marketplace} listing: ${down.failed[0].error}`)
+    const { data: gone, error } = await supabase.from("items").delete().eq("id", id).select("photo_paths").single()
     if (error) throw error
+    await removeUnreferencedPhotos(supabase, (gone.photo_paths as string[]) ?? [])
     return done()
   } catch (e) {
     return fail(e)

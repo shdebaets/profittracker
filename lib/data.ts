@@ -1,14 +1,27 @@
 import "server-only"
+import { signPaths } from "@/lib/photos"
 import { requireUser } from "@/lib/supabase/server"
-import type { Expense, Item, Settings, Subscription } from "@/lib/types"
+import type { Expense, Item, MarketplaceConnection, Settings, Subscription } from "@/lib/types"
 
 export const DEFAULT_SETTINGS: Settings = { mileage_rate_cents: 76, default_return_days: 90 }
 
 export async function getItems(): Promise<Item[]> {
   const { supabase } = await requireUser()
-  const { data, error } = await supabase.from("items").select("*").order("seq", { ascending: false })
+  const { data, error } = await supabase
+    .from("items")
+    .select("*, listings:marketplace_listings(*)")
+    .order("seq", { ascending: false })
   if (error) throw error
-  return data as Item[]
+  const rows = data as Omit<Item, "photo_urls">[]
+  const urls = await signPaths(supabase, rows.flatMap((r) => r.photo_paths ?? []))
+  return rows.map((r) => ({ ...r, photo_urls: (r.photo_paths ?? []).map((p) => urls.get(p) ?? "") }))
+}
+
+export async function getConnections(): Promise<MarketplaceConnection[]> {
+  const { supabase } = await requireUser()
+  const { data, error } = await supabase.from("marketplace_connections").select("*")
+  if (error) throw error
+  return data as MarketplaceConnection[]
 }
 
 export async function getExpenses(): Promise<Expense[]> {
