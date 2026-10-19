@@ -39,7 +39,7 @@ npm run build
 ## Deploying
 
 1. Create a Supabase project, either through the **Vercel Marketplace → Supabase** integration (it sets the env vars for you) or on supabase.com.
-2. Apply the schema: `npx supabase link --project-ref <ref> && npx supabase db push`.
+2. Schema: production deploys apply new files in `supabase/migrations/` automatically before building (`scripts/migrate.mjs`, wired in `vercel.json`). It uses the integration's `POSTGRES_URL_NON_POOLING`, or `SUPABASE_DB_URL` if set. Preview deploys skip it. A failed migration fails the deploy. To run it by hand: `SUPABASE_DB_URL=... npm run db:migrate -- --force`.
 3. Set `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` (or `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`) in Vercel.
 4. In Supabase → Auth → URL Configuration, set the Site URL to your domain and add `https://<domain>/auth/callback` as a redirect URL.
 5. Deploy with `vercel deploy`. On a phone, open the site and use Share → **Add to Home Screen**.
