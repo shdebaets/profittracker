@@ -1,9 +1,10 @@
 "use client"
 
-import { AlertTriangle, Check, ExternalLink } from "lucide-react"
+import { AlertTriangle, Check, ExternalLink, Wand2 } from "lucide-react"
 import { useTransition } from "react"
 import { toast } from "sonner"
 import { endListing } from "@/app/(app)/actions/crosslist"
+import { delistWithExtension, useExtension } from "@/lib/extension"
 import { marketplace } from "@/lib/marketplaces/registry"
 import type { Item } from "@/lib/types"
 import { cn } from "@/lib/utils"
@@ -14,6 +15,7 @@ export function DelistAlerts({ items }: { items: Item[] }) {
     i.listings.filter((l) => l.status === "delist_pending" || l.status === "error").map((l) => ({ item: i, l })),
   )
   const [pending, start] = useTransition()
+  const ext = useExtension()
   if (!todo.length) return null
 
   return (
@@ -32,12 +34,22 @@ export function DelistAlerts({ items }: { items: Item[] }) {
                 <span className="block truncate text-sm font-semibold">{item.title || `Item #${item.seq}`}</span>
                 {l.status === "error" && <span className="block truncate text-xs text-loss">{l.last_error}</span>}
               </span>
-              <a
-                href={l.external_url ?? m.manageUrl} target="_blank" rel="noopener noreferrer" aria-label={`Open ${m.label}`}
-                className="grid size-9 shrink-0 place-items-center rounded-xl border"
-              >
-                <ExternalLink className="size-4" />
-              </a>
+              {m.mode === "assisted" && ext.supports(m.id) ? (
+                <button
+                  type="button" aria-label={`Delist on ${m.label} with the extension`}
+                  onClick={() => delistWithExtension(m.id, { listingId: l.id, itemId: item.id, url: l.external_url, title: item.title ?? "" })}
+                  className="grid size-9 shrink-0 place-items-center rounded-xl border"
+                >
+                  <Wand2 className="size-4" />
+                </button>
+              ) : (
+                <a
+                  href={l.external_url ?? m.manageUrl} target="_blank" rel="noopener noreferrer" aria-label={`Open ${m.label}`}
+                  className="grid size-9 shrink-0 place-items-center rounded-xl border"
+                >
+                  <ExternalLink className="size-4" />
+                </a>
+              )}
               <button
                 disabled={pending}
                 onClick={() =>

@@ -1,7 +1,7 @@
 "use client"
 
 import {
-  ArrowLeft, Check, ChevronDown, Copy, ExternalLink, Images, Loader2, Search, Unplug,
+  ArrowLeft, Check, ChevronDown, Copy, ExternalLink, Images, Loader2, Search, Unplug, Wand2,
 } from "lucide-react"
 import Link from "next/link"
 import { useEffect, useState, useTransition } from "react"
@@ -13,6 +13,7 @@ import {
 import { FieldLabel, MoneyInput, NativeSelect, TextInput } from "@/components/fields"
 import type { Aspect, CategorySuggestion } from "@/lib/marketplaces/ebay/adapter"
 import { ITEM_CONDITIONS, MARKETPLACES, type ItemCondition, type Marketplace } from "@/lib/marketplaces/registry"
+import { delistWithExtension, listWithExtension, useExtension } from "@/lib/extension"
 import { centsToInput, formatCents, toCents } from "@/lib/money"
 import type { Item, Listing } from "@/lib/types"
 import { cn } from "@/lib/utils"
@@ -243,8 +244,9 @@ function useRun() {
   return [pending, run] as const
 }
 
-function LiveActions({ listing, m }: { listing: Listing; m: Marketplace }) {
+function LiveActions({ listing, m, title }: { listing: Listing; m: Marketplace; title: string }) {
   const [pending, run] = useRun()
+  const ext = useExtension()
   const api = m.mode === "api"
   const url = listing.external_url ?? m.manageUrl
   if (listing.status === "delist_pending" || listing.status === "error") {
@@ -256,9 +258,19 @@ function LiveActions({ listing, m }: { listing: Listing; m: Marketplace }) {
             : `This item sold elsewhere. Take the ${m.short} listing down so nobody else buys it.`}
         </p>
         <div className="grid grid-cols-2 gap-2">
-          <a href={url} target="_blank" rel="noopener noreferrer" className="flex h-11 items-center justify-center gap-1.5 rounded-xl border font-semibold">
-            Open {m.short} <ExternalLink className="size-4" />
-          </a>
+          {!api && ext.supports(m.id) ? (
+            <button
+              type="button"
+              onClick={() => delistWithExtension(m.id, { listingId: listing.id, itemId: listing.item_id, url: listing.external_url, title })}
+              className="flex h-11 items-center justify-center gap-1.5 rounded-xl border font-semibold"
+            >
+              <Wand2 className="size-4" /> Delist on {m.short}
+            </button>
+          ) : (
+            <a href={url} target="_blank" rel="noopener noreferrer" className="flex h-11 items-center justify-center gap-1.5 rounded-xl border font-semibold">
+              Open {m.short} <ExternalLink className="size-4" />
+            </a>
+          )}
           <button
             disabled={pending}
             onClick={() => run(() => endListing(listing.id), api ? "Listing ended" : "Marked delisted")}
@@ -323,7 +335,7 @@ function AssistedRow({
   const live = listing && ["active", "delist_pending", "error"].includes(listing.status)
   return (
     <RowShell m={m} status={statusChip(listing)} open={open} onToggle={() => setOpen((o) => !o)}>
-      {live ? <LiveActions listing={listing} m={m} /> : item.status === "inventory" && <ListingKit item={item} m={m} draft={draft} saveDraft={saveDraft} />}
+      {live ? <LiveActions listing={listing} m={m} title={item.title ?? ""} /> : item.status === "inventory" && <ListingKit item={item} m={m} draft={draft} saveDraft={saveDraft} />}
     </RowShell>
   )
 }
@@ -333,6 +345,24 @@ function ListingKit({ item, m, draft, saveDraft }: { item: Item; m: Marketplace;
   const [pending, run] = useRun()
   const [files, setFiles] = useState<File[] | null>(null)
   const photos = item.photo_urls.slice(0, m.photoLimit)
+  const ext = useExtension()
+  const canAutofill = ext.supports(m.id)
+
+  async function autofill() {
+    if (!draft.title.trim()) return void toast.error("Add a title first")
+    if (!(await saveDraft())) return
+    listWithExtension(m.id, {
+      itemId: item.id,
+      title: draft.title.trim(),
+      description: draft.description,
+      priceCents: draft.price ? toCents(draft.price) : null,
+      condition: draft.condition || null,
+      brand: draft.brand,
+      size: draft.size,
+      photoUrls: photos,
+    })
+    toast.message(`Opening ${m.label}. Check the listing there, then click Publish.`)
+  }
 
   // Fetch photos up front so the share sheet opens straight from the tap (iOS requires that).
   useEffect(() => {
@@ -368,9 +398,21 @@ function ListingKit({ item, m, draft, saveDraft }: { item: Item; m: Marketplace;
   const btn = "flex h-11 items-center justify-center gap-1.5 rounded-xl border bg-card px-2 text-sm font-semibold"
   return (
     <>
-      <p className="text-sm text-muted-foreground">
-        {m.label} has no public listing API, so you post it and FlipLedger keeps track. When the item sells anywhere, you&apos;ll get a reminder to take this one down.
-      </p>
+      {canAutofill ? (
+        <>
+          <button type="button" onClick={autofill} className="flex h-12 items-center justify-center gap-2 rounded-xl bg-ink font-bold text-white">
+            <Wand2 className="size-4" /> Auto-fill on {m.short}
+          </button>
+          <p className="text-xs text-muted-foreground">
+            The FlipLedger extension opens {m.label} and fills in your photos and details. You pick the category and click Publish; it records the listing here. Or do it by hand below.
+          </p>
+        </>
+      ) : (
+        <p className="text-sm text-muted-foreground">
+          {m.label} has no public listing API, so you post it and FlipLedger keeps track. When the item sells anywhere, you&apos;ll get a reminder to take this one down.
+          {m.id === "facebook" && " On a computer, the FlipLedger Chrome extension can fill it in for you."}
+        </p>
+      )}
       <div className="grid grid-cols-2 gap-2">
         <button type="button" onClick={sharePhotos} disabled={!files?.length} className={cn(btn, "col-span-2 disabled:opacity-50")}>
           {files === null && photos.length ? <Loader2 className="size-4 animate-spin" /> : <Images className="size-4" />}
@@ -424,7 +466,7 @@ function EbayRow({
   const [open, setOpen] = useState(listing?.status === "error")
 
   let body: React.ReactNode
-  if (live) body = <LiveActions listing={listing} m={m} />
+  if (live) body = <LiveActions listing={listing} m={m} title={item.title ?? ""} />
   else if (item.status !== "inventory") body = null
   else if (!status) body = <p className="text-sm text-muted-foreground">Checking your eBay connection…</p>
   else if (!status.configured) body = <p className="text-sm text-muted-foreground">eBay listing isn&apos;t switched on for this app yet (API keys pending).</p>

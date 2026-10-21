@@ -1,0 +1,30 @@
+{
+  "manifest_version": 3,
+  "name": "FlipLedger Lister",
+  "version": "0.1.0",
+  "description": "Fills in your Facebook Marketplace listings from FlipLedger and keeps your cross-listings in sync.",
+  "minimum_chrome_version": "116",
+  "background": { "service_worker": "background.js" },
+  "permissions": ["storage", "tabs"],
+  "host_permissions": [
+    "https://www.facebook.com/*",
+    "https://*.supabase.co/*",
+    "http://127.0.0.1:54321/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "https://profittracker-iye3.vercel.app/*",
+        "http://localhost:3000/*",
+        "http://127.0.0.1:3000/*"
+      ],
+      "js": ["shared.js", "content-app.js"],
+      "run_at": "document_start"
+    },
+    {
+      "matches": ["https://www.facebook.com/marketplace/*"],
+      "js": ["shared.js", "content-facebook.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
