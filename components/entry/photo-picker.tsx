@@ -4,6 +4,7 @@ import { Camera, Loader2, Star, X } from "lucide-react"
 import { useRef, useState } from "react"
 import { toast } from "sonner"
 import { createPhotoUploads } from "@/app/(app)/actions/photos"
+import { friendlyError, UserError } from "@/lib/errors"
 import { compressImage } from "@/lib/image"
 import { SUPABASE_KEY } from "@/lib/supabase/env"
 import { cn } from "@/lib/utils"
@@ -17,7 +18,7 @@ async function putPhoto(signedUrl: string, blob: Blob) {
   body.append("cacheControl", "3600")
   body.append("", blob, "photo.jpg")
   const res = await fetch(signedUrl, { method: "PUT", body, headers: { apikey: SUPABASE_KEY, "x-upsert": "false" } })
-  if (!res.ok) throw new Error("Photo upload failed")
+  if (!res.ok) throw new UserError("Couldn't upload the photo. Check your connection and try again.")
 }
 
 /** Optional photo strip. The first photo is the cover; tap a photo to make it the cover. */
@@ -53,7 +54,7 @@ export function PhotoPicker({
       onUploaded?.(added.map((p) => p.path))
       onChange([...value, ...added])
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Photo upload failed")
+      toast.error(friendlyError(e))
     } finally {
       setUploading((n) => n - picked.length)
     }

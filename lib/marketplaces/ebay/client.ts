@@ -38,6 +38,7 @@ export class EbayError extends Error {
     readonly errors: { errorId?: number; message?: string; longMessage?: string; parameters?: { name: string; value: string }[] }[] = [],
   ) {
     super(message)
+    this.name = "EbayError"
   }
   has(errorId: number) {
     return this.errors.some((e) => e.errorId === errorId)

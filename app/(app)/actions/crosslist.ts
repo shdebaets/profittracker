@@ -18,6 +18,7 @@ import { photoLink } from "@/lib/photo-links"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { requireUser } from "@/lib/supabase/server"
 import type { Listing } from "@/lib/types"
+import { UserError } from "@/lib/errors"
 import { fail, type ActionResult } from "./result"
 
 type Result<T> = { ok: true; data: T } | { ok: false; error: string }
@@ -137,7 +138,7 @@ export async function delistEverywhere(itemId: string): Promise<ActionResult> {
   try {
     const { supabase } = await requireUser()
     const out = await takeDown(supabaseStore(supabase), adapters, itemId)
-    if (out.failed.length) throw new Error(`${out.failed[0].marketplace}: ${out.failed[0].error}`)
+    if (out.failed.length) throw new UserError(`Couldn't end the ${marketplace(out.failed[0].marketplace).label} listing. ${out.failed[0].error}`)
     return done()
   } catch (e) {
     return fail(e)
@@ -178,8 +179,8 @@ export async function publishEbay(itemId: string, input: z.input<typeof publishS
     const { supabase, userId } = await requireUser()
     const { data: item, error } = await supabase.from("items").select("*").eq("id", itemId).single()
     if (error) throw error
-    if (item.status !== "inventory") throw new Error("Only unsold inventory can be listed")
-    if (!item.title) throw new Error("Give the item a title first")
+    if (item.status !== "inventory") throw new UserError("Only unsold items can be listed.")
+    if (!item.title) throw new UserError("Give the item a title first.")
 
     // Short signed links: eBay rejects picture URLs over 500 characters, and Supabase's are longer.
     const h = await headers()
@@ -249,7 +250,7 @@ export async function saveEbaySettings(input: z.input<typeof ebaySettingsSchema>
     const { userId } = await requireUser()
     const admin = createAdminClient()
     const auth = await getUserToken(userId, admin)
-    if (!auth) throw new Error("eBay isn't connected")
+    if (!auth) throw new UserError("eBay isn't connected. Connect it in Settings → Marketplaces.")
     const next = { ...auth.account.settings, ...s }
     if (s.postalCode && s.postalCode !== auth.account.settings.postalCode) {
       next.merchantLocationKey = await ensureLocation(auth.token, s.postalCode.slice(0, 5))
@@ -266,7 +267,7 @@ export async function refreshEbayPolicies(): Promise<ActionResult> {
     const { userId } = await requireUser()
     const admin = createAdminClient()
     const auth = await getUserToken(userId, admin)
-    if (!auth) throw new Error("eBay isn't connected")
+    if (!auth) throw new UserError("eBay isn't connected. Connect it in Settings → Marketplaces.")
     await saveSettings(admin, userId, await loadPolicies(auth.token, auth.account.settings))
     return done()
   } catch (e) {

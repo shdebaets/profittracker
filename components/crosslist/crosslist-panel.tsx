@@ -16,6 +16,7 @@ import { ITEM_CONDITIONS, MARKETPLACES, type ItemCondition, type Marketplace } f
 import { centsToInput, formatCents, toCents } from "@/lib/money"
 import type { Item, Listing } from "@/lib/types"
 import { cn } from "@/lib/utils"
+import { GENERIC_ERROR } from "@/lib/errors"
 
 type Draft = {
   title: string
@@ -236,7 +237,7 @@ function useRun() {
   const run = (fn: () => Promise<{ ok: boolean; error?: string }>, msg: string, after?: () => void) =>
     start(async () => {
       const res = await fn()
-      if (!res.ok) return void toast.error(res.error ?? "Failed")
+      if (!res.ok) return void toast.error(res.error ?? GENERIC_ERROR)
       toast.success(msg)
       after?.()
     })

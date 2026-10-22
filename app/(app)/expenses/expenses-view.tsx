@@ -19,6 +19,7 @@ import { mileageDeduction } from "@/lib/profit"
 import { DRIVE_PURPOSES, EXPENSE_CATEGORIES, type Expense, type Subscription } from "@/lib/types"
 import { cn } from "@/lib/utils"
 import { ExpenseForm } from "./expense-form"
+import { GENERIC_ERROR } from "@/lib/errors"
 
 type Tab = "ledger" | "mileage" | "subs"
 
@@ -170,7 +171,7 @@ function useRun() {
   const run = (fn: () => Promise<{ ok: boolean; error?: string }>, msg?: string, after?: () => void) =>
     startTransition(async () => {
       const res = await fn()
-      if (!res.ok) return void toast.error(res.error ?? "Failed")
+      if (!res.ok) return void toast.error(res.error ?? GENERIC_ERROR)
       if (msg) toast.success(msg)
       after?.()
     })

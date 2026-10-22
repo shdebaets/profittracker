@@ -1,4 +1,5 @@
 import "server-only"
+import { UserError } from "@/lib/errors"
 import type { ApiAdapter } from "@/lib/marketplaces/types"
 import type { Listing } from "@/lib/types"
 import { EBAY_MARKETPLACE_ID, EbayError, ebayConfig, ebayFetch } from "./client"
@@ -27,8 +28,8 @@ export async function publishToEbay(userId: string, input: PublishInput) {
   const { token, account } = await requireUserToken(userId)
   const s = account.settings
   const gaps = setupGaps(s)
-  if (gaps.length) throw new Error(`Finish eBay setup in Settings: add ${gaps.join(", ")}`)
-  if (!input.imageUrls.length) throw new Error("eBay needs at least one photo")
+  if (gaps.length) throw new UserError(`Finish eBay setup in Settings → Marketplaces: add ${gaps.join(", ")}.`)
+  if (!input.imageUrls.length) throw new UserError("eBay needs at least one photo. Edit the item to add one.")
 
   const sku = input.item.id
   const title = ebayTitle(input.item.title || "Item")
@@ -85,7 +86,7 @@ async function findOfferId(token: string, sku: string) {
     `/sell/inventory/v1/offer?sku=${encodeURIComponent(sku)}&marketplace_id=${EBAY_MARKETPLACE_ID}`,
   )
   const id = r.offers?.[0]?.offerId
-  if (!id) throw new Error("Couldn't find the existing eBay offer for this item")
+  if (!id) throw new UserError("Couldn't find this item's existing eBay listing. Try listing it again.")
   return id
 }
 
