@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest"
 import { decrypt, encrypt } from "@/lib/crypto"
 import { fitWithin } from "@/lib/image"
 import { challengeResponse } from "./deletion"
-import { ebayTitle, ordersToSales, setupGaps, type EbayOrder } from "./mapping"
+import { defaultConditionId, EBAY_CONDITION_ENUM, ebayTitle, ordersToSales, setupGaps, type EbayOrder } from "./mapping"
 
 describe("ordersToSales", () => {
   const order: EbayOrder = {
@@ -31,6 +31,30 @@ describe("ordersToSales", () => {
   it("skips unpaid and cancelled orders", () => {
     expect(ordersToSales([{ ...order, orderPaymentStatus: "PENDING" }])).toEqual([])
     expect(ordersToSales([{ ...order, cancelStatus: { cancelState: "CANCELED" } }])).toEqual([])
+  })
+})
+
+describe("eBay conditions per category", () => {
+  const shoes = ["1000", "1500", "1750", "3000"] // e.g. Athletic Shoes
+  const apparel = ["1000", "1500", "1750", "2990", "3000", "3010"]
+  const electronics = ["1000", "1500", "2000", "2500", "3000", "7000"]
+
+  it("picks the closest condition the category allows", () => {
+    expect(defaultConditionId("new_with_tags", shoes)).toBe("1000")
+    expect(defaultConditionId("new", shoes)).toBe("1500")
+    expect(defaultConditionId("good", shoes)).toBe("3000") // shoes have no USED_GOOD (5000): the error seen
+    expect(defaultConditionId("like_new", apparel)).toBe("2990")
+    expect(defaultConditionId("fair", apparel)).toBe("3010")
+    expect(defaultConditionId("good", electronics)).toBe("3000")
+  })
+
+  it("leaves it for the seller when nothing fits or no condition is set", () => {
+    expect(defaultConditionId(null, shoes)).toBeNull()
+    expect(defaultConditionId("fair", ["1000", "1500"])).toBeNull()
+  })
+
+  it("every ID maps to an Inventory API condition", () => {
+    for (const id of [...shoes, ...apparel, ...electronics]) expect(EBAY_CONDITION_ENUM[id]).toBeTruthy()
   })
 })
 

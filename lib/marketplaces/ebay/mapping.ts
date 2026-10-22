@@ -12,7 +12,45 @@ export function setupGaps(s: EbaySettings): string[] {
   return gaps
 }
 
-/** Inventory API ConditionEnum. Some categories reject some values; eBay's error is shown to the user then. */
+/**
+ * eBay condition IDs (what a category's condition policy lists) → Inventory API ConditionEnum.
+ * Each category allows only some of these, e.g. shoes: 1000/1500/1750/3000; apparel: 1000/1500/1750/2990/3000/3010.
+ */
+export const EBAY_CONDITION_ENUM: Record<string, string> = {
+  "1000": "NEW",
+  "1500": "NEW_OTHER",
+  "1750": "NEW_WITH_DEFECTS",
+  "2000": "CERTIFIED_REFURBISHED",
+  "2010": "EXCELLENT_REFURBISHED",
+  "2020": "VERY_GOOD_REFURBISHED",
+  "2030": "GOOD_REFURBISHED",
+  "2500": "SELLER_REFURBISHED",
+  "2750": "LIKE_NEW",
+  "2990": "PRE_OWNED_EXCELLENT",
+  "3000": "USED_EXCELLENT",
+  "3010": "PRE_OWNED_FAIR",
+  "4000": "USED_VERY_GOOD",
+  "5000": "USED_GOOD",
+  "6000": "USED_ACCEPTABLE",
+  "7000": "FOR_PARTS_OR_NOT_WORKING",
+}
+
+/** Closest eBay condition IDs for a FlipLedger condition, best first. */
+const PREFERRED_CONDITION_IDS: Record<ItemCondition, string[]> = {
+  new_with_tags: ["1000"],
+  new: ["1500", "1000"],
+  like_new: ["2750", "2990", "3000", "4000"],
+  good: ["5000", "3000", "4000", "2990"],
+  fair: ["6000", "3010", "3000"],
+}
+
+/** Pre-select the allowed eBay condition closest to the item's; null when nothing is a clear match. */
+export function defaultConditionId(condition: ItemCondition | null | undefined, allowedIds: string[]): string | null {
+  if (!condition) return null
+  return PREFERRED_CONDITION_IDS[condition].find((id) => allowedIds.includes(id)) ?? null
+}
+
+/** Fallback when no category-specific condition was chosen. Some categories reject some values. */
 export const EBAY_CONDITION: Record<ItemCondition, string> = {
   new_with_tags: "NEW",
   new: "NEW_OTHER",
