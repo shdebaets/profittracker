@@ -1,13 +1,17 @@
 "use client"
 
-import { DollarSign, Package, PackagePlus, Pencil, Share2, Sparkles } from "lucide-react"
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react"
+import { DollarSign, Package, PackagePlus, Pencil, Share2, Sparkles, X } from "lucide-react"
+import { usePathname } from "next/navigation"
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react"
+import { loadItem } from "@/app/(app)/actions/items"
 import { BottomSheet } from "@/components/bottom-sheet"
 import { CrosslistPanel } from "@/components/crosslist/crosslist-panel"
 import type { Item } from "@/lib/types"
+import { cn } from "@/lib/utils"
 import { EntryForm, type EntryMode, type Prefill } from "./entry-form"
 import { HaulForm } from "./haul-form"
 import { ItemDetail } from "./item-detail"
+import { clearSheetStore, readSheetStore, writeSheetStore } from "./sheet-storage"
 
 type SheetState =
   | { kind: "none" }
@@ -17,6 +21,16 @@ type SheetState =
   | { kind: "sell"; item: Item }
   | { kind: "edit"; item: Item }
   | { kind: "crosslist"; item: Item }
+
+type ItemSheet = Extract<SheetState, { item: Item }>
+/** What survives a reload: item sheets keep only the id and refetch the item. */
+type StoredSheet =
+  | Exclude<SheetState, { kind: "none" } | ItemSheet>
+  | { kind: ItemSheet["kind"]; itemId: string }
+
+function toStored(s: Exclude<SheetState, { kind: "none" }>): StoredSheet {
+  return "item" in s ? { kind: s.kind, itemId: s.item.id } : s
+}
 
 type Ctx = {
   openEntry: (mode?: EntryMode, prefill?: Prefill) => void
@@ -47,12 +61,66 @@ export function EntryProvider({ defaultReturnDays, children }: { defaultReturnDa
   const [formKey, setFormKey] = useState(0)
   const [fresh, setFresh] = useState<Map<string, Item>>(new Map())
 
+  // A sheet tucked away while the user visits another page, kept mounted so drafts survive.
+  const [minimized, setMinimized] = useState(false)
+
+  // Set once the user opens or closes a sheet, so a slow restore can't override them.
+  const touched = useRef(false)
+
   const show = useCallback((s: Exclude<SheetState, { kind: "none" }>) => {
+    touched.current = true
+    clearSheetStore()
     setFormKey((k) => k + 1)
     setShown(s)
     setState(s)
+    setMinimized(false)
   }, [])
-  const close = useCallback(() => setState({ kind: "none" }), [])
+  const close = useCallback(() => {
+    touched.current = true
+    clearSheetStore()
+    setState({ kind: "none" })
+    setMinimized(false)
+  }, [])
+  const resume = () => {
+    if (!shown) return
+    writeSheetStore("minimized", null)
+    setState(shown)
+    setMinimized(false)
+  }
+
+  // Bring back a sheet that was minimised before a full reload (e.g. the eBay sign-in).
+  useEffect(() => {
+    const saved = readSheetStore<StoredSheet>("minimized")
+    if (!saved) return
+    const restore = (s: Exclude<SheetState, { kind: "none" }>) => {
+      if (touched.current) return
+      setShown(s)
+      setMinimized(true)
+    }
+    if ("itemId" in saved) {
+      loadItem(saved.itemId).then(
+        (item) => (item ? restore({ kind: saved.kind, item }) : clearSheetStore()),
+        () => clearSheetStore(),
+      )
+    } else {
+      restore(saved)
+    }
+  }, [])
+
+  // The sheet lives in the shared layout, so it would sit on top of the next page after a
+  // link inside it (e.g. "Connect eBay in Settings"). Minimise it instead of losing it.
+  const pathname = usePathname()
+  const [lastPath, setLastPath] = useState(pathname)
+  if (pathname !== lastPath) {
+    setLastPath(pathname)
+    if (state.kind !== "none") {
+      setState({ kind: "none" })
+      setMinimized(true)
+    }
+  }
+  useEffect(() => {
+    if (minimized && shown) writeSheetStore("minimized", toStored(shown))
+  }, [minimized, shown])
 
   const ctx = useMemo<Ctx>(
     () => ({
@@ -109,7 +177,12 @@ export function EntryProvider({ defaultReturnDays, children }: { defaultReturnDa
     body = <EntryForm key={formKey} variant="sell" item={s.item} defaultReturnDays={defaultReturnDays} onDone={close} />
   } else if (s?.kind === "crosslist") {
     header = { title: "Cross-list", description: s.item.title || `Item #${s.item.seq}`, icon: <Share2 className="size-5 text-brand" />, iconClass: "bg-brand-soft" }
-    body = <CrosslistPanel key={formKey} item={s.item} onBack={() => show({ kind: "item", item: s.item })} />
+    body = (
+      <CrosslistPanel
+        key={formKey} item={s.item} active={state.kind === "crosslist"}
+        onBack={() => show({ kind: "item", item: s.item })}
+      />
+    )
   } else if (s?.kind === "edit") {
     header = { title: "Edit Entry", description: `#${s.item.seq}`, icon: <Pencil className="size-5 text-muted-foreground" />, iconClass: "bg-muted" }
     body = <EntryForm key={formKey} variant="edit" item={s.item} defaultReturnDays={defaultReturnDays} onDone={close} />
@@ -121,10 +194,27 @@ export function EntryProvider({ defaultReturnDays, children }: { defaultReturnDa
       <BottomSheet
         open={state.kind !== "none"}
         onOpenChange={(o) => !o && close()}
+        keepMounted={minimized || state.kind !== "none"}
         {...header}
       >
         {body}
       </BottomSheet>
+      {minimized && (
+        <div className="fixed inset-x-0 bottom-[calc(6rem+env(safe-area-inset-bottom))] z-40 px-4">
+          <div className="mx-auto flex max-w-lg items-center gap-2 rounded-2xl border bg-card p-2 shadow-lg">
+            <button onClick={resume} className="flex min-w-0 flex-1 items-center gap-3 text-left">
+              <span className={cn("grid size-9 shrink-0 place-items-center rounded-xl", header.iconClass)}>{header.icon}</span>
+              <span className="min-w-0">
+                <span className="block truncate text-sm font-bold">{header.title}</span>
+                <span className="block truncate text-xs text-muted-foreground">{header.description || "Tap to pick up where you left off"}</span>
+              </span>
+            </button>
+            <button onClick={close} aria-label="Discard" className="grid size-9 shrink-0 place-items-center rounded-xl text-muted-foreground">
+              <X className="size-4" />
+            </button>
+          </div>
+        </div>
+      )}
     </EntryContext.Provider>
   )
 }

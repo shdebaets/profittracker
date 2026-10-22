@@ -7,11 +7,19 @@ import { recordSale, takeDown, type SaleOutcome } from "@/lib/crosslist/engine"
 import { adapters, supabaseStore } from "@/lib/crosslist/store"
 import type { SaleColumns } from "@/lib/items/sell"
 import type { MarketplaceId } from "@/lib/marketplaces/registry"
+import { getItem } from "@/lib/data"
 import { UserError } from "@/lib/errors"
 import { marketplace } from "@/lib/marketplaces/registry"
 import { removeUnreferencedPhotos } from "@/lib/photos"
 import { distributeHaul } from "@/lib/profit"
+import type { Item } from "@/lib/types"
 import { fail, type ActionResult } from "./result"
+
+/** Reload one item, e.g. to restore a minimised sheet after a full page reload. */
+export async function loadItem(id: string): Promise<Item | null> {
+  if (!z.string().uuid().safeParse(id).success) return null
+  return getItem(id)
+}
 
 const cents = z.number().int().min(0).max(100_000_000)
 const platform = z.enum(["cash", "card", "mercari_depop", "ebay", "poshmark_amz", "custom"])
