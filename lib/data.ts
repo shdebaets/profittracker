@@ -17,6 +17,20 @@ export async function getItems(): Promise<Item[]> {
   return rows.map((r) => ({ ...r, photo_urls: (r.photo_paths ?? []).map((p) => urls.get(p) ?? "") }))
 }
 
+export async function getItem(id: string): Promise<Item | null> {
+  const { supabase } = await requireUser()
+  const { data, error } = await supabase
+    .from("items")
+    .select("*, listings:marketplace_listings(*)")
+    .eq("id", id)
+    .maybeSingle()
+  if (error) throw error
+  if (!data) return null
+  const row = data as Omit<Item, "photo_urls">
+  const urls = await signPaths(supabase, row.photo_paths ?? [])
+  return { ...row, photo_urls: (row.photo_paths ?? []).map((p) => urls.get(p) ?? "") }
+}
+
 export async function getConnections(): Promise<MarketplaceConnection[]> {
   const { supabase } = await requireUser()
   const { data, error } = await supabase.from("marketplace_connections").select("*")

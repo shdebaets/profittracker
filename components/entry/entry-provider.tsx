@@ -2,7 +2,8 @@
 
 import { DollarSign, Package, PackagePlus, Pencil, Share2, Sparkles, X } from "lucide-react"
 import { usePathname } from "next/navigation"
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react"
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react"
+import { loadItem } from "@/app/(app)/actions/items"
 import { BottomSheet } from "@/components/bottom-sheet"
 import { CrosslistPanel } from "@/components/crosslist/crosslist-panel"
 import type { Item } from "@/lib/types"
@@ -10,6 +11,7 @@ import { cn } from "@/lib/utils"
 import { EntryForm, type EntryMode, type Prefill } from "./entry-form"
 import { HaulForm } from "./haul-form"
 import { ItemDetail } from "./item-detail"
+import { clearSheetStore, readSheetStore, writeSheetStore } from "./sheet-storage"
 
 type SheetState =
   | { kind: "none" }
@@ -19,6 +21,16 @@ type SheetState =
   | { kind: "sell"; item: Item }
   | { kind: "edit"; item: Item }
   | { kind: "crosslist"; item: Item }
+
+type ItemSheet = Extract<SheetState, { item: Item }>
+/** What survives a reload: item sheets keep only the id and refetch the item. */
+type StoredSheet =
+  | Exclude<SheetState, { kind: "none" } | ItemSheet>
+  | { kind: ItemSheet["kind"]; itemId: string }
+
+function toStored(s: Exclude<SheetState, { kind: "none" }>): StoredSheet {
+  return "item" in s ? { kind: s.kind, itemId: s.item.id } : s
+}
 
 type Ctx = {
   openEntry: (mode?: EntryMode, prefill?: Prefill) => void
@@ -52,21 +64,48 @@ export function EntryProvider({ defaultReturnDays, children }: { defaultReturnDa
   // A sheet tucked away while the user visits another page, kept mounted so drafts survive.
   const [minimized, setMinimized] = useState(false)
 
+  // Set once the user opens or closes a sheet, so a slow restore can't override them.
+  const touched = useRef(false)
+
   const show = useCallback((s: Exclude<SheetState, { kind: "none" }>) => {
+    touched.current = true
+    clearSheetStore()
     setFormKey((k) => k + 1)
     setShown(s)
     setState(s)
     setMinimized(false)
   }, [])
   const close = useCallback(() => {
+    touched.current = true
+    clearSheetStore()
     setState({ kind: "none" })
     setMinimized(false)
   }, [])
   const resume = () => {
     if (!shown) return
+    writeSheetStore("minimized", null)
     setState(shown)
     setMinimized(false)
   }
+
+  // Bring back a sheet that was minimised before a full reload (e.g. the eBay sign-in).
+  useEffect(() => {
+    const saved = readSheetStore<StoredSheet>("minimized")
+    if (!saved) return
+    const restore = (s: Exclude<SheetState, { kind: "none" }>) => {
+      if (touched.current) return
+      setShown(s)
+      setMinimized(true)
+    }
+    if ("itemId" in saved) {
+      loadItem(saved.itemId).then(
+        (item) => (item ? restore({ kind: saved.kind, item }) : clearSheetStore()),
+        () => clearSheetStore(),
+      )
+    } else {
+      restore(saved)
+    }
+  }, [])
 
   // The sheet lives in the shared layout, so it would sit on top of the next page after a
   // link inside it (e.g. "Connect eBay in Settings"). Minimise it instead of losing it.
@@ -79,6 +118,9 @@ export function EntryProvider({ defaultReturnDays, children }: { defaultReturnDa
       setMinimized(true)
     }
   }
+  useEffect(() => {
+    if (minimized && shown) writeSheetStore("minimized", toStored(shown))
+  }, [minimized, shown])
 
   const ctx = useMemo<Ctx>(
     () => ({

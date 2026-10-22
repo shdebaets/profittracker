@@ -10,6 +10,7 @@ import {
   delistEverywhere, ebayAspects, ebayCategories, endListing, forgetListing, getEbayStatus,
   markAssistedListed, publishEbay, saveListingDetails, type EbayStatus,
 } from "@/app/(app)/actions/crosslist"
+import { readSheetStore, writeSheetStore } from "@/components/entry/sheet-storage"
 import { FieldLabel, MoneyInput, NativeSelect, TextInput } from "@/components/fields"
 import type { Aspect, CategorySuggestion } from "@/lib/marketplaces/ebay/adapter"
 import { ITEM_CONDITIONS, MARKETPLACES, type ItemCondition, type Marketplace } from "@/lib/marketplaces/registry"
@@ -72,7 +73,11 @@ function legacyCopy(text: string) {
 }
 
 export function CrosslistPanel({ item, active, onBack }: { item: Item; active: boolean; onBack: () => void }) {
-  const [draft, setDraft] = useState<Draft>(() => draftFrom(item))
+  // Unsaved edits are kept per tab so a minimised sheet comes back intact after a reload.
+  const [draft, setDraft] = useState<Draft>(() => {
+    const kept = readSheetStore<{ itemId: string; draft: Draft }>("crosslist-draft")
+    return kept?.itemId === item.id ? kept.draft : draftFrom(item)
+  })
   const [ebay, setEbay] = useState<EbayStatus | null>(null)
   const [pending, startTransition] = useTransition()
   const saved = draftFrom(item)
@@ -80,6 +85,10 @@ export function CrosslistPanel({ item, active, onBack }: { item: Item; active: b
     k === "price" ? toCents(draft.price) !== toCents(saved.price) : draft[k].trim() !== saved[k],
   )
   const set = <K extends keyof Draft>(k: K, v: Draft[K]) => setDraft((d) => ({ ...d, [k]: v }))
+
+  useEffect(() => {
+    writeSheetStore("crosslist-draft", dirty ? { itemId: item.id, draft } : null)
+  }, [dirty, draft, item.id])
 
   // Re-check when the sheet is resumed: the user may have just fixed eBay setup in Settings.
   useEffect(() => {
