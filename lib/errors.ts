@@ -59,7 +59,7 @@ function fromEbay(e: Obj): string {
   if (status === 429) return "eBay is busy right now. Wait a minute and try again."
   if (status >= 500 || ids.includes(25001)) return "eBay is having trouble right now. Try again in a few minutes."
   if (status === 403) return "eBay didn't allow that. Make sure your eBay account is set up to sell, then reconnect it in Settings."
-  if (/seller'?s? account|register as a seller|seller registration|before you can list/i.test(text))
+  if (/create a seller'?s account|register as a seller|seller registration|before you can list this item/i.test(text))
     return "Your eBay account isn't set up to sell yet. On ebay.com, start a listing or open Seller Hub and finish eBay's seller setup (usually adding payout details), then try again."
   if (/picture|image|photo/i.test(text)) return "eBay couldn't use this item's photos. Try again, or remove and re-add the photos."
   if (/business polic|fulfillment polic|payment polic|return polic|not opted in/i.test(text))
