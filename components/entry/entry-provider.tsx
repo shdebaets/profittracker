@@ -1,6 +1,7 @@
 "use client"
 
 import { DollarSign, Package, PackagePlus, Pencil, Share2, Sparkles } from "lucide-react"
+import { usePathname } from "next/navigation"
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react"
 import { BottomSheet } from "@/components/bottom-sheet"
 import { CrosslistPanel } from "@/components/crosslist/crosslist-panel"
@@ -53,6 +54,15 @@ export function EntryProvider({ defaultReturnDays, children }: { defaultReturnDa
     setState(s)
   }, [])
   const close = useCallback(() => setState({ kind: "none" }), [])
+
+  // The sheet lives in the shared layout, so it would survive a link to another page
+  // (e.g. "Connect eBay in Settings"). Close it whenever the route changes.
+  const pathname = usePathname()
+  const [lastPath, setLastPath] = useState(pathname)
+  if (pathname !== lastPath) {
+    setLastPath(pathname)
+    setState({ kind: "none" })
+  }
 
   const ctx = useMemo<Ctx>(
     () => ({
