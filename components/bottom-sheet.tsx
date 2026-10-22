@@ -4,10 +4,12 @@ import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/
 import { cn } from "@/lib/utils"
 
 export function BottomSheet({
-  open, onOpenChange, icon, iconClass, title, description, children,
+  open, onOpenChange, keepMounted, icon, iconClass, title, description, children,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
+  /** Keep the content (and its form state) mounted while closed. */
+  keepMounted?: boolean
   icon?: React.ReactNode
   iconClass?: string
   title: string
@@ -18,6 +20,7 @@ export function BottomSheet({
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
         side="bottom"
+        keepMounted={keepMounted}
         className="mx-auto max-h-[92dvh] w-full max-w-lg gap-0 rounded-t-3xl border-0 bg-background p-0"
       >
         <div className="mx-auto mt-3 h-1.5 w-12 shrink-0 rounded-full bg-muted-foreground/25" />

@@ -1,11 +1,12 @@
 "use client"
 
-import { DollarSign, Package, PackagePlus, Pencil, Share2, Sparkles } from "lucide-react"
+import { DollarSign, Package, PackagePlus, Pencil, Share2, Sparkles, X } from "lucide-react"
 import { usePathname } from "next/navigation"
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react"
 import { BottomSheet } from "@/components/bottom-sheet"
 import { CrosslistPanel } from "@/components/crosslist/crosslist-panel"
 import type { Item } from "@/lib/types"
+import { cn } from "@/lib/utils"
 import { EntryForm, type EntryMode, type Prefill } from "./entry-form"
 import { HaulForm } from "./haul-form"
 import { ItemDetail } from "./item-detail"
@@ -48,20 +49,35 @@ export function EntryProvider({ defaultReturnDays, children }: { defaultReturnDa
   const [formKey, setFormKey] = useState(0)
   const [fresh, setFresh] = useState<Map<string, Item>>(new Map())
 
+  // A sheet tucked away while the user visits another page, kept mounted so drafts survive.
+  const [minimized, setMinimized] = useState(false)
+
   const show = useCallback((s: Exclude<SheetState, { kind: "none" }>) => {
     setFormKey((k) => k + 1)
     setShown(s)
     setState(s)
+    setMinimized(false)
   }, [])
-  const close = useCallback(() => setState({ kind: "none" }), [])
+  const close = useCallback(() => {
+    setState({ kind: "none" })
+    setMinimized(false)
+  }, [])
+  const resume = () => {
+    if (!shown) return
+    setState(shown)
+    setMinimized(false)
+  }
 
-  // The sheet lives in the shared layout, so it would survive a link to another page
-  // (e.g. "Connect eBay in Settings"). Close it whenever the route changes.
+  // The sheet lives in the shared layout, so it would sit on top of the next page after a
+  // link inside it (e.g. "Connect eBay in Settings"). Minimise it instead of losing it.
   const pathname = usePathname()
   const [lastPath, setLastPath] = useState(pathname)
   if (pathname !== lastPath) {
     setLastPath(pathname)
-    setState({ kind: "none" })
+    if (state.kind !== "none") {
+      setState({ kind: "none" })
+      setMinimized(true)
+    }
   }
 
   const ctx = useMemo<Ctx>(
@@ -119,7 +135,12 @@ export function EntryProvider({ defaultReturnDays, children }: { defaultReturnDa
     body = <EntryForm key={formKey} variant="sell" item={s.item} defaultReturnDays={defaultReturnDays} onDone={close} />
   } else if (s?.kind === "crosslist") {
     header = { title: "Cross-list", description: s.item.title || `Item #${s.item.seq}`, icon: <Share2 className="size-5 text-brand" />, iconClass: "bg-brand-soft" }
-    body = <CrosslistPanel key={formKey} item={s.item} onBack={() => show({ kind: "item", item: s.item })} />
+    body = (
+      <CrosslistPanel
+        key={formKey} item={s.item} active={state.kind === "crosslist"}
+        onBack={() => show({ kind: "item", item: s.item })}
+      />
+    )
   } else if (s?.kind === "edit") {
     header = { title: "Edit Entry", description: `#${s.item.seq}`, icon: <Pencil className="size-5 text-muted-foreground" />, iconClass: "bg-muted" }
     body = <EntryForm key={formKey} variant="edit" item={s.item} defaultReturnDays={defaultReturnDays} onDone={close} />
@@ -131,10 +152,27 @@ export function EntryProvider({ defaultReturnDays, children }: { defaultReturnDa
       <BottomSheet
         open={state.kind !== "none"}
         onOpenChange={(o) => !o && close()}
+        keepMounted={minimized || state.kind !== "none"}
         {...header}
       >
         {body}
       </BottomSheet>
+      {minimized && (
+        <div className="fixed inset-x-0 bottom-[calc(6rem+env(safe-area-inset-bottom))] z-40 px-4">
+          <div className="mx-auto flex max-w-lg items-center gap-2 rounded-2xl border bg-card p-2 shadow-lg">
+            <button onClick={resume} className="flex min-w-0 flex-1 items-center gap-3 text-left">
+              <span className={cn("grid size-9 shrink-0 place-items-center rounded-xl", header.iconClass)}>{header.icon}</span>
+              <span className="min-w-0">
+                <span className="block truncate text-sm font-bold">{header.title}</span>
+                <span className="block truncate text-xs text-muted-foreground">{header.description || "Tap to pick up where you left off"}</span>
+              </span>
+            </button>
+            <button onClick={close} aria-label="Discard" className="grid size-9 shrink-0 place-items-center rounded-xl text-muted-foreground">
+              <X className="size-4" />
+            </button>
+          </div>
+        </div>
+      )}
     </EntryContext.Provider>
   )
 }

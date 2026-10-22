@@ -71,7 +71,7 @@ function legacyCopy(text: string) {
   }
 }
 
-export function CrosslistPanel({ item, onBack }: { item: Item; onBack: () => void }) {
+export function CrosslistPanel({ item, active, onBack }: { item: Item; active: boolean; onBack: () => void }) {
   const [draft, setDraft] = useState<Draft>(() => draftFrom(item))
   const [ebay, setEbay] = useState<EbayStatus | null>(null)
   const [pending, startTransition] = useTransition()
@@ -81,9 +81,10 @@ export function CrosslistPanel({ item, onBack }: { item: Item; onBack: () => voi
   )
   const set = <K extends keyof Draft>(k: K, v: Draft[K]) => setDraft((d) => ({ ...d, [k]: v }))
 
+  // Re-check when the sheet is resumed: the user may have just fixed eBay setup in Settings.
   useEffect(() => {
-    getEbayStatus().then(setEbay, () => setEbay(null))
-  }, [])
+    if (active) getEbayStatus().then(setEbay, () => setEbay(null))
+  }, [active])
 
   async function saveDraft(): Promise<boolean> {
     if (!dirty) return true
