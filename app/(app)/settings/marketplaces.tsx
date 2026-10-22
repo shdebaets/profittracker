@@ -11,6 +11,7 @@ import { setupGaps } from "@/lib/marketplaces/ebay/mapping"
 import { MARKETPLACES } from "@/lib/marketplaces/registry"
 import type { EbayPolicy, MarketplaceConnection } from "@/lib/types"
 import { cn } from "@/lib/utils"
+import { GENERIC_ERROR } from "@/lib/errors"
 
 const CONNECT_MESSAGES: Record<string, [ok: boolean, msg: string]> = {
   connected: [true, "eBay connected"],
@@ -122,7 +123,7 @@ function EbaySetup({ ebay }: { ebay: MarketplaceConnection }) {
     start(async () => {
       const res = await fn()
       if (res.ok) toast.success(msg)
-      else toast.error(res.error ?? "Failed")
+      else toast.error(res.error ?? GENERIC_ERROR)
     })
 
   return (

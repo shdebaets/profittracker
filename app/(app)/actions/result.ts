@@ -1,9 +1,8 @@
-import { z } from "zod"
+import { reportError } from "@/lib/errors"
 
 export type ActionResult = { ok: true } | { ok: false; error: string }
 
+/** Every server action's catch: a friendly message for the UI, the raw error to the logs. */
 export function fail(e: unknown): ActionResult {
-  if (e instanceof z.ZodError) return { ok: false, error: e.issues[0]?.message ?? "Invalid input" }
-  if (e && typeof e === "object" && "message" in e) return { ok: false, error: String(e.message) }
-  return { ok: false, error: "Something went wrong" }
+  return { ok: false, error: reportError(e, "action") }
 }

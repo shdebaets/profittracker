@@ -4,6 +4,7 @@ import { headers } from "next/headers"
 import { redirect } from "next/navigation"
 import { z } from "zod"
 import { createClient } from "@/lib/supabase/server"
+import { friendlyError } from "@/lib/errors"
 
 export type LoginState = { error?: string; sentTo?: string; email?: string }
 
@@ -33,15 +34,15 @@ export async function authenticate(_prev: LoginState, formData: FormData): Promi
 
   if (mode === "magic") {
     const { error } = await supabase.auth.signInWithOtp({ email, options: { emailRedirectTo } })
-    return error ? { error: error.message, email } : { sentTo: email }
+    return error ? { error: friendlyError(error), email } : { sentTo: email }
   }
   if (mode === "signup") {
     const { data, error } = await supabase.auth.signUp({ email, password, options: { emailRedirectTo } })
-    if (error) return { error: error.message, email }
+    if (error) return { error: friendlyError(error), email }
     if (!data.session) return { sentTo: email }
   } else {
     const { error } = await supabase.auth.signInWithPassword({ email, password })
-    if (error) return { error: error.message, email }
+    if (error) return { error: friendlyError(error), email }
   }
   redirect("/")
 }
