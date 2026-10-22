@@ -26,6 +26,8 @@ export function ebayConfig() {
     authUrl: sandbox ? "https://auth.sandbox.ebay.com/oauth2/authorize" : "https://auth.ebay.com/oauth2/authorize",
     api: sandbox ? "https://api.sandbox.ebay.com" : "https://api.ebay.com",
     apiz: sandbox ? "https://apiz.sandbox.ebay.com" : "https://apiz.ebay.com",
+    /** Seller Hub page where sellers edit their shipping, payment and return policies. */
+    businessPoliciesUrl: sandbox ? "https://www.sandbox.ebay.com/bp/manage" : "https://www.ebay.com/bp/manage",
     listingUrl: (listingId: string) =>
       sandbox ? `https://sandbox.ebay.com/itm/${listingId}` : `https://www.ebay.com/itm/${listingId}`,
   }

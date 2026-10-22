@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest"
 import { decrypt, encrypt } from "@/lib/crypto"
 import { fitWithin } from "@/lib/image"
 import { challengeResponse } from "./deletion"
-import { defaultConditionId, EBAY_CONDITION_ENUM, ebayTitle, ordersToSales, setupGaps, type EbayOrder } from "./mapping"
+import { defaultConditionId, EBAY_CONDITION_ENUM, ebayTitle, missingPolicies, ordersToSales, policyBodies, setupGaps, type EbayOrder } from "./mapping"
 
 describe("ordersToSales", () => {
   const order: EbayOrder = {
@@ -98,5 +98,43 @@ describe("fitWithin", () => {
     expect(fitWithin(4032, 3024)).toEqual({ width: 1600, height: 1200 })
     expect(fitWithin(3024, 4032)).toEqual({ width: 1200, height: 1600 })
     expect(fitWithin(800, 600)).toEqual({ width: 800, height: 600 })
+  })
+})
+
+describe("starter business policies", () => {
+  const base = { shipping: { free: false, costCents: 899, handlingDays: 2 as const }, returns: { accepted: true } }
+  const ship = (b: Record<string, unknown>) =>
+    (b.shippingOptions as { shippingServices: Record<string, unknown>[] }[])[0].shippingServices[0]
+
+  it("charges the buyer a flat USPS Ground Advantage rate", () => {
+    const { fulfillment } = policyBodies(base)
+    expect(fulfillment.handlingTime).toEqual({ value: 2, unit: "DAY" })
+    expect(ship(fulfillment)).toMatchObject({
+      shippingCarrierCode: "USPS",
+      shippingServiceCode: "USPSParcel",
+      freeShipping: false,
+      shippingCost: { value: "8.99", currency: "USD" },
+    })
+  })
+
+  it("offers free shipping at $0", () => {
+    const { fulfillment } = policyBodies({ ...base, shipping: { ...base.shipping, free: true } })
+    expect(ship(fulfillment)).toMatchObject({ freeShipping: true, shippingCost: { value: "0.00" } })
+  })
+
+  it("builds 30-day buyer-paid returns or no returns", () => {
+    expect(policyBodies(base).return).toMatchObject({
+      returnsAccepted: true,
+      returnPeriod: { value: 30, unit: "DAY" },
+      returnShippingCostPayer: "BUYER",
+    })
+    const none = policyBodies({ ...base, returns: { accepted: false } }).return
+    expect(none).toMatchObject({ returnsAccepted: false })
+    expect(none).not.toHaveProperty("returnPeriod")
+  })
+
+  it("only creates the policies that aren't picked yet", () => {
+    expect(missingPolicies({})).toEqual(["fulfillment", "payment", "return"])
+    expect(missingPolicies({ fulfillmentPolicyId: "1", returnPolicyId: "3" })).toEqual(["payment"])
   })
 })

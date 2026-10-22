@@ -24,6 +24,7 @@ export default async function SettingsPage({ searchParams }: PageProps<"/setting
         ebay={connections.find((c) => c.marketplace === "ebay") ?? null}
         configured={cfg.configured}
         sandbox={cfg.sandbox}
+        policiesUrl={cfg.businessPoliciesUrl}
         connectStatus={typeof params.ebay === "string" ? params.ebay : undefined}
       />
       <div className="rounded-3xl border bg-card p-5 text-sm text-muted-foreground">
