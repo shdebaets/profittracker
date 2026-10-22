@@ -17,6 +17,8 @@ Update CLAUDE.md in the same PR whenever you change something durable: architect
   - `route.ts` files may only export HTTP handlers and route config; put helpers in `lib/`.
 - **Supabase:** Postgres with row-level security (RLS) on every table, no ORM, `@supabase/ssr`. Plus Storage (private `item-photos` bucket) and Auth (email/password and magic link).
 - **UI:** Tailwind v4, shadcn plus `@base-ui/react`, lucide icons, sonner toasts. Mobile-first: test at 375px.
+  - Form controls come from `components/fields.tsx` (`TextInput`, `NativeSelect`, `MoneyInput`), all `h-12` with the same background and focus ring. Don't resize them per call site. `NativeSelect`'s `className` styles its wrapper (use it for width).
+  - Tailwind arbitrary values can't contain spaces. An inline SVG data URL in a class gets split into junk classes with no error (the old select arrow never rendered because of this). Use a lucide icon instead.
 - **zod 4** for every server-action input. **vitest** for unit tests.
 
 ## Commands
@@ -49,6 +51,7 @@ Local QA logins live in `.env.example` (`qa-a@flipledger.test`, `qa-b@flipledger
   - Uploaded by direct PUT to signed upload URLs.
   - Stored at `item-photos/{user_id}/{uuid}.jpg`.
   - `photo_paths` is copied on partial sales, so delete files only with `removeUnreferencedPhotos`.
+  - `PhotoPicker` reports in-flight uploads (`onUploadingChange`) and hands finished photos to `onUploaded` for the caller to append. Never rebuild the list from the `value` captured when the upload started. The entry form warns before saving mid-upload and discards uploads that finish after it's saved or closed.
 - **Errors:** `lib/errors.ts`.
   - Throw `UserError` for messages written for people.
   - Everything else is translated by `friendlyError()`: eBay, Supabase database/auth/storage, network, zod.
