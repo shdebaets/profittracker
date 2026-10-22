@@ -12,7 +12,7 @@ import {
 import { ebayConfig } from "@/lib/marketplaces/ebay/client"
 import { setupGaps } from "@/lib/marketplaces/ebay/mapping"
 import { getUserToken } from "@/lib/marketplaces/ebay/oauth"
-import { ensureLocation, loadPolicies, saveSettings } from "@/lib/marketplaces/ebay/setup"
+import { createPolicies, ensureLocation, loadPolicies, saveSettings } from "@/lib/marketplaces/ebay/setup"
 import { syncEbaySales } from "@/lib/marketplaces/ebay/sync"
 import { marketplace } from "@/lib/marketplaces/registry"
 import { photoLink } from "@/lib/photo-links"
@@ -276,6 +276,30 @@ export async function refreshEbayPolicies(): Promise<ActionResult> {
     const auth = await getUserToken(userId, admin)
     if (!auth) throw new UserError("eBay isn't connected. Connect it in Settings → Marketplaces.")
     await saveSettings(admin, userId, await loadPolicies(auth.token, auth.account.settings))
+    return done()
+  } catch (e) {
+    return fail(e)
+  }
+}
+
+const policyChoicesSchema = z.object({
+  shipping: z.object({
+    free: z.boolean(),
+    costCents: z.number().int().min(0).max(10_000),
+    handlingDays: z.union([z.literal(1), z.literal(2), z.literal(3)]),
+  }),
+  returns: z.object({ accepted: z.boolean() }),
+})
+
+/** Create starter business policies on the seller's eBay account for whatever isn't picked yet. */
+export async function createEbayPolicies(input: z.input<typeof policyChoicesSchema>): Promise<ActionResult> {
+  try {
+    const choices = policyChoicesSchema.parse(input)
+    const { userId } = await requireUser()
+    const admin = createAdminClient()
+    const auth = await getUserToken(userId, admin)
+    if (!auth) throw new UserError("eBay isn't connected. Connect it in Settings → Marketplaces.")
+    await saveSettings(admin, userId, await createPolicies(auth.token, auth.account.settings, choices))
     return done()
   } catch (e) {
     return fail(e)

@@ -66,6 +66,7 @@ Local QA logins live in `.env.example` (`qa-a@flipledger.test`, `qa-b@flipledger
   - Publishing: Inventory API `inventory_item` → `offer` → `publish`. SKU = item id.
   - Sales: Fulfillment `getOrders`, synced on app open (`AutoSync`, at most every 5 minutes), via "Sync now", and by a daily cron at `/api/cron/sync-sales`. `marketplace_sales` makes it idempotent.
   - `/api/marketplaces/ebay/account-deletion` is required by eBay for production keys.
+  - **Business policies** (shipping, payment, returns) are required to list. Settings can create starter ones through the Account API (`createEbayPolicies` → `createPolicies`, `sell.account` scope) named "FlipLedger shipping/payment/returns", or link to eBay's page (`businessPoliciesUrl`). They're normal policies the seller can edit on eBay. USPS Ground Advantage's service code is `USPSParcel`.
 - **Photos to eBay** go as short signed links, `/api/p/<exp>/<sig>/<path>` (`lib/photo-links.ts`), because eBay rejects picture URLs over 500 characters (3,975 total).
 - **Chrome extension:** `extension/` (MV3, plain JS, excluded from tsconfig). It's in PR #3 and not on `main` until that merges. It auto-fills Facebook Marketplace; the user picks the category and clicks Publish. The app talks to it via `window.postMessage` (`lib/extension.ts`, `components/crosslist/extension-bridge.tsx`). Its fields are found by visible labels. It has not been run on the real facebook.com yet.
 
@@ -103,8 +104,9 @@ A Capacitor app could put the same fill-in scripts in an in-app web view for pho
 
 ## Git workflow
 
+- **Start every session from the latest `main`:** run `git fetch origin` first and branch from `origin/main`. This checkout is often many commits behind.
+- **Work in your own git worktree for every task**, never in the shared checkout or on a branch another session has checked out, so changes don't get mixed up: `git worktree add ../profit-tracking-app-<task> -b <branch> origin/main`. Other Claude sessions often share this folder, and uncommitted changes there are usually someone else's work in progress, so leave them alone. Symlink `node_modules` into the worktree; Turbopack builds fail through the symlink, so rely on the Vercel preview build (or run `npm ci` in the worktree to use `next dev`).
 - Work on a branch, open a PR to `main`, and let the user merge. Auto mode won't merge unreviewed PRs.
-- **Other Claude sessions often share this folder.** Check `git status` / `git worktree list` first. If someone else's work is checked out, use a separate worktree from `origin/main`; symlink `node_modules`, but Turbopack builds fail through the symlink, so rely on the Vercel preview build.
 - **Before pushing more commits to a PR branch, check the PR isn't already merged.** Commits pushed after a merge never reach `main`; that happened once with PR #7.
 - **Run tests before `git push`**, chained with `&&`, never `;`.
 - `feature/google-signin` holds a finished Google sign-in. Keep it off `main` until the client asks.

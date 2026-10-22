@@ -1,13 +1,14 @@
 "use client"
 
-import { Link2, Loader2, RefreshCw } from "lucide-react"
+import { ExternalLink, Link2, Loader2, RefreshCw, Sparkles } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { useEffect, useState, useTransition } from "react"
 import { toast } from "sonner"
-import { disconnectEbay, refreshEbayPolicies, saveEbaySettings, syncSales } from "@/app/(app)/actions/crosslist"
-import { FieldLabel, NativeSelect, TextInput } from "@/components/fields"
+import { createEbayPolicies, disconnectEbay, refreshEbayPolicies, saveEbaySettings, syncSales } from "@/app/(app)/actions/crosslist"
+import { FieldLabel, MoneyInput, NativeSelect, Segmented, TextInput } from "@/components/fields"
 import { relativeTime } from "@/lib/dates"
-import { setupGaps } from "@/lib/marketplaces/ebay/mapping"
+import { missingPolicies, setupGaps } from "@/lib/marketplaces/ebay/mapping"
+import { toCents } from "@/lib/money"
 import { MARKETPLACES } from "@/lib/marketplaces/registry"
 import type { EbayPolicy, MarketplaceConnection } from "@/lib/types"
 import { cn } from "@/lib/utils"
@@ -22,11 +23,13 @@ const CONNECT_MESSAGES: Record<string, [ok: boolean, msg: string]> = {
 }
 
 export function MarketplacesSettings({
-  ebay, configured, sandbox, connectStatus,
+  ebay, configured, sandbox, policiesUrl, connectStatus,
 }: {
   ebay: MarketplaceConnection | null
   configured: boolean
   sandbox: boolean
+  /** eBay's business policies page (sandbox or production). */
+  policiesUrl: string
   connectStatus?: string
 }) {
   const router = useRouter()
@@ -79,7 +82,14 @@ export function MarketplacesSettings({
             <Link2 className="size-4" /> Connect eBay
           </a>
         )}
-        {ebay && <EbaySetup ebay={ebay} />}
+        {ebay && (
+          // Remount when policies change so the dropdowns pick up ones we just created.
+          <EbaySetup
+            key={[ebay.settings?.fulfillmentPolicyId, ebay.settings?.paymentPolicyId, ebay.settings?.returnPolicyId].join()}
+            ebay={ebay}
+            policiesUrl={policiesUrl}
+          />
+        )}
       </div>
 
       <div>
@@ -109,7 +119,7 @@ function PolicySelect({ label, list, value, onChange }: { label: string; list: E
   )
 }
 
-function EbaySetup({ ebay }: { ebay: MarketplaceConnection }) {
+function EbaySetup({ ebay, policiesUrl }: { ebay: MarketplaceConnection; policiesUrl: string }) {
   const s = ebay.settings ?? {}
   const [f, setF] = useState(s.fulfillmentPolicyId ?? "")
   const [p, setP] = useState(s.paymentPolicyId ?? "")
@@ -134,6 +144,7 @@ function EbaySetup({ ebay }: { ebay: MarketplaceConnection }) {
       ) : (
         <p className="text-sm text-profit">Ready to list on eBay.</p>
       )}
+      {missingPolicies(s).length > 0 && <PolicyStarter settings={s} />}
       <PolicySelect label="Shipping policy" list={policies.fulfillment} value={f} onChange={setF} />
       <PolicySelect label="Payment policy" list={policies.payment} value={p} onChange={setP} />
       <PolicySelect label="Return policy" list={policies.return} value={r} onChange={setR} />
@@ -142,7 +153,11 @@ function EbaySetup({ ebay }: { ebay: MarketplaceConnection }) {
         <TextInput inputMode="numeric" value={zip} onChange={(e) => setZip(e.target.value)} placeholder="e.g. 30301" className="h-11" />
       </div>
       <p className="text-xs text-muted-foreground">
-        Policies are managed on eBay (Account → Business policies). Made a new one? Tap refresh.
+        Policies live on your eBay account, so you can edit them or add more anytime.{" "}
+        <a href={policiesUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-0.5 font-semibold text-blue-600">
+          Manage on eBay <ExternalLink className="size-3" />
+        </a>
+        , then tap Refresh policies.
       </p>
       <div className="grid grid-cols-2 gap-2">
         <button
@@ -194,6 +209,83 @@ function EbaySetup({ ebay }: { ebay: MarketplaceConnection }) {
           Disconnect eBay
         </button>
       </div>
+    </div>
+  )
+}
+
+/** Creates simple shipping/payment/return policies on eBay for whatever the seller hasn't picked. */
+function PolicyStarter({ settings }: { settings: MarketplaceConnection["settings"] }) {
+  const missing = missingPolicies(settings)
+  const [shipping, setShipping] = useState<"buyer" | "free">("buyer")
+  const [cost, setCost] = useState("8.99")
+  const [handling, setHandling] = useState<"1" | "2" | "3">("1")
+  const [returns, setReturns] = useState<"30" | "none">("30")
+  const [pending, start] = useTransition()
+
+  const create = () =>
+    start(async () => {
+      const costCents = toCents(cost)
+      if (shipping === "buyer" && !costCents) return void toast.error("Enter what buyers pay for shipping")
+      const res = await createEbayPolicies({
+        shipping: { free: shipping === "free", costCents, handlingDays: Number(handling) as 1 | 2 | 3 },
+        returns: { accepted: returns === "30" },
+      })
+      if (res.ok) toast.success("Policies created on eBay")
+      else toast.error(res.error ?? GENERIC_ERROR)
+    })
+
+  return (
+    <div className="flex flex-col gap-3 rounded-2xl border border-blue-600/30 bg-blue-600/5 p-3">
+      <div>
+        <p className="flex items-center gap-1.5 text-sm font-semibold"><Sparkles className="size-4 text-blue-600" /> Set up policies for me</p>
+        <p className="text-xs text-muted-foreground">
+          Don&apos;t have policies yet? Pick a few basics and FlipLedger creates them on your eBay account.
+        </p>
+      </div>
+      {missing.includes("fulfillment") && (
+        <>
+          <div>
+            <FieldLabel className="mb-1 text-xs">Shipping (USPS Ground Advantage)</FieldLabel>
+            <Segmented
+              value={shipping}
+              onChange={setShipping}
+              options={[{ value: "buyer", label: "Buyer pays" }, { value: "free", label: "Free shipping" }]}
+            />
+          </div>
+          {shipping === "buyer" && (
+            <div>
+              <FieldLabel htmlFor="ship-cost" className="mb-1 text-xs">Shipping charge</FieldLabel>
+              <MoneyInput id="ship-cost" value={cost} onChange={setCost} />
+            </div>
+          )}
+          <div>
+            <FieldLabel className="mb-1 text-xs">Ships within</FieldLabel>
+            <Segmented
+              value={handling}
+              onChange={setHandling}
+              options={[{ value: "1", label: "1 day" }, { value: "2", label: "2 days" }, { value: "3", label: "3 days" }]}
+            />
+          </div>
+        </>
+      )}
+      {missing.includes("return") && (
+        <div>
+          <FieldLabel className="mb-1 text-xs">Returns</FieldLabel>
+          <Segmented
+            value={returns}
+            onChange={setReturns}
+            options={[{ value: "30", label: "30 days, buyer pays" }, { value: "none", label: "No returns" }]}
+          />
+        </div>
+      )}
+      <button
+        type="button"
+        disabled={pending}
+        onClick={create}
+        className="flex h-11 items-center justify-center gap-2 rounded-xl bg-blue-600 font-bold text-white disabled:opacity-60"
+      >
+        {pending && <Loader2 className="size-4 animate-spin" />} Create on eBay
+      </button>
     </div>
   )
 }

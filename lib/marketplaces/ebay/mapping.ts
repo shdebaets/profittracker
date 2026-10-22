@@ -12,6 +12,71 @@ export function setupGaps(s: EbaySettings): string[] {
   return gaps
 }
 
+export type PolicyType = "fulfillment" | "payment" | "return"
+
+/** Policy types the account hasn't picked yet; these are the ones "Set up policies for me" creates. */
+export function missingPolicies(s: EbaySettings): PolicyType[] {
+  const out: PolicyType[] = []
+  if (!s.fulfillmentPolicyId) out.push("fulfillment")
+  if (!s.paymentPolicyId) out.push("payment")
+  if (!s.returnPolicyId) out.push("return")
+  return out
+}
+
+export type PolicyChoices = {
+  shipping: { free: boolean; costCents: number; handlingDays: 1 | 2 | 3 }
+  returns: { accepted: boolean }
+}
+
+export const POLICY_NAMES: Record<PolicyType, string> = {
+  fulfillment: "FlipLedger shipping",
+  payment: "FlipLedger payment",
+  return: "FlipLedger returns",
+}
+
+/**
+ * Account API bodies for simple starter policies (marketplaceId is added by the caller).
+ * USPS Ground Advantage's service code is USPSParcel: eBay reused the Parcel Select code,
+ * and the Metadata API's get_shipping_services lists it that way for EBAY_US.
+ */
+export function policyBodies(c: PolicyChoices): Record<PolicyType, Record<string, unknown>> {
+  const categoryTypes = [{ name: "ALL_EXCLUDING_MOTORS_VEHICLES" }]
+  return {
+    fulfillment: {
+      name: POLICY_NAMES.fulfillment,
+      categoryTypes,
+      handlingTime: { value: c.shipping.handlingDays, unit: "DAY" },
+      shippingOptions: [
+        {
+          optionType: "DOMESTIC",
+          costType: "FLAT_RATE",
+          shippingServices: [
+            {
+              sortOrder: 1,
+              shippingCarrierCode: "USPS",
+              shippingServiceCode: "USPSParcel",
+              freeShipping: c.shipping.free,
+              shippingCost: toEbayMoney(c.shipping.free ? 0 : c.shipping.costCents),
+            },
+          ],
+        },
+      ],
+    },
+    // eBay manages payments, so a payment policy only says "pay right away".
+    payment: { name: POLICY_NAMES.payment, categoryTypes, immediatePay: true },
+    return: c.returns.accepted
+      ? {
+          name: POLICY_NAMES.return,
+          categoryTypes,
+          returnsAccepted: true,
+          returnPeriod: { value: 30, unit: "DAY" },
+          returnShippingCostPayer: "BUYER",
+          refundMethod: "MONEY_BACK",
+        }
+      : { name: POLICY_NAMES.return, categoryTypes, returnsAccepted: false },
+  }
+}
+
 /**
  * eBay condition IDs (what a category's condition policy lists) → Inventory API ConditionEnum.
  * Each category allows only some of these, e.g. shoes: 1000/1500/1750/3000; apparel: 1000/1500/1750/2990/3000/3010.

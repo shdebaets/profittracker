@@ -2,6 +2,7 @@ import "server-only"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import type { EbayPolicy, EbaySettings } from "@/lib/types"
 import { EBAY_MARKETPLACE_ID, EbayError, ebayFetch } from "./client"
+import { missingPolicies, POLICY_NAMES, policyBodies, type PolicyChoices, type PolicyType } from "./mapping"
 
 export async function getIdentity(token: string) {
   return ebayFetch<{ userId?: string; username?: string }>(token, "/commerce/identity/v1/user/", { host: "apiz" })
@@ -52,6 +53,50 @@ export async function loadPolicies(token: string, current: EbaySettings): Promis
     returnPolicyId: pick(policies.return, current.returnPolicyId),
     setupError: undefined,
   }
+}
+
+const POLICY_PATH: Record<PolicyType, string> = {
+  fulfillment: "/sell/account/v1/fulfillment_policy",
+  payment: "/sell/account/v1/payment_policy",
+  return: "/sell/account/v1/return_policy",
+}
+
+/**
+ * Create starter policies for the types the seller hasn't picked, then select them.
+ * They're ordinary policies on the seller's eBay account, so they can edit them there.
+ * A policy we already created (same name) is reused, so tapping twice is harmless.
+ */
+export async function createPolicies(token: string, current: EbaySettings, choices: PolicyChoices): Promise<EbaySettings> {
+  const loaded = await loadPolicies(token, current) // also opts the account in to business policies
+  const missing = missingPolicies(loaded)
+  const bodies = policyBodies(choices)
+  const ours = (t: PolicyType, p: Policies) => p[t].find((x) => x.name === POLICY_NAMES[t])?.id
+  const created: Partial<Record<PolicyType, string>> = {}
+
+  const results = await Promise.allSettled(
+    missing.map(async (t) => {
+      created[t] =
+        ours(t, loaded.policies!) ??
+        (await ebayFetch<Record<string, string>>(token, POLICY_PATH[t], {
+          body: { ...bodies[t], marketplaceId: EBAY_MARKETPLACE_ID },
+        }))[`${t}PolicyId`]
+    }),
+  )
+  const failed = results.find((r) => r.status === "rejected")
+  if (failed) {
+    // A duplicate name (e.g. a second tap racing the first) still leaves our policy on eBay: look it up.
+    const again = await listPolicies(token)
+    for (const t of missing) created[t] ??= ours(t, again)
+    if (missing.some((t) => !created[t])) throw failed.reason
+  }
+
+  // Reload so the new policies show up in the dropdowns, already selected.
+  return loadPolicies(token, {
+    ...loaded,
+    fulfillmentPolicyId: loaded.fulfillmentPolicyId ?? created.fulfillment,
+    paymentPolicyId: loaded.paymentPolicyId ?? created.payment,
+    returnPolicyId: loaded.returnPolicyId ?? created.return,
+  })
 }
 
 /** Create (or reuse) the inventory location eBay ships items from. */
