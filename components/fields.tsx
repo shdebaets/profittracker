@@ -1,6 +1,6 @@
 "use client"
 
-import { Minus, Plus } from "lucide-react"
+import { ChevronDown, Minus, Plus } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 /** Large "$ 0.00" amount entry. Value is the raw string the user typed. */
@@ -53,15 +53,17 @@ export function TextInput(props: React.ComponentProps<"input">) {
   )
 }
 
+/** className sizes the wrapper (e.g. width); the select always fills it. */
 export function NativeSelect({ className, ...props }: React.ComponentProps<"select">) {
   return (
-    <select
-      {...props}
-      className={cn(
-        "h-12 w-full appearance-none rounded-2xl border bg-card bg-[url('data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%2216%22 height=%2216%22 fill=%22none%22 stroke=%22%2378716c%22 stroke-width=%222%22 viewBox=%220 0 24 24%22><path d=%22m7 15 5 5 5-5M7 9l5-5 5 5%22/></svg>')] bg-[right_1rem_center] bg-no-repeat px-4 pr-10 text-base text-ellipsis outline-none focus:ring-2 focus:ring-brand/20",
-        className,
-      )}
-    />
+    <div className={cn("relative", className)}>
+      {/* Same box as TextInput so dropdowns and text fields line up. */}
+      <select
+        {...props}
+        className="h-12 w-full min-w-0 appearance-none rounded-2xl border bg-muted/60 px-4 pr-11 text-base text-ellipsis outline-none transition focus:border-brand focus:bg-card focus:ring-2 focus:ring-brand/20 disabled:opacity-60"
+      />
+      <ChevronDown className="pointer-events-none absolute top-1/2 right-4 size-5 -translate-y-1/2 text-muted-foreground" />
+    </div>
   )
 }
 

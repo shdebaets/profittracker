@@ -1,7 +1,7 @@
 "use client"
 
 import { Camera, Loader2, Star, X } from "lucide-react"
-import { useRef, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { toast } from "sonner"
 import { createPhotoUploads } from "@/app/(app)/actions/photos"
 import { friendlyError, UserError } from "@/lib/errors"
@@ -23,16 +23,26 @@ async function putPhoto(signedUrl: string, blob: Blob) {
 
 /** Optional photo strip. The first photo is the cover; tap a photo to make it the cover. */
 export function PhotoPicker({
-  value, onChange, onUploaded,
+  value, onChange, onUploaded, onUploadingChange,
 }: {
   value: Photo[]
+  /** Reorders and removals. */
   onChange: (photos: Photo[]) => void
-  /** Paths uploaded in this session, so the caller can clean up if the form is abandoned. */
-  onUploaded?: (paths: string[]) => void
+  /**
+   * Photos that finished uploading, for the caller to append. Separate from onChange because
+   * an upload can finish after other edits, so it must not replace the list it started from.
+   */
+  onUploaded: (photos: Photo[]) => void
+  /** How many photos are still uploading, so the caller can hold off saving. */
+  onUploadingChange?: (count: number) => void
 }) {
   const input = useRef<HTMLInputElement>(null)
   const [uploading, setUploading] = useState(0)
   const room = MAX_PHOTOS - value.length - uploading
+
+  useEffect(() => {
+    onUploadingChange?.(uploading)
+  }, [uploading, onUploadingChange])
 
   async function onPick(files: FileList | null) {
     const picked = Array.from(files ?? []).slice(0, Math.max(0, room))
@@ -51,8 +61,7 @@ export function PhotoPicker({
           added[i] = { path: res.uploads[i].path, url: URL.createObjectURL(blob) }
         }),
       )
-      onUploaded?.(added.map((p) => p.path))
-      onChange([...value, ...added])
+      onUploaded(added)
     } catch (e) {
       toast.error(friendlyError(e))
     } finally {
