@@ -59,6 +59,8 @@ export async function ebayFetch<T = unknown>(
     headers: {
       Authorization: `Bearer ${token}`,
       Accept: "application/json",
+      // Node's fetch defaults to "Accept-Language: *", which eBay rejects.
+      "Accept-Language": "en-US",
       "Content-Language": "en-US",
       "X-EBAY-C-MARKETPLACE-ID": EBAY_MARKETPLACE_ID,
       ...(init.body ? { "Content-Type": "application/json" } : {}),
