@@ -90,9 +90,15 @@ export function EntryForm(props: Props) {
   const [photos, setPhotos] = useState<Photo[]>(init.photos)
   // Photos uploaded in this form but not saved yet; discarded if the sheet closes without saving.
   const unsaved = useRef(new Set<string>())
+  // Photos still uploading. Saving warns first, since they won't be part of the item.
+  const [uploading, setUploading] = useState(0)
+  // Set once the form is saved or gone, so an upload finishing afterwards is discarded.
+  const closed = useRef(false)
   useEffect(() => {
+    closed.current = false
     const pendingUploads = unsaved.current
     return () => {
+      closed.current = true
       if (pendingUploads.size) void discardPhotos([...pendingUploads])
     }
   }, [])
@@ -147,6 +153,7 @@ export function EntryForm(props: Props) {
       toast.error("Enter the sale price")
       return
     }
+    if (uploading && !confirm(`${uploading === 1 ? "A photo is" : `${uploading} photos are`} still uploading. Save without ${uploading === 1 ? "it" : "them"}?`)) return
     startTransition(async () => {
       let res
       if (props.variant === "sell") {
@@ -185,6 +192,7 @@ export function EntryForm(props: Props) {
         return
       }
       unsaved.current.clear()
+      closed.current = true
       toast.success(
         props.variant === "edit" ? "Saved" : isSale ? `Cha-ching! ${formatCents(sale.net)} profit logged` : "Added to inventory",
       )
@@ -253,7 +261,15 @@ export function EntryForm(props: Props) {
                 if (removed.length) void discardPhotos(removed.map((p) => p.path))
                 setPhotos(next)
               }}
-              onUploaded={(paths) => paths.forEach((p) => unsaved.current.add(p))}
+              onUploaded={(added) => {
+                if (closed.current) {
+                  void discardPhotos(added.map((p) => p.path))
+                  return
+                }
+                added.forEach((p) => unsaved.current.add(p.path))
+                setPhotos((ps) => [...ps, ...added])
+              }}
+              onUploadingChange={setUploading}
             />
           </div>
           <div>
@@ -402,13 +418,15 @@ export function EntryForm(props: Props) {
         {isSale ? <Sparkles className="size-5" /> : <PackagePlus className="size-5" />}
         {pending
           ? "Saving…"
-          : props.variant === "edit"
-            ? "Save changes"
-            : selling
-              ? "Mark Sold & Cha-Ching!"
-              : isSale
-                ? "Log Sale & Cha-Ching!"
-                : "Save to Inventory"}
+          : uploading
+            ? "Uploading photos…"
+            : props.variant === "edit"
+              ? "Save changes"
+              : selling
+                ? "Mark Sold & Cha-Ching!"
+                : isSale
+                  ? "Log Sale & Cha-Ching!"
+                  : "Save to Inventory"}
       </button>
     </form>
   )

@@ -570,7 +570,7 @@ function EbayPublish({ item, draft, saveDraft, sandbox }: { item: Item; draft: D
       {aspects && conditions.length > 0 && (
         <div>
           <FieldLabel htmlFor="ebay-cond">Condition on eBay{conditionRequired && <span className="text-loss"> *</span>}</FieldLabel>
-          <NativeSelect id="ebay-cond" value={conditionId} onChange={(e) => setConditionId(e.target.value)} className="h-11">
+          <NativeSelect id="ebay-cond" value={conditionId} onChange={(e) => setConditionId(e.target.value)}>
             <option value="">Choose…</option>
             {conditions.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
           </NativeSelect>
@@ -586,14 +586,14 @@ function EbayPublish({ item, draft, saveDraft, sandbox }: { item: Item; draft: D
                 {a.name}{a.required && <span className="text-loss"> *</span>}{a.multi && " (comma separated)"}
               </label>
               {!a.freeText && a.values.length && !a.multi ? (
-                <NativeSelect value={values[a.name] ?? ""} onChange={(e) => setValues((v) => ({ ...v, [a.name]: e.target.value }))} className="h-11">
+                <NativeSelect value={values[a.name] ?? ""} onChange={(e) => setValues((v) => ({ ...v, [a.name]: e.target.value }))}>
                   <option value="">Choose…</option>
                   {a.values.map((x) => <option key={x}>{x}</option>)}
                 </NativeSelect>
               ) : (
                 <>
                   <TextInput
-                    list={`asp-${a.name}`} className="h-11" value={values[a.name] ?? ""}
+                    list={`asp-${a.name}`} value={values[a.name] ?? ""}
                     onChange={(e) => setValues((v) => ({ ...v, [a.name]: e.target.value }))}
                   />
                   <datalist id={`asp-${a.name}`}>{a.values.slice(0, 50).map((x) => <option key={x} value={x} />)}</datalist>

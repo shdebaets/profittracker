@@ -101,7 +101,7 @@ function PolicySelect({ label, list, value, onChange }: { label: string; list: E
   return (
     <div>
       <FieldLabel className="mb-1 text-xs">{label}</FieldLabel>
-      <NativeSelect value={value} onChange={(e) => onChange(e.target.value)} className="h-11 text-sm">
+      <NativeSelect value={value} onChange={(e) => onChange(e.target.value)}>
         <option value="">{list.length ? "Choose…" : "None on eBay yet"}</option>
         {list.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
       </NativeSelect>
