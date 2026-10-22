@@ -31,6 +31,12 @@ describe("friendlyError", () => {
         friendlyError(ebay(400, "The eBay listing associated with the inventory item, or the unpublished offer has an invalid picture URL. The length of each Picture URL must be within 500 characters")),
       ).toMatch(/photos/)
     })
+    it("account not set up to sell yet", () => {
+      expect(
+        friendlyError(ebay(400, "A user error has occurred. Before you can list this item we need some additional information to create a seller's account.")),
+      ).toMatch(/isn't set up to sell yet/)
+      expect(friendlyError(ebay(400, "The provided condition id is invalid for the selected primary category id."))).toMatch(/condition/)
+    })
     it("auth, rate limit, outage", () => {
       expect(friendlyError(ebay(401, "Invalid access token", 1001))).toMatch(/Reconnect eBay/)
       expect(friendlyError(ebay(429, "Too many requests"))).toMatch(/busy/)
