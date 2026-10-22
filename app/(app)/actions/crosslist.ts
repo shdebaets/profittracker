@@ -1,6 +1,7 @@
 "use server"
 
 import { revalidatePath } from "next/cache"
+import { headers } from "next/headers"
 import { z } from "zod"
 import { takeDown } from "@/lib/crosslist/engine"
 import { adapters, supabaseStore } from "@/lib/crosslist/store"
@@ -13,7 +14,7 @@ import { getUserToken } from "@/lib/marketplaces/ebay/oauth"
 import { ensureLocation, loadPolicies, saveSettings } from "@/lib/marketplaces/ebay/setup"
 import { syncEbaySales } from "@/lib/marketplaces/ebay/sync"
 import { marketplace } from "@/lib/marketplaces/registry"
-import { signPaths } from "@/lib/photos"
+import { photoLink } from "@/lib/photo-links"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { requireUser } from "@/lib/supabase/server"
 import type { Listing } from "@/lib/types"
@@ -180,14 +181,16 @@ export async function publishEbay(itemId: string, input: z.input<typeof publishS
     if (item.status !== "inventory") throw new Error("Only unsold inventory can be listed")
     if (!item.title) throw new Error("Give the item a title first")
 
-    const urls = await signPaths(supabase, item.photo_paths ?? [], 60 * 60 * 24)
+    // Short signed links: eBay rejects picture URLs over 500 characters, and Supabase's are longer.
+    const h = await headers()
+    const origin = `${h.get("x-forwarded-proto") ?? "https"}://${h.get("x-forwarded-host") ?? h.get("host")}`
     const res = await publishToEbay(userId, {
       item,
       quantity: item.quantity,
       priceCents: p.priceCents,
       categoryId: p.categoryId,
       aspects: Object.fromEntries(Object.entries(p.aspects).filter(([, v]) => v.length)),
-      imageUrls: (item.photo_paths as string[]).map((path) => urls.get(path)).filter((u): u is string => !!u),
+      imageUrls: ((item.photo_paths as string[]) ?? []).map((path) => photoLink(origin, path)),
     })
     const { error: upErr } = await supabase.from("marketplace_listings").upsert(
       {
