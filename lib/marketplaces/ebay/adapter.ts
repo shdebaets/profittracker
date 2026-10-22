@@ -2,7 +2,7 @@ import "server-only"
 import type { ApiAdapter } from "@/lib/marketplaces/types"
 import type { Listing } from "@/lib/types"
 import { EBAY_MARKETPLACE_ID, EbayError, ebayConfig, ebayFetch } from "./client"
-import { EBAY_CONDITION, ebayTitle, setupGaps, toEbayMoney, type EbayOrder } from "./mapping"
+import { EBAY_CONDITION, EBAY_CONDITION_ENUM, ebayTitle, setupGaps, toEbayMoney, type EbayOrder } from "./mapping"
 import { requireUserToken } from "./oauth"
 
 const CATEGORY_TREE = "0" // EBAY_US
@@ -19,6 +19,8 @@ export type PublishInput = {
   quantity: number
   priceCents: number
   categoryId: string
+  /** eBay condition ID allowed by the category (from categoryConditions). */
+  conditionId?: string
   aspects: Record<string, string[]>
   imageUrls: string[]
 }
@@ -41,7 +43,7 @@ export async function publishToEbay(userId: string, input: PublishInput) {
     method: "PUT",
     body: {
       availability: { shipToLocationAvailability: { quantity: input.quantity } },
-      condition: EBAY_CONDITION[input.item.condition ?? "good"],
+      condition: (input.conditionId && EBAY_CONDITION_ENUM[input.conditionId]) || EBAY_CONDITION[input.item.condition ?? "good"],
       product: { title, description, aspects, imageUrls: input.imageUrls.slice(0, 24) },
     },
   })
@@ -174,4 +176,26 @@ export async function categoryAspects(userId: string, categoryId: string): Promi
       freeText: a.aspectConstraint.aspectMode !== "SELECTION_ONLY",
       values: (a.aspectValues ?? []).slice(0, 200).map((v) => v.localizedValue),
     }))
+}
+
+export type ConditionOption = { id: string; label: string }
+
+/** The conditions eBay accepts for a category (they differ: shoes vs clothing vs electronics). */
+export async function categoryConditions(userId: string, categoryId: string): Promise<{ required: boolean; options: ConditionOption[] }> {
+  const { token } = await requireUserToken(userId)
+  const filter = encodeURIComponent(`categoryIds:{${categoryId}}`)
+  const r = await ebayFetch<{
+    itemConditionPolicies?: {
+      categoryId: string
+      itemConditionRequired?: boolean
+      itemConditions?: { conditionId: string; conditionDescription?: string }[]
+    }[]
+  }>(token, `/sell/metadata/v1/marketplace/${EBAY_MARKETPLACE_ID}/get_item_condition_policies?filter=${filter}`)
+  const policy = r.itemConditionPolicies?.find((p) => p.categoryId === categoryId) ?? r.itemConditionPolicies?.[0]
+  return {
+    required: policy?.itemConditionRequired ?? true,
+    options: (policy?.itemConditions ?? [])
+      .filter((c) => EBAY_CONDITION_ENUM[c.conditionId])
+      .map((c) => ({ id: c.conditionId, label: c.conditionDescription || EBAY_CONDITION_ENUM[c.conditionId] })),
+  }
 }

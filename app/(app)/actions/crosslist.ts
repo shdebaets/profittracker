@@ -6,7 +6,8 @@ import { z } from "zod"
 import { takeDown } from "@/lib/crosslist/engine"
 import { adapters, supabaseStore } from "@/lib/crosslist/store"
 import {
-  categoryAspects, publishToEbay, suggestCategories, type Aspect, type CategorySuggestion,
+  categoryAspects, categoryConditions, publishToEbay, suggestCategories,
+  type Aspect, type CategorySuggestion, type ConditionOption,
 } from "@/lib/marketplaces/ebay/adapter"
 import { ebayConfig } from "@/lib/marketplaces/ebay/client"
 import { setupGaps } from "@/lib/marketplaces/ebay/mapping"
@@ -156,11 +157,15 @@ export async function ebayCategories(q: string): Promise<Result<CategorySuggesti
   }
 }
 
-export async function ebayAspects(categoryId: string): Promise<Result<Aspect[]>> {
+/** Everything eBay needs for a category: item specifics and the conditions it allows. */
+export async function ebayCategoryDetails(
+  categoryId: string,
+): Promise<Result<{ aspects: Aspect[]; conditions: ConditionOption[]; conditionRequired: boolean }>> {
   try {
     const id = z.string().regex(/^\d+$/).parse(categoryId)
     const { userId } = await requireUser()
-    return { ok: true, data: await categoryAspects(userId, id) }
+    const [aspects, cond] = await Promise.all([categoryAspects(userId, id), categoryConditions(userId, id)])
+    return { ok: true, data: { aspects, conditions: cond.options, conditionRequired: cond.required } }
   } catch (e) {
     return fail(e) as { ok: false; error: string }
   }
@@ -168,6 +173,7 @@ export async function ebayAspects(categoryId: string): Promise<Result<Aspect[]>>
 
 const publishSchema = z.object({
   categoryId: z.string().regex(/^\d+$/, "Pick an eBay category"),
+  conditionId: z.string().regex(/^\d+$/, "Pick the item's condition for eBay").optional(),
   priceCents: cents.min(99, "eBay needs a price of at least $0.99"),
   aspects: z.record(z.string(), z.array(z.string().trim().min(1).max(65)).max(30)),
 })
@@ -189,6 +195,7 @@ export async function publishEbay(itemId: string, input: z.input<typeof publishS
       quantity: item.quantity,
       priceCents: p.priceCents,
       categoryId: p.categoryId,
+      conditionId: p.conditionId,
       aspects: Object.fromEntries(Object.entries(p.aspects).filter(([, v]) => v.length)),
       imageUrls: ((item.photo_paths as string[]) ?? []).map((path) => photoLink(origin, path)),
     })
