@@ -1,6 +1,7 @@
 import "server-only"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { decrypt, encrypt } from "@/lib/crypto"
+import { UserError } from "@/lib/errors"
 import { createAdminClient } from "@/lib/supabase/admin"
 import type { EbaySettings } from "@/lib/types"
 import { EBAY_SCOPES, EbayError, ebayConfig } from "./client"
@@ -32,6 +33,7 @@ async function tokenRequest(body: Record<string, string>): Promise<TokenResponse
     headers: {
       Authorization: `Basic ${Buffer.from(`${cfg.clientId}:${cfg.clientSecret}`).toString("base64")}`,
       "Content-Type": "application/x-www-form-urlencoded",
+      "Accept-Language": "en-US",
     },
     body: new URLSearchParams(body),
     cache: "no-store",
@@ -116,7 +118,8 @@ export async function getUserToken(
     refresh_token: decrypt(row.refresh_token_enc),
     scope: EBAY_SCOPES.join(" "),
   }).catch((e) => {
-    throw new Error(`eBay connection expired, reconnect it in Settings (${e instanceof Error ? e.message : e})`)
+    console.error("[ebay] token refresh failed", e)
+    throw new UserError("Your eBay connection has expired. Reconnect eBay in Settings → Marketplaces.")
   })
   await admin
     .from("marketplace_accounts")
@@ -130,6 +133,6 @@ export async function getUserToken(
 
 export async function requireUserToken(userId: string, admin?: SupabaseClient) {
   const t = await getUserToken(userId, admin)
-  if (!t) throw new Error("Connect your eBay account in Settings first")
+  if (!t) throw new UserError("Connect your eBay account in Settings → Marketplaces first.")
   return t
 }

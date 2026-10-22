@@ -10,6 +10,7 @@ import { itemSale, presetFor } from "@/lib/profit"
 import type { Item } from "@/lib/types"
 import { cn } from "@/lib/utils"
 import { ListingBadges } from "@/components/crosslist/listing-badges"
+import { GENERIC_ERROR } from "@/lib/errors"
 
 export function ItemDetail({
   item, onSell, onEdit, onDone, onCrosslist,
@@ -26,7 +27,7 @@ export function ItemDetail({
   function run(fn: () => Promise<{ ok: boolean; error?: string }>, msg: string) {
     startTransition(async () => {
       const res = await fn()
-      if (!res.ok) return void toast.error(res.error ?? "Failed")
+      if (!res.ok) return void toast.error(res.error ?? GENERIC_ERROR)
       toast.success(msg)
       onDone()
     })

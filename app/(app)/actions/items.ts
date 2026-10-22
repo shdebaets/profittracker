@@ -8,6 +8,8 @@ import { adapters, supabaseStore } from "@/lib/crosslist/store"
 import type { SaleColumns } from "@/lib/items/sell"
 import type { MarketplaceId } from "@/lib/marketplaces/registry"
 import { getItem } from "@/lib/data"
+import { UserError } from "@/lib/errors"
+import { marketplace } from "@/lib/marketplaces/registry"
 import { removeUnreferencedPhotos } from "@/lib/photos"
 import { distributeHaul } from "@/lib/profit"
 import type { Item } from "@/lib/types"
@@ -82,7 +84,7 @@ function done(): ActionResult {
 export async function createItem(input: ItemInput): Promise<ActionResult> {
   try {
     const i = itemSchema.parse(input)
-    if (i.mode === "sold" && !i.sale) throw new Error("Sale details are required")
+    if (i.mode === "sold" && !i.sale) throw new UserError("Enter the sale details.")
     const { supabase } = await requireUser()
     const { error } = await supabase.from("items").insert({
       ...baseColumns(i),
@@ -149,7 +151,7 @@ export async function deleteItem(id: string): Promise<ActionResult> {
     const { supabase } = await requireUser()
     // Listings cascade-delete with the item, so end any live API listing first.
     const down = await takeDown(supabaseStore(supabase), adapters, id)
-    if (down.failed.length) throw new Error(`Couldn't end the ${down.failed[0].marketplace} listing: ${down.failed[0].error}`)
+    if (down.failed.length) throw new UserError(`Couldn't end the ${marketplace(down.failed[0].marketplace).label} listing, so the item wasn't deleted. ${down.failed[0].error}`)
     const { data: gone, error } = await supabase.from("items").delete().eq("id", id).select("photo_paths").single()
     if (error) throw error
     await removeUnreferencedPhotos(supabase, (gone.photo_paths as string[]) ?? [])

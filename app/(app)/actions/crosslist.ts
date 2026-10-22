@@ -1,11 +1,13 @@
 "use server"
 
 import { revalidatePath } from "next/cache"
+import { headers } from "next/headers"
 import { z } from "zod"
 import { takeDown } from "@/lib/crosslist/engine"
 import { adapters, supabaseStore } from "@/lib/crosslist/store"
 import {
-  categoryAspects, publishToEbay, suggestCategories, type Aspect, type CategorySuggestion,
+  categoryAspects, categoryConditions, publishToEbay, suggestCategories,
+  type Aspect, type CategorySuggestion, type ConditionOption,
 } from "@/lib/marketplaces/ebay/adapter"
 import { ebayConfig } from "@/lib/marketplaces/ebay/client"
 import { setupGaps } from "@/lib/marketplaces/ebay/mapping"
@@ -13,10 +15,11 @@ import { getUserToken } from "@/lib/marketplaces/ebay/oauth"
 import { ensureLocation, loadPolicies, saveSettings } from "@/lib/marketplaces/ebay/setup"
 import { syncEbaySales } from "@/lib/marketplaces/ebay/sync"
 import { marketplace } from "@/lib/marketplaces/registry"
-import { signPaths } from "@/lib/photos"
+import { photoLink } from "@/lib/photo-links"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { requireUser } from "@/lib/supabase/server"
 import type { Listing } from "@/lib/types"
+import { UserError } from "@/lib/errors"
 import { fail, type ActionResult } from "./result"
 
 type Result<T> = { ok: true; data: T } | { ok: false; error: string }
@@ -136,7 +139,7 @@ export async function delistEverywhere(itemId: string): Promise<ActionResult> {
   try {
     const { supabase } = await requireUser()
     const out = await takeDown(supabaseStore(supabase), adapters, itemId)
-    if (out.failed.length) throw new Error(`${out.failed[0].marketplace}: ${out.failed[0].error}`)
+    if (out.failed.length) throw new UserError(`Couldn't end the ${marketplace(out.failed[0].marketplace).label} listing. ${out.failed[0].error}`)
     return done()
   } catch (e) {
     return fail(e)
@@ -155,11 +158,15 @@ export async function ebayCategories(q: string): Promise<Result<CategorySuggesti
   }
 }
 
-export async function ebayAspects(categoryId: string): Promise<Result<Aspect[]>> {
+/** Everything eBay needs for a category: item specifics and the conditions it allows. */
+export async function ebayCategoryDetails(
+  categoryId: string,
+): Promise<Result<{ aspects: Aspect[]; conditions: ConditionOption[]; conditionRequired: boolean }>> {
   try {
     const id = z.string().regex(/^\d+$/).parse(categoryId)
     const { userId } = await requireUser()
-    return { ok: true, data: await categoryAspects(userId, id) }
+    const [aspects, cond] = await Promise.all([categoryAspects(userId, id), categoryConditions(userId, id)])
+    return { ok: true, data: { aspects, conditions: cond.options, conditionRequired: cond.required } }
   } catch (e) {
     return fail(e) as { ok: false; error: string }
   }
@@ -167,6 +174,7 @@ export async function ebayAspects(categoryId: string): Promise<Result<Aspect[]>>
 
 const publishSchema = z.object({
   categoryId: z.string().regex(/^\d+$/, "Pick an eBay category"),
+  conditionId: z.string().regex(/^\d+$/, "Pick the item's condition for eBay").optional(),
   priceCents: cents.min(99, "eBay needs a price of at least $0.99"),
   aspects: z.record(z.string(), z.array(z.string().trim().min(1).max(65)).max(30)),
 })
@@ -177,17 +185,20 @@ export async function publishEbay(itemId: string, input: z.input<typeof publishS
     const { supabase, userId } = await requireUser()
     const { data: item, error } = await supabase.from("items").select("*").eq("id", itemId).single()
     if (error) throw error
-    if (item.status !== "inventory") throw new Error("Only unsold inventory can be listed")
-    if (!item.title) throw new Error("Give the item a title first")
+    if (item.status !== "inventory") throw new UserError("Only unsold items can be listed.")
+    if (!item.title) throw new UserError("Give the item a title first.")
 
-    const urls = await signPaths(supabase, item.photo_paths ?? [], 60 * 60 * 24)
+    // Short signed links: eBay rejects picture URLs over 500 characters, and Supabase's are longer.
+    const h = await headers()
+    const origin = `${h.get("x-forwarded-proto") ?? "https"}://${h.get("x-forwarded-host") ?? h.get("host")}`
     const res = await publishToEbay(userId, {
       item,
       quantity: item.quantity,
       priceCents: p.priceCents,
       categoryId: p.categoryId,
+      conditionId: p.conditionId,
       aspects: Object.fromEntries(Object.entries(p.aspects).filter(([, v]) => v.length)),
-      imageUrls: (item.photo_paths as string[]).map((path) => urls.get(path)).filter((u): u is string => !!u),
+      imageUrls: ((item.photo_paths as string[]) ?? []).map((path) => photoLink(origin, path)),
     })
     const { error: upErr } = await supabase.from("marketplace_listings").upsert(
       {
@@ -246,7 +257,7 @@ export async function saveEbaySettings(input: z.input<typeof ebaySettingsSchema>
     const { userId } = await requireUser()
     const admin = createAdminClient()
     const auth = await getUserToken(userId, admin)
-    if (!auth) throw new Error("eBay isn't connected")
+    if (!auth) throw new UserError("eBay isn't connected. Connect it in Settings → Marketplaces.")
     const next = { ...auth.account.settings, ...s }
     if (s.postalCode && s.postalCode !== auth.account.settings.postalCode) {
       next.merchantLocationKey = await ensureLocation(auth.token, s.postalCode.slice(0, 5))
@@ -263,7 +274,7 @@ export async function refreshEbayPolicies(): Promise<ActionResult> {
     const { userId } = await requireUser()
     const admin = createAdminClient()
     const auth = await getUserToken(userId, admin)
-    if (!auth) throw new Error("eBay isn't connected")
+    if (!auth) throw new UserError("eBay isn't connected. Connect it in Settings → Marketplaces.")
     await saveSettings(admin, userId, await loadPolicies(auth.token, auth.account.settings))
     return done()
   } catch (e) {

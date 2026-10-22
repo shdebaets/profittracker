@@ -7,16 +7,18 @@ import Link from "next/link"
 import { useEffect, useState, useTransition } from "react"
 import { toast } from "sonner"
 import {
-  delistEverywhere, ebayAspects, ebayCategories, endListing, forgetListing, getEbayStatus,
+  delistEverywhere, ebayCategories, ebayCategoryDetails, endListing, forgetListing, getEbayStatus,
   markAssistedListed, publishEbay, saveListingDetails, type EbayStatus,
 } from "@/app/(app)/actions/crosslist"
 import { readSheetStore, writeSheetStore } from "@/components/entry/sheet-storage"
 import { FieldLabel, MoneyInput, NativeSelect, TextInput } from "@/components/fields"
-import type { Aspect, CategorySuggestion } from "@/lib/marketplaces/ebay/adapter"
+import type { Aspect, CategorySuggestion, ConditionOption } from "@/lib/marketplaces/ebay/adapter"
+import { defaultConditionId } from "@/lib/marketplaces/ebay/mapping"
 import { ITEM_CONDITIONS, MARKETPLACES, type ItemCondition, type Marketplace } from "@/lib/marketplaces/registry"
 import { centsToInput, formatCents, toCents } from "@/lib/money"
 import type { Item, Listing } from "@/lib/types"
 import { cn } from "@/lib/utils"
+import { GENERIC_ERROR } from "@/lib/errors"
 
 type Draft = {
   title: string
@@ -246,7 +248,7 @@ function useRun() {
   const run = (fn: () => Promise<{ ok: boolean; error?: string }>, msg: string, after?: () => void) =>
     start(async () => {
       const res = await fn()
-      if (!res.ok) return void toast.error(res.error ?? "Failed")
+      if (!res.ok) return void toast.error(res.error ?? GENERIC_ERROR)
       toast.success(msg)
       after?.()
     })
@@ -465,6 +467,9 @@ function EbayPublish({ item, draft, saveDraft, sandbox }: { item: Item; draft: D
   const [cats, setCats] = useState<CategorySuggestion[] | null>(null)
   const [cat, setCat] = useState<CategorySuggestion | null>(null)
   const [aspects, setAspects] = useState<Aspect[] | null>(null)
+  const [conditions, setConditions] = useState<ConditionOption[]>([])
+  const [conditionRequired, setConditionRequired] = useState(true)
+  const [conditionId, setConditionId] = useState("")
   const [values, setValues] = useState<Record<string, string>>({})
   const [price, setPrice] = useState(draft.price)
   const [busy, startBusy] = useTransition()
@@ -481,26 +486,41 @@ function EbayPublish({ item, draft, saveDraft, sandbox }: { item: Item; draft: D
   function pickCategory(c: CategorySuggestion) {
     setCat(c)
     setAspects(null)
+    setConditions([])
+    setConditionId("")
     startBusy(async () => {
-      const res = await ebayAspects(c.id)
-      if (!res.ok) return void toast.error(res.error)
-      setAspects(res.data)
+      const res = await ebayCategoryDetails(c.id)
+      if (!res.ok) {
+        setCat(null)
+        return void toast.error(res.error)
+      }
+      const { aspects: list, conditions: allowed, conditionRequired: req } = res.data
+      setAspects(list)
+      setConditions(allowed)
+      setConditionRequired(req)
+      setConditionId(defaultConditionId(draft.condition || null, allowed.map((o) => o.id)) ?? "")
       setValues((v) => ({
-        ...Object.fromEntries(res.data.map((a) => [a.name, a.name === "Brand" ? draft.brand : a.name === "Size" ? draft.size : ""])),
+        ...Object.fromEntries(list.map((a) => [a.name, a.name === "Brand" ? draft.brand : a.name === "Size" ? draft.size : ""])),
         ...Object.fromEntries(Object.entries(v).filter(([, x]) => x)),
       }))
     })
   }
 
-  const missing = aspects?.filter((a) => a.required && !values[a.name]?.trim()).map((a) => a.name) ?? []
+  // Everything eBay will reject the listing without. The button stays disabled until it's empty.
+  const missing = [
+    !cat && "Category",
+    cat && aspects && conditionRequired && conditions.length > 0 && !conditionId && "Condition",
+    ...(aspects?.filter((a) => a.required && !values[a.name]?.trim()).map((a) => a.name) ?? []),
+    toCents(price) < 99 && "Price (at least $0.99)",
+  ].filter((x): x is string => !!x)
 
   function publish() {
-    if (!cat) return void toast.error("Pick an eBay category")
-    if (missing.length) return void toast.error(`Fill in ${missing.join(", ")}`)
+    if (!cat || !aspects || missing.length) return
     startBusy(async () => {
       if (!(await saveDraft())) return
       const res = await publishEbay(item.id, {
         categoryId: cat.id,
+        conditionId: conditionId || undefined,
         priceCents: toCents(price),
         aspects: Object.fromEntries(
           Object.entries(values).map(([k, v]) => [k, v.split(",").map((x) => x.trim()).filter(Boolean)]),
@@ -518,9 +538,9 @@ function EbayPublish({ item, draft, saveDraft, sandbox }: { item: Item; draft: D
     <>
       {sandbox && <p className="rounded-xl bg-brand-soft px-3 py-2 text-xs font-semibold text-brand">Sandbox mode: test listings only.</p>}
       <div>
-        <FieldLabel>Category</FieldLabel>
+        <FieldLabel>Category<span className="text-loss"> *</span></FieldLabel>
         {cat ? (
-          <button type="button" onClick={() => { setCat(null); setAspects(null) }} className="w-full rounded-xl border bg-muted/60 px-3 py-2 text-left text-sm">
+          <button type="button" onClick={() => { setCat(null); setAspects(null); setConditions([]); setConditionId("") }} className="w-full rounded-xl border bg-muted/60 px-3 py-2 text-left text-sm">
             <span className="font-semibold">{cat.name}</span>
             <span className="block truncate text-xs text-muted-foreground">{cat.path} · change</span>
           </button>
@@ -546,7 +566,17 @@ function EbayPublish({ item, draft, saveDraft, sandbox }: { item: Item; draft: D
         )}
       </div>
 
-      {cat && !aspects && <p className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="size-4 animate-spin" /> Loading item specifics…</p>}
+      {cat && !aspects && <p className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="size-4 animate-spin" /> Loading what eBay needs for this category…</p>}
+      {aspects && conditions.length > 0 && (
+        <div>
+          <FieldLabel htmlFor="ebay-cond">Condition on eBay{conditionRequired && <span className="text-loss"> *</span>}</FieldLabel>
+          <NativeSelect id="ebay-cond" value={conditionId} onChange={(e) => setConditionId(e.target.value)} className="h-11">
+            <option value="">Choose…</option>
+            {conditions.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
+          </NativeSelect>
+          <p className="mt-1 text-xs text-muted-foreground">These are the conditions eBay allows in this category.</p>
+        </div>
+      )}
       {aspects && aspects.length > 0 && (
         <div className="flex flex-col gap-2">
           <FieldLabel className="mb-0">Item specifics</FieldLabel>
@@ -575,11 +605,14 @@ function EbayPublish({ item, draft, saveDraft, sandbox }: { item: Item; draft: D
       )}
 
       <div>
-        <FieldLabel>eBay price</FieldLabel>
+        <FieldLabel>eBay price<span className="text-loss"> *</span></FieldLabel>
         <MoneyInput value={price} onChange={setPrice} />
       </div>
+      {cat && aspects && missing.length > 0 && (
+        <p className="text-sm text-loss">Still needed: {missing.join(", ")}</p>
+      )}
       <button
-        type="button" onClick={publish} disabled={busy || !cat || !aspects || !price}
+        type="button" onClick={publish} disabled={busy || !cat || !aspects || missing.length > 0}
         className="flex h-12 items-center justify-center gap-2 rounded-2xl bg-blue-600 font-bold text-white disabled:opacity-50"
       >
         {busy && <Loader2 className="size-4 animate-spin" />} List on eBay · {item.quantity} unit{item.quantity === 1 ? "" : "s"}

@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest"
+import { UserError } from "@/lib/errors"
 import type { SaleColumns } from "@/lib/items/sell"
 import type { MarketplaceId } from "@/lib/marketplaces/registry"
 import type { Listing } from "@/lib/types"
@@ -34,7 +35,7 @@ function fakeStore(listings: Listing[], stock = 1) {
 function fakeEbay(fail = false) {
   return {
     end: vi.fn(async () => {
-      if (fail) throw new Error("eBay is down")
+      if (fail) throw new UserError("eBay is down")
     }),
     setQuantity: vi.fn(async () => {}),
   }
@@ -87,6 +88,14 @@ describe("recordSale", () => {
     const out = await recordSale(store, { ebay: fakeEbay(true) } as Adapters, { itemId: "item", qty: 1, sale, soldOn: "depop" })
     expect(out.failed).toEqual([{ marketplace: "ebay", error: "eBay is down" }])
     expect(rows.get("l-ebay")).toMatchObject({ status: "error", last_error: "eBay is down" })
+  })
+
+  it("stores a friendly reason, not the raw error, when an end fails", async () => {
+    const { store, rows } = fakeStore([listing("ebay"), listing("depop")])
+    const broken = { end: vi.fn(async () => { throw new Error("ECONNRESET socket hang up") }), setQuantity: vi.fn() }
+    await recordSale(store, { ebay: broken } as Adapters, { itemId: "item", qty: 1, sale, soldOn: "depop" })
+    expect(rows.get("l-ebay")?.last_error).not.toMatch(/ECONNRESET/)
+    expect(rows.get("l-ebay")?.status).toBe("error")
   })
 
   it("doesn't touch listings when the sale itself fails", async () => {

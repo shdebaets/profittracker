@@ -1,5 +1,6 @@
 import "server-only"
 import type { SupabaseClient } from "@supabase/supabase-js"
+import { UserError } from "@/lib/errors"
 import type { Platform } from "@/lib/types"
 
 export type SaleColumns = {
@@ -26,8 +27,8 @@ export async function sellItem(
 ): Promise<{ remaining: number; soldItemId: string }> {
   const { data: item, error: readErr } = await supabase.from("items").select("*").eq("id", id).single()
   if (readErr) throw readErr
-  if (item.status !== "inventory") throw new Error("Item is not in inventory")
-  if (qty > item.quantity) throw new Error(`Only ${item.quantity} units in stock`)
+  if (item.status !== "inventory") throw new UserError("This item isn't in your inventory any more. Refresh and try again.")
+  if (qty > item.quantity) throw new UserError(`Only ${item.quantity} unit${item.quantity === 1 ? "" : "s"} left in stock.`)
 
   if (qty === item.quantity) {
     const { error } = await supabase.from("items").update({ status: "sold", ...sale }).eq("id", id)
@@ -42,7 +43,7 @@ export async function sellItem(
     .eq("quantity", item.quantity) // optimistic guard against double-submit
     .select("id")
   if (decErr) throw decErr
-  if (!dec?.length) throw new Error("This item just changed. Refresh and try again.")
+  if (!dec?.length) throw new UserError("This item just changed. Refresh and try again.")
   const { data: sold, error } = await supabase
     .from("items")
     .insert({

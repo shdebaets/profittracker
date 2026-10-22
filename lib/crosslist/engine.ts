@@ -1,5 +1,6 @@
 // The cross-listing rule: when an item sells anywhere, it comes down everywhere else.
 // API marketplaces are ended for the user; assisted ones become a "delist this" to-do.
+import { reportError } from "@/lib/errors"
 import type { SaleColumns } from "@/lib/items/sell"
 import { marketplace, type MarketplaceId } from "@/lib/marketplaces/registry"
 import type { ApiAdapter } from "@/lib/marketplaces/types"
@@ -50,7 +51,7 @@ export async function takeDown(
         await store.updateListing(l.id, { status: "delisted", delisted_at: now, last_error: null })
         out.ended.push(l.marketplace)
       } catch (e) {
-        const error = e instanceof Error ? e.message : String(e)
+        const error = reportError(e, `end ${l.marketplace} listing`)
         await store.updateListing(l.id, { status: "error", last_error: error })
         out.failed.push({ marketplace: l.marketplace, error })
       }
@@ -87,7 +88,7 @@ export async function recordSale(
       try {
         await adapter.setQuantity(l, remaining)
       } catch (err) {
-        out.failed.push({ marketplace: l.marketplace, error: err instanceof Error ? err.message : String(err) })
+        out.failed.push({ marketplace: l.marketplace, error: reportError(err, `update ${l.marketplace} quantity`) })
       }
     }
     return out

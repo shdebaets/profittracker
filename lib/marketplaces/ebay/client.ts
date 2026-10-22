@@ -38,6 +38,7 @@ export class EbayError extends Error {
     readonly errors: { errorId?: number; message?: string; longMessage?: string; parameters?: { name: string; value: string }[] }[] = [],
   ) {
     super(message)
+    this.name = "EbayError"
   }
   has(errorId: number) {
     return this.errors.some((e) => e.errorId === errorId)
@@ -59,6 +60,8 @@ export async function ebayFetch<T = unknown>(
     headers: {
       Authorization: `Bearer ${token}`,
       Accept: "application/json",
+      // Node's fetch defaults to "Accept-Language: *", which eBay rejects.
+      "Accept-Language": "en-US",
       "Content-Language": "en-US",
       "X-EBAY-C-MARKETPLACE-ID": EBAY_MARKETPLACE_ID,
       ...(init.body ? { "Content-Type": "application/json" } : {}),
