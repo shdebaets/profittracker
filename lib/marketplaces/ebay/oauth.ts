@@ -32,6 +32,7 @@ async function tokenRequest(body: Record<string, string>): Promise<TokenResponse
     headers: {
       Authorization: `Basic ${Buffer.from(`${cfg.clientId}:${cfg.clientSecret}`).toString("base64")}`,
       "Content-Type": "application/x-www-form-urlencoded",
+      "Accept-Language": "en-US",
     },
     body: new URLSearchParams(body),
     cache: "no-store",

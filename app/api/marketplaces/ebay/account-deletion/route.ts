@@ -29,7 +29,7 @@ async function signatureValid(body: string, header: string | null) {
     let key = keyCache.get(sig.kid)
     if (!key) {
       const res = await fetch(`${ebayConfig().api}/commerce/notification/v1/public_key/${sig.kid}`, {
-        headers: { Authorization: `Bearer ${await getAppToken()}` },
+        headers: { Authorization: `Bearer ${await getAppToken()}`, "Accept-Language": "en-US" },
         cache: "no-store",
       })
       if (!res.ok) return false
