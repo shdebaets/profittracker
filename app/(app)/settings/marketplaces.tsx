@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation"
 import { useEffect, useState, useTransition } from "react"
 import { toast } from "sonner"
 import { createEbayPolicies, disconnectEbay, refreshEbayPolicies, saveEbaySettings, syncSales } from "@/app/(app)/actions/crosslist"
+import { checkExtensionSales } from "@/components/crosslist/auto-sync"
 import { FieldLabel, MoneyInput, NativeSelect, Segmented, TextInput } from "@/components/fields"
 import { relativeTime } from "@/lib/dates"
 import { missingPolicies, setupGaps } from "@/lib/marketplaces/ebay/mapping"
@@ -93,14 +94,26 @@ export function MarketplacesSettings({
       </div>
 
       <div>
-        <p className="mb-2 text-sm font-semibold">Tracked with reminders</p>
+        <p className="mb-2 text-sm font-semibold">Filled in by the FlipLedger Chrome extension</p>
         <div className="flex flex-wrap gap-1.5">
-          {MARKETPLACES.filter((m) => m.mode === "assisted").map((m) => (
+          {MARKETPLACES.filter((m) => m.extension).map((m) => (
             <span key={m.id} className={cn("rounded-lg px-2 py-1 text-xs font-bold", m.badge)}>{m.label}</span>
           ))}
         </div>
         <p className="mt-2 text-xs text-muted-foreground">
-          These have no public API. FlipLedger gives you a copy-and-paste listing kit, tracks where each item is listed, and tells you what to delist when it sells.
+          On a computer, the extension opens the site and fills in your photos and details; you check it and click Publish. While FlipLedger is open, it spots Poshmark and Mercari sales and puts the item on your delist list everywhere else. On your phone, use the copy kit.
+        </p>
+      </div>
+
+      <div>
+        <p className="mb-2 text-sm font-semibold">Copy kit</p>
+        <div className="flex flex-wrap gap-1.5">
+          {MARKETPLACES.filter((m) => m.mode === "assisted" && !m.extension).map((m) => (
+            <span key={m.id} className={cn("rounded-lg px-2 py-1 text-xs font-bold", m.badge)}>{m.label}</span>
+          ))}
+        </div>
+        <p className="mt-2 text-xs text-muted-foreground">
+          FlipLedger gives you the photos and text to paste, tracks where each item is listed, and tells you what to delist when it sells.
         </p>
       </div>
     </section>
@@ -191,6 +204,7 @@ function EbaySetup({ ebay, policiesUrl }: { ebay: MarketplaceConnection; policie
               const res = await syncSales()
               if (res.ok) toast.success(res.data.sales ? `${res.data.sales} new sale${res.data.sales === 1 ? "" : "s"} synced` : "No new eBay sales")
               else toast.error(res.error)
+              await checkExtensionSales()
             })
           }
           className="flex h-11 items-center justify-center gap-1.5 rounded-xl border text-sm font-semibold"

@@ -15,6 +15,10 @@ export type Marketplace = {
   /** Fee preset used when a sale on this marketplace is recorded. */
   feePreset: Platform
   photoLimit: number
+  /** The FlipLedger Chrome extension can fill in listings here (desktop only). */
+  extension?: true
+  /** The extension can tell from the public listing page when it sold. */
+  saleCheck?: true
   /** Tailwind classes for the badge. */
   badge: string
 }
@@ -28,12 +32,12 @@ export const MARKETPLACES: Marketplace[] = [
   {
     id: "mercari", label: "Mercari", short: "Mercari", mode: "assisted",
     sellUrl: "https://www.mercari.com/sell/", manageUrl: "https://www.mercari.com/mypage/listings/",
-    feePreset: "mercari_depop", photoLimit: 12, badge: "bg-red-500 text-white",
+    feePreset: "mercari_depop", photoLimit: 12, badge: "bg-red-500 text-white", extension: true, saleCheck: true,
   },
   {
     id: "facebook", label: "Facebook Marketplace", short: "Facebook", mode: "assisted",
     sellUrl: "https://www.facebook.com/marketplace/create/item", manageUrl: "https://www.facebook.com/marketplace/you/selling",
-    feePreset: "cash", photoLimit: 10, badge: "bg-sky-600 text-white",
+    feePreset: "cash", photoLimit: 10, badge: "bg-sky-600 text-white", extension: true,
   },
   {
     id: "depop", label: "Depop", short: "Depop", mode: "assisted",
@@ -48,7 +52,7 @@ export const MARKETPLACES: Marketplace[] = [
   {
     id: "poshmark", label: "Poshmark", short: "Posh", mode: "assisted",
     sellUrl: "https://poshmark.com/create-listing", manageUrl: "https://poshmark.com/",
-    feePreset: "poshmark_amz", photoLimit: 16, badge: "bg-rose-800 text-white",
+    feePreset: "poshmark_amz", photoLimit: 16, badge: "bg-rose-800 text-white", extension: true, saleCheck: true,
   },
 ]
 

@@ -1,9 +1,15 @@
 // Service worker: opens marketplace tabs for jobs sent by the FlipLedger app,
 // hands each tab its job, and routes the result back to the app tab.
 // Jobs live in chrome.storage.session because the worker can be suspended.
+// Also checks public listing pages for sales (CHECK_SALES).
+importScripts("shared.js")
 
-const FB_CREATE_URL = "https://www.facebook.com/marketplace/create/item"
-const FB_SELLING_URL = "https://www.facebook.com/marketplace/you/selling"
+const SITES = {
+  facebook: { create: "https://www.facebook.com/marketplace/create/item", manage: "https://www.facebook.com/marketplace/you/selling" },
+  poshmark: { create: "https://poshmark.com/create-listing", manage: "https://poshmark.com/closet" },
+  mercari: { create: "https://www.mercari.com/sell/", manage: "https://www.mercari.com/mypage/listings/" },
+}
+const SALE_CHECK_HOSTS = { poshmark: "poshmark.com", mercari: "www.mercari.com" }
 
 const key = (tabId) => `job:${tabId}`
 
@@ -35,7 +41,8 @@ function tellApp(job, payload) {
 }
 
 async function startJob(msg, sender) {
-  if (msg.marketplace !== "facebook") throw new Error(`${msg.marketplace} isn't supported by this extension yet`)
+  const site = SITES[msg.marketplace]
+  if (!site) throw new Error(`${msg.marketplace} isn't supported by this extension yet`)
   const job = {
     kind: msg.type === "LIST" ? "list" : "delist",
     jobId: msg.jobId,
@@ -48,14 +55,50 @@ async function startJob(msg, sender) {
     url: msg.url ?? null,
     state: "opened",
   }
-  const target = job.kind === "list" ? FB_CREATE_URL : job.url || FB_SELLING_URL
+  const target = job.kind === "list" ? site.create : job.url || site.manage
   const tab = await chrome.tabs.create({ url: target, active: true })
   await saveJob(tab.id, job)
+}
+
+/**
+ * Fetch each listing's public page and read whether it sold. No cookies are sent:
+ * sold status is public, and this keeps the check from acting as the seller.
+ */
+async function checkSales(listings) {
+  const results = []
+  async function check(l) {
+    let url
+    try {
+      url = new URL(l.url)
+    } catch {
+      return
+    }
+    const host = SALE_CHECK_HOSTS[l.marketplace]
+    // Links pasted by hand may drop or add "www."; fetch the host we have permission for.
+    if (!host || url.protocol !== "https:" || url.hostname.replace(/^www\./, "") !== host.replace(/^www\./, "")) return
+    url.hostname = host
+    try {
+      const res = await fetch(url.href, { credentials: "omit", redirect: "follow", signal: AbortSignal.timeout(10_000) })
+      if (res.status === 404 || res.status === 410) results.push({ listingId: l.listingId, state: "unavailable", priceCents: null })
+      else if (res.ok) results.push({ listingId: l.listingId, ...FL.saleStatus(await res.text()) })
+    } catch (e) {
+      console.warn("FlipLedger: couldn't check", url.href, e)
+    }
+  }
+  // A few at a time: quick enough for the app's wait, gentle on the sites.
+  const queue = (listings ?? []).slice(0, 100)
+  await Promise.all(Array.from({ length: 4 }, async () => {
+    while (queue.length) await check(queue.shift())
+  }))
+  return results
 }
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   ;(async () => {
     // From the FlipLedger app tab.
+    if (msg?.from === "app" && msg.type === "CHECK_SALES") {
+      return { ok: true, results: await checkSales(msg.listings) }
+    }
     if (msg?.from === "app") {
       await startJob(msg, sender)
       return { ok: true }

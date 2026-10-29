@@ -71,3 +71,29 @@ export function onExtensionResult(handler: (r: ExtResult) => void) {
   window.addEventListener("message", onMsg)
   return () => window.removeEventListener("message", onMsg)
 }
+
+export type ExtSaleCheck = { listingId: string; state: "sold" | "available" | "unavailable" | "unknown"; priceCents: number | null }
+
+/**
+ * Ask the extension to read each listing's public page and say whether it sold.
+ * Resolves null when the extension isn't installed, is too old, or doesn't answer.
+ */
+export function checkSalesWithExtension(listings: { listingId: string; marketplace: string; url: string }[]): Promise<ExtSaleCheck[] | null> {
+  if (!document.documentElement.hasAttribute("data-flipledger-ext")) return Promise.resolve(null)
+  const jobId = crypto.randomUUID()
+  return new Promise((resolve) => {
+    const finish = (r: ExtSaleCheck[] | null) => {
+      clearTimeout(timer)
+      window.removeEventListener("message", onMsg)
+      resolve(r)
+    }
+    const onMsg = (e: MessageEvent) => {
+      if (e.source !== window || e.origin !== location.origin) return
+      const d = e.data
+      if (d?.source === EXT_SOURCE && d.type === "SALES" && d.jobId === jobId) finish(Array.isArray(d.results) ? d.results : null)
+    }
+    const timer = setTimeout(() => finish(null), 60_000)
+    window.addEventListener("message", onMsg)
+    window.postMessage({ source: APP_SOURCE, type: "CHECK_SALES", jobId, listings }, location.origin)
+  })
+}

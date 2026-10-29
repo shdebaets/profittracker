@@ -422,7 +422,7 @@ function ListingKit({ item, m, draft, saveDraft }: { item: Item; m: Marketplace;
       ) : (
         <p className="text-sm text-muted-foreground">
           {m.label} has no public listing API, so you post it and FlipLedger keeps track. When the item sells anywhere, you&apos;ll get a reminder to take this one down.
-          {m.id === "facebook" && " On a computer, the FlipLedger Chrome extension can fill it in for you."}
+          {m.extension && " On a computer, the FlipLedger Chrome extension can fill it in for you."}
         </p>
       )}
       <div className="grid grid-cols-2 gap-2">
@@ -442,7 +442,7 @@ function ListingKit({ item, m, draft, saveDraft }: { item: Item; m: Marketplace;
       </div>
       <div className="flex gap-2">
         <TextInput
-          type="url" inputMode="url" placeholder={`${m.short} listing link (optional)`}
+          type="url" inputMode="url" placeholder={`${m.short} listing link${m.saleCheck ? " (lets the extension spot the sale)" : " (optional)"}`}
           value={url} onChange={(e) => setUrl(e.target.value)} className="h-11"
         />
         <button

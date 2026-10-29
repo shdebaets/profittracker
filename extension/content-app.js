@@ -13,6 +13,14 @@
     const msg = event.data
     if (!msg || msg.source !== APP_SOURCE) return
     if (msg.type === "PING") return announce()
+    if (msg.type === "CHECK_SALES") {
+      const reply = (results) => window.postMessage({ source: EXT_SOURCE, type: "SALES", jobId: msg.jobId, results }, location.origin)
+      chrome.runtime
+        .sendMessage({ from: "app", type: "CHECK_SALES", listings: msg.listings })
+        .then((res) => reply(res?.ok ? res.results : null))
+        .catch(() => reply(null))
+      return
+    }
     if (msg.type !== "LIST" && msg.type !== "DELIST") return
     const fail = (error) =>
       window.postMessage({ source: EXT_SOURCE, type: "ERROR", jobId: msg.jobId, marketplace: msg.marketplace, error }, location.origin)
