@@ -3,11 +3,36 @@
 import { useRouter } from "next/navigation"
 import { useEffect } from "react"
 import { toast } from "sonner"
-import { syncSales } from "@/app/(app)/actions/crosslist"
+import { applyExtensionSaleChecks, extensionWatchList, syncSales } from "@/app/(app)/actions/crosslist"
+import { checkSalesWithExtension } from "@/lib/extension"
+import { marketplace } from "@/lib/marketplaces/registry"
 
 const STALE_MS = 5 * 60_000
+let lastExtensionCheck = 0
 
-/** Pull new eBay sales when the app opens or comes back to the foreground (at most every 5 min). */
+/**
+ * Have the Chrome extension check Poshmark and Mercari listing pages for sales.
+ * Returns how many listings changed (sales + confirmed delists); 0 without the extension.
+ */
+export async function checkExtensionSales(): Promise<number> {
+  lastExtensionCheck = Date.now()
+  const watch = await extensionWatchList()
+  if (!watch.ok || !watch.data.length) return 0
+  const checks = await checkSalesWithExtension(watch.data)
+  if (!checks?.length) return 0
+  const res = await applyExtensionSaleChecks(checks)
+  if (!res.ok) {
+    toast.error(res.error)
+    return 0
+  }
+  for (const m of res.data.sales) toast.success(`New ${marketplace(m).label} sale recorded`)
+  return res.data.sales.length + res.data.delisted
+}
+
+/**
+ * Pull new sales when the app opens or comes back to the foreground (at most every 5 min):
+ * eBay through its API, Poshmark and Mercari through the Chrome extension.
+ */
 export function AutoSync() {
   const router = useRouter()
   useEffect(() => {
@@ -21,6 +46,7 @@ export function AutoSync() {
           toast.success(`${res.data.sales} new eBay sale${res.data.sales === 1 ? "" : "s"} synced`)
           router.refresh()
         }
+        if (Date.now() - lastExtensionCheck > STALE_MS && (await checkExtensionSales())) router.refresh()
       } finally {
         running = false
       }

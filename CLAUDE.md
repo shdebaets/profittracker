@@ -68,7 +68,8 @@ Local QA logins live in `.env.example` (`qa-a@flipledger.test`, `qa-b@flipledger
   - `/api/marketplaces/ebay/account-deletion` is required by eBay for production keys.
   - **Business policies** (shipping, payment, returns) are required to list. Settings can create starter ones through the Account API (`createEbayPolicies` → `createPolicies`, `sell.account` scope) named "FlipLedger shipping/payment/returns", or link to eBay's page (`businessPoliciesUrl`). They're normal policies the seller can edit on eBay. USPS Ground Advantage's service code is `USPSParcel`.
 - **Photos to eBay** go as short signed links, `/api/p/<exp>/<sig>/<path>` (`lib/photo-links.ts`), because eBay rejects picture URLs over 500 characters (3,975 total).
-- **Chrome extension:** `extension/` (MV3, plain JS, excluded from tsconfig). It's in PR #3 and not on `main` until that merges. It auto-fills Facebook Marketplace; the user picks the category and clicks Publish. The app talks to it via `window.postMessage` (`lib/extension.ts`, `components/crosslist/extension-bridge.tsx`). Its fields are found by visible labels. It has not been run on the real facebook.com yet.
+- **Chrome extension:** `extension/` (MV3, plain JS, excluded from tsconfig). It auto-fills Facebook Marketplace, Poshmark and Mercari; the user finishes the fields it can't (category etc.) and clicks Publish. `runner.js` holds the flow and each site is a config in `site-*.js` (fields found by visible label or placeholder). The app talks to it via `window.postMessage` (`lib/extension.ts`, `components/crosslist/extension-bridge.tsx`). `registry.ts` marks which sites it supports (`extension`, `saleCheck`). None of the sites' selectors have been run on the real sites yet.
+- **Poshmark/Mercari sales:** the extension fetches each live listing's public page (no cookies) and reads schema.org `availability` (`FL.saleStatus`). `AutoSync` runs it at most every 5 minutes while the app is open in desktop Chrome; `applyExtensionSaleChecks` → `lib/crosslist/assisted-sales.ts` records the sale (one unit, fee from the marketplace's preset, price = listing price) and confirms `delist_pending` listings that are gone. Idempotent via `marketplace_sales` (`external_line_id` = listing id). Needs the listing's URL.
 
 ### Marketplace strategy (researched Oct 2026)
 
@@ -77,7 +78,7 @@ Local QA logins live in `.env.example` (`qa-a@flipledger.test`, `qa-b@flipledger
 | eBay | Official API | Public Sell APIs |
 | Facebook | Chrome extension (desktop); copy kit on phones | No listing API for third-party tools |
 | Depop | **Partner API, once approved** (email developers@depop.com) | Private Selling API with OAuth and sale webhooks. Don't automate via the extension: Depop's terms ban it |
-| Mercari, Poshmark | Copy kit now; extension later at the user's risk | No API; terms ban automation. Never build share/follow bots |
+| Mercari, Poshmark | Chrome extension (desktop), at the user's risk; copy kit on phones | No API; terms ban automation, but competitors do the same and bans target bots. The extension only fills forms the seller submits. Never build share/follow/relist bots |
 | Vinted | Copy kit only | API is EU/UK Pro only; users have been banned for automation |
 | Etsy | Skipped | Client doesn't need it |
 

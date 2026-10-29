@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache"
 import { headers } from "next/headers"
 import { z } from "zod"
+import { applySaleChecks, type SaleCheckOutcome, type SaleCheckStore } from "@/lib/crosslist/assisted-sales"
 import { takeDown } from "@/lib/crosslist/engine"
 import { adapters, supabaseStore } from "@/lib/crosslist/store"
 import {
@@ -18,7 +19,7 @@ import { marketplace } from "@/lib/marketplaces/registry"
 import { photoLink } from "@/lib/photo-links"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { requireUser } from "@/lib/supabase/server"
-import type { Listing } from "@/lib/types"
+import type { ItemStatus, Listing } from "@/lib/types"
 import { UserError } from "@/lib/errors"
 import { fail, type ActionResult } from "./result"
 
@@ -143,6 +144,74 @@ export async function delistEverywhere(itemId: string): Promise<ActionResult> {
     return done()
   } catch (e) {
     return fail(e)
+  }
+}
+
+// ---- Sale checks by the Chrome extension (Poshmark, Mercari) ----
+
+export type WatchedListing = { listingId: string; marketplace: string; url: string }
+
+/** Live or to-be-delisted listings whose public page the extension should check. */
+export async function extensionWatchList(): Promise<Result<WatchedListing[]>> {
+  try {
+    const { supabase } = await requireUser()
+    const { data, error } = await supabase
+      .from("marketplace_listings")
+      .select("id, marketplace, external_url")
+      .in("status", ["active", "delist_pending"])
+      .in("marketplace", ["poshmark", "mercari"])
+      .not("external_url", "is", null)
+    if (error) throw error
+    return { ok: true, data: data.map((l) => ({ listingId: l.id, marketplace: l.marketplace, url: l.external_url! })) }
+  } catch (e) {
+    return fail(e) as { ok: false; error: string }
+  }
+}
+
+const saleChecksSchema = z
+  .array(
+    z.object({
+      listingId: z.uuid(),
+      state: z.enum(["sold", "available", "unavailable", "unknown"]),
+      priceCents: cents.nullable(),
+    }),
+  )
+  .max(100)
+
+/** Record what the extension found: new sales, and listings that are confirmed gone. */
+export async function applyExtensionSaleChecks(input: unknown): Promise<Result<SaleCheckOutcome>> {
+  try {
+    const checks = saleChecksSchema.parse(input)
+    const { supabase, userId } = await requireUser()
+    const admin = createAdminClient()
+    const store: SaleCheckStore = {
+      ...supabaseStore(supabase),
+      async listing(id) {
+        const { data, error } = await supabase.from("marketplace_listings").select("*").eq("id", id).maybeSingle()
+        if (error) throw error
+        return data as Listing | null
+      },
+      async itemStatus(itemId) {
+        const { data } = await supabase.from("items").select("status").eq("id", itemId).maybeSingle()
+        return (data?.status as ItemStatus | undefined) ?? null
+      },
+      // marketplace_sales is only writable with the service role. The listing was read
+      // through RLS above, so it belongs to this user.
+      async claimSale(l) {
+        const { error } = await admin
+          .from("marketplace_sales")
+          .insert({ marketplace: l.marketplace, external_line_id: l.id, user_id: userId, item_id: l.item_id })
+        return !error
+      },
+      async releaseSale(l) {
+        await admin.from("marketplace_sales").delete().eq("marketplace", l.marketplace).eq("external_line_id", l.id).eq("user_id", userId)
+      },
+    }
+    const out = await applySaleChecks(store, adapters, checks)
+    if (out.sales.length || out.delisted) revalidatePath("/", "layout")
+    return { ok: true, data: out }
+  } catch (e) {
+    return fail(e) as { ok: false; error: string }
   }
 }
 
