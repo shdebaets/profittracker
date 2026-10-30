@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server"
+import { checkPoshmarkListings } from "@/lib/marketplaces/assisted-sync"
 import { syncEbaySales } from "@/lib/marketplaces/ebay/sync"
 import { createAdminClient } from "@/lib/supabase/admin"
 
@@ -24,5 +25,13 @@ export async function GET(request: NextRequest) {
       console.error("sync-sales failed for", a.user_id, e)
     }
   }
-  return NextResponse.json({ accounts: accounts?.length ?? 0, sales, failures: failures.length })
+  // Poshmark: everyone's listings not already checked in the last hour.
+  let poshmark = 0
+  try {
+    poshmark = (await checkPoshmarkListings(admin, admin, { staleMs: 60 * 60_000, limit: 500 })).sales.length
+  } catch (e) {
+    failures.push("poshmark")
+    console.error("sync-sales: poshmark check failed", e)
+  }
+  return NextResponse.json({ accounts: accounts?.length ?? 0, sales, poshmark, failures: failures.length })
 }

@@ -61,8 +61,8 @@ async function startJob(msg, sender) {
 }
 
 /**
- * Fetch each listing's public page and read whether it sold. No cookies are sent:
- * sold status is public, and this keeps the check from acting as the seller.
+ * Fetch each listing's public page and read whether it sold. Normally no cookies are
+ * sent: sold status is public, and this keeps the check from acting as the seller.
  */
 async function checkSales(listings) {
   const results = []
@@ -78,9 +78,12 @@ async function checkSales(listings) {
     if (!host || url.protocol !== "https:" || url.hostname.replace(/^www\./, "") !== host.replace(/^www\./, "")) return
     url.hostname = host
     try {
-      const res = await fetch(url.href, { credentials: "omit", redirect: "follow", signal: AbortSignal.timeout(10_000) })
+      const get = (credentials) => fetch(url.href, { credentials, redirect: "follow", signal: AbortSignal.timeout(10_000) })
+      let res = await get("omit")
+      // Mercari's Cloudflare check: retry with the clearance the seller got by browsing Mercari.
+      if (res.headers.get("cf-mitigated") === "challenge") res = await get("include")
       if (res.status === 404 || res.status === 410) results.push({ listingId: l.listingId, state: "unavailable", priceCents: null })
-      else if (res.ok) results.push({ listingId: l.listingId, ...FL.saleStatus(await res.text()) })
+      else if (res.ok) results.push({ listingId: l.listingId, ...FL.saleStatus(l.marketplace, url.href, await res.text()) })
     } catch (e) {
       console.warn("FlipLedger: couldn't check", url.href, e)
     }

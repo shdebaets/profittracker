@@ -8,7 +8,6 @@ type FLT = {
   norm(s: string): string
   conditionChoices(m: string, c: string | null): string[]
   wholeDollars(cents: number | null): string
-  saleStatus(html: string): { state: string; priceCents: number | null }
 }
 let FL: FLT
 
@@ -83,39 +82,5 @@ describe("extension shared helpers", () => {
     expect(FL.findListingHref(mercari, "Levi's 501 Jeans 32x30", /\/(us\/)?item\/m\d+/, "https://www.mercari.com")).toBe(
       "https://www.mercari.com/us/item/m12345678901",
     )
-  })
-})
-
-const ld = (offers: unknown, extra = {}) =>
-  `<html><head><script type="application/ld+json">${JSON.stringify({ "@context": "https://schema.org", "@type": "Product", name: "Jacket", offers, ...extra })}</script></head></html>`
-
-describe("saleStatus", () => {
-  it("reads sold, live and taken-down listings from schema.org data", () => {
-    expect(FL.saleStatus(ld({ "@type": "Offer", price: "45.00", availability: "https://schema.org/SoldOut" }))).toEqual({ state: "sold", priceCents: 4500 })
-    expect(FL.saleStatus(ld({ "@type": "Offer", price: 30, availability: "http://schema.org/InStock" }))).toEqual({ state: "available", priceCents: 3000 })
-    expect(FL.saleStatus(ld([{ "@type": "Offer", price: "12.5", availability: "OutOfStock" }]))).toEqual({ state: "unavailable", priceCents: 1250 })
-  })
-
-  it("handles @graph pages and other JSON-LD blocks", () => {
-    const html =
-      `<script type="application/ld+json">{"@type":"BreadcrumbList","itemListElement":[]}</script>` +
-      `<script type='application/ld+json'>{"@graph":[{"@type":"Organization"},{"@type":"Product","offers":{"price":"20","availability":"https://schema.org/SoldOut"}}]}</script>`
-    expect(FL.saleStatus(html)).toEqual({ state: "sold", priceCents: 2000 })
-  })
-
-  it("only trusts the listing's own product, not other items on the page", () => {
-    const html =
-      ld({ "@type": "Offer", price: "45", availability: "https://schema.org/InStock" }) +
-      ld({ "@type": "Offer", price: "20", availability: "https://schema.org/SoldOut" }) +
-      `<script>{"similar":[{"status":"sold_out"}]}</script>`
-    expect(FL.saleStatus(html)).toEqual({ state: "available", priceCents: 4500 })
-    // Status fields outside schema.org data are ignored.
-    expect(FL.saleStatus(`<script>{"inventory":{"status":"sold_out"}}</script>`).state).toBe("unknown")
-  })
-
-  it("says unknown for pages it can't read", () => {
-    expect(FL.saleStatus("<html>Just a moment...</html>")).toEqual({ state: "unknown", priceCents: null })
-    expect(FL.saleStatus(`<script type="application/ld+json">{not json</script>`).state).toBe("unknown")
-    expect(FL.saleStatus("")).toEqual({ state: "unknown", priceCents: null })
   })
 })

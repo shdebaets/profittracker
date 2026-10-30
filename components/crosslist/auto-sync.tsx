@@ -11,7 +11,8 @@ const STALE_MS = 5 * 60_000
 let lastExtensionCheck = 0
 
 /**
- * Have the Chrome extension check Poshmark and Mercari listing pages for sales.
+ * Have the Chrome extension check Mercari listing pages for sales (servers can't read them),
+ * and Poshmark too, in case Poshmark ever blocks our server.
  * Returns how many listings changed (sales + confirmed delists); 0 without the extension.
  */
 export async function checkExtensionSales(): Promise<number> {
@@ -31,7 +32,7 @@ export async function checkExtensionSales(): Promise<number> {
 
 /**
  * Pull new sales when the app opens or comes back to the foreground (at most every 5 min):
- * eBay through its API, Poshmark and Mercari through the Chrome extension.
+ * eBay and Poshmark on the server (so this works on phones), Mercari through the Chrome extension.
  */
 export function AutoSync() {
   const router = useRouter()
@@ -42,9 +43,11 @@ export function AutoSync() {
       running = true
       try {
         const res = await syncSales(STALE_MS)
-        if (res.ok && res.data.sales) {
-          toast.success(`${res.data.sales} new eBay sale${res.data.sales === 1 ? "" : "s"} synced`)
-          router.refresh()
+        if (res.ok) {
+          const { sales, poshmark } = res.data
+          if (sales) toast.success(`${sales} new eBay sale${sales === 1 ? "" : "s"} synced`)
+          for (const m of poshmark.sales) toast.success(`New ${marketplace(m).label} sale recorded`)
+          if (sales || poshmark.sales.length || poshmark.delisted) router.refresh()
         }
         if (Date.now() - lastExtensionCheck > STALE_MS && (await checkExtensionSales())) router.refresh()
       } finally {

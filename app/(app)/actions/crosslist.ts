@@ -3,9 +3,9 @@
 import { revalidatePath } from "next/cache"
 import { headers } from "next/headers"
 import { z } from "zod"
-import { applySaleChecks, type SaleCheckOutcome, type SaleCheckStore } from "@/lib/crosslist/assisted-sales"
+import { applySaleChecks, type SaleCheckOutcome } from "@/lib/crosslist/assisted-sales"
 import { takeDown } from "@/lib/crosslist/engine"
-import { adapters, supabaseStore } from "@/lib/crosslist/store"
+import { adapters, saleCheckStore, supabaseStore } from "@/lib/crosslist/store"
 import {
   categoryAspects, categoryConditions, publishToEbay, suggestCategories,
   type Aspect, type CategorySuggestion, type ConditionOption,
@@ -15,12 +15,13 @@ import { setupGaps } from "@/lib/marketplaces/ebay/mapping"
 import { getUserToken } from "@/lib/marketplaces/ebay/oauth"
 import { createPolicies, ensureLocation, loadPolicies, saveSettings } from "@/lib/marketplaces/ebay/setup"
 import { syncEbaySales } from "@/lib/marketplaces/ebay/sync"
+import { checkPoshmarkListings } from "@/lib/marketplaces/assisted-sync"
 import { marketplace } from "@/lib/marketplaces/registry"
 import { photoLink } from "@/lib/photo-links"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { requireUser } from "@/lib/supabase/server"
-import type { ItemStatus, Listing } from "@/lib/types"
-import { UserError } from "@/lib/errors"
+import type { Listing } from "@/lib/types"
+import { reportError, UserError } from "@/lib/errors"
 import { fail, type ActionResult } from "./result"
 
 type Result<T> = { ok: true; data: T } | { ok: false; error: string }
@@ -182,32 +183,8 @@ const saleChecksSchema = z
 export async function applyExtensionSaleChecks(input: unknown): Promise<Result<SaleCheckOutcome>> {
   try {
     const checks = saleChecksSchema.parse(input)
-    const { supabase, userId } = await requireUser()
-    const admin = createAdminClient()
-    const store: SaleCheckStore = {
-      ...supabaseStore(supabase),
-      async listing(id) {
-        const { data, error } = await supabase.from("marketplace_listings").select("*").eq("id", id).maybeSingle()
-        if (error) throw error
-        return data as Listing | null
-      },
-      async itemStatus(itemId) {
-        const { data } = await supabase.from("items").select("status").eq("id", itemId).maybeSingle()
-        return (data?.status as ItemStatus | undefined) ?? null
-      },
-      // marketplace_sales is only writable with the service role. The listing was read
-      // through RLS above, so it belongs to this user.
-      async claimSale(l) {
-        const { error } = await admin
-          .from("marketplace_sales")
-          .insert({ marketplace: l.marketplace, external_line_id: l.id, user_id: userId, item_id: l.item_id })
-        return !error
-      },
-      async releaseSale(l) {
-        await admin.from("marketplace_sales").delete().eq("marketplace", l.marketplace).eq("external_line_id", l.id).eq("user_id", userId)
-      },
-    }
-    const out = await applySaleChecks(store, adapters, checks)
+    const { supabase } = await requireUser()
+    const out = await applySaleChecks(saleCheckStore(supabase, createAdminClient()), adapters, checks)
     if (out.sales.length || out.delisted) revalidatePath("/", "layout")
     return { ok: true, data: out }
   } catch (e) {
@@ -292,22 +269,34 @@ export async function publishEbay(itemId: string, input: z.input<typeof publishS
   }
 }
 
-/** Pull new eBay sales now. `ifOlderThanMs` lets the app call this cheaply on open. */
-export async function syncSales(ifOlderThanMs = 0): Promise<Result<{ sales: number }>> {
+/**
+ * Pull new sales now: eBay through its API, Poshmark by reading its public listing pages.
+ * `ifOlderThanMs` lets the app call this cheaply on open. `sales` counts eBay; `poshmark` is what
+ * changed there. Mercari can't be read from a server, so the extension checks it (checkExtensionSales).
+ */
+export async function syncSales(ifOlderThanMs = 0): Promise<Result<{ sales: number; poshmark: SaleCheckOutcome }>> {
   try {
     const { supabase, userId } = await requireUser()
+    const admin = createAdminClient()
+
+    let poshmark: SaleCheckOutcome = { sales: [], delisted: 0 }
+    try {
+      poshmark = await checkPoshmarkListings(supabase, admin, { staleMs: Math.max(ifOlderThanMs, 60_000), limit: 50 })
+    } catch (e) {
+      reportError(e, "poshmark check") // Don't let this stop the eBay sync.
+    }
+
+    let sales = 0
     const { data: conn } = await supabase
       .from("marketplace_connections")
       .select("last_synced_at")
       .eq("marketplace", "ebay")
       .maybeSingle()
-    if (!conn) return { ok: true, data: { sales: 0 } }
-    if (ifOlderThanMs && conn.last_synced_at && Date.now() - new Date(conn.last_synced_at).getTime() < ifOlderThanMs) {
-      return { ok: true, data: { sales: 0 } }
-    }
-    const r = await syncEbaySales(createAdminClient(), userId)
-    if (r.sales) revalidatePath("/", "layout")
-    return { ok: true, data: r }
+    const fresh = ifOlderThanMs && conn?.last_synced_at && Date.now() - new Date(conn.last_synced_at).getTime() < ifOlderThanMs
+    if (conn && !fresh) sales = (await syncEbaySales(admin, userId)).sales
+
+    if (sales || poshmark.sales.length || poshmark.delisted) revalidatePath("/", "layout")
+    return { ok: true, data: { sales, poshmark } }
   } catch (e) {
     return fail(e) as { ok: false; error: string }
   }

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "FlipLedger Lister",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Fills in your Facebook Marketplace, Poshmark and Mercari listings from FlipLedger and keeps your cross-listings in sync.",
   "minimum_chrome_version": "116",
   "background": { "service_worker": "background.js" },

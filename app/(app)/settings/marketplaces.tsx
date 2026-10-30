@@ -101,7 +101,7 @@ export function MarketplacesSettings({
           ))}
         </div>
         <p className="mt-2 text-xs text-muted-foreground">
-          On a computer, the extension opens the site and fills in your photos and details; you check it and click Publish. While FlipLedger is open, it spots Poshmark and Mercari sales and puts the item on your delist list everywhere else. On your phone, use the copy kit.
+          On a computer, the extension opens the site and fills in your photos and details; you check it and click Publish. On your phone, use the copy kit. Poshmark sales are spotted automatically on any device. Mercari sales are spotted while FlipLedger is open on a computer with the extension. Both need the listing&apos;s link saved.
         </p>
       </div>
 
@@ -202,7 +202,10 @@ function EbaySetup({ ebay, policiesUrl }: { ebay: MarketplaceConnection; policie
           onClick={() =>
             start(async () => {
               const res = await syncSales()
-              if (res.ok) toast.success(res.data.sales ? `${res.data.sales} new sale${res.data.sales === 1 ? "" : "s"} synced` : "No new eBay sales")
+              if (res.ok) {
+                const n = res.data.sales + res.data.poshmark.sales.length
+                toast.success(n ? `${n} new sale${n === 1 ? "" : "s"} synced` : "No new sales")
+              }
               else toast.error(res.error)
               await checkExtensionSales()
             })
