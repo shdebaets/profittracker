@@ -56,7 +56,7 @@ export function listWithExtension(marketplace: MarketplaceId, listing: ExtListin
 
 export function delistWithExtension(
   marketplace: MarketplaceId,
-  job: { listingId: string; itemId: string; url: string | null; title: string },
+  job: { listingId: string; itemId: string; url: string | null; title: string; auto?: boolean },
 ) {
   window.postMessage({ source: APP_SOURCE, type: "DELIST", jobId: crypto.randomUUID(), marketplace, ...job }, location.origin)
 }
@@ -96,4 +96,30 @@ export function checkSalesWithExtension(listings: { listingId: string; marketpla
     window.addEventListener("message", onMsg)
     window.postMessage({ source: APP_SOURCE, type: "CHECK_SALES", jobId, listings }, location.origin)
   })
+}
+
+const AUTO_DELIST_KEY = "flipledger-auto-delist"
+
+/** Whether this computer's extension may take listings down by itself. Off unless the seller turned it on. */
+export function autoDelistEnabled() {
+  try {
+    return localStorage.getItem(AUTO_DELIST_KEY) === "1"
+  } catch {
+    return false
+  }
+}
+
+export function setAutoDelist(on: boolean) {
+  try {
+    if (on) localStorage.setItem(AUTO_DELIST_KEY, "1")
+    else localStorage.removeItem(AUTO_DELIST_KEY)
+  } catch {
+    // Blocked storage: the setting just stays off.
+  }
+}
+
+/** Older extensions don't know auto-delist and would open a normal tab for each listing. */
+export function extensionCanAutoDelist() {
+  const [major, minor] = (document.documentElement.getAttribute("data-flipledger-ext") ?? "0.0").split(".").map(Number)
+  return major > 0 || minor >= 3
 }

@@ -34,6 +34,7 @@
 
     delist: {
       buttons: [/^mark as sold$/i],
+      auto: { final: /^mark as sold$/i, confirm: /^(mark as sold|confirm|done)$/i },
       hint: 'Click "Mark as sold" (highlighted), or delete the listing.',
       fallback: "mark it as sold or delete it",
       isGone: () =>

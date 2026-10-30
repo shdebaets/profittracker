@@ -16,7 +16,7 @@ import { getUserToken } from "@/lib/marketplaces/ebay/oauth"
 import { createPolicies, ensureLocation, loadPolicies, saveSettings } from "@/lib/marketplaces/ebay/setup"
 import { syncEbaySales } from "@/lib/marketplaces/ebay/sync"
 import { checkPoshmarkListings } from "@/lib/marketplaces/assisted-sync"
-import { marketplace } from "@/lib/marketplaces/registry"
+import { marketplace, type MarketplaceId } from "@/lib/marketplaces/registry"
 import { photoLink } from "@/lib/photo-links"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { requireUser } from "@/lib/supabase/server"
@@ -164,6 +164,34 @@ export async function extensionWatchList(): Promise<Result<WatchedListing[]>> {
       .not("external_url", "is", null)
     if (error) throw error
     return { ok: true, data: data.map((l) => ({ listingId: l.id, marketplace: l.marketplace, url: l.external_url! })) }
+  } catch (e) {
+    return fail(e) as { ok: false; error: string }
+  }
+}
+
+export type DelistJob = { listingId: string; itemId: string; marketplace: MarketplaceId; url: string; title: string }
+
+/** Listings waiting to come down that the extension can take down by itself. */
+export async function extensionDelistQueue(): Promise<Result<DelistJob[]>> {
+  try {
+    const { supabase } = await requireUser()
+    const { data, error } = await supabase
+      .from("marketplace_listings")
+      .select("id, item_id, marketplace, external_url, items(title)")
+      .eq("status", "delist_pending")
+      .in("marketplace", ["facebook", "poshmark", "mercari"])
+      .not("external_url", "is", null)
+    if (error) throw error
+    return {
+      ok: true,
+      data: data.map((l) => ({
+        listingId: l.id,
+        itemId: l.item_id,
+        marketplace: l.marketplace as MarketplaceId,
+        url: l.external_url!,
+        title: ([l.items].flat()[0] as { title: string | null } | undefined)?.title ?? "",
+      })),
+    }
   } catch (e) {
     return fail(e) as { ok: false; error: string }
   }

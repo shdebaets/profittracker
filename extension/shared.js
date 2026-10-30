@@ -3,7 +3,7 @@
 // The background worker loads it too (importScripts), so nothing here may touch the DOM.
 ;(function () {
   const FL = {
-    VERSION: "0.2.1",
+    VERSION: "0.3.0",
     /** Marketplaces this extension can drive. */
     MARKETPLACES: ["facebook", "poshmark", "mercari"],
     APP_SOURCE: "flipledger-app",
@@ -48,6 +48,12 @@
         },
       }
       return table[marketplace]?.[condition] ?? []
+    },
+
+    /** The listing's ID in a marketplace link, or null. Auto-delist only acts on pages carrying this ID. */
+    listingId(marketplace, url) {
+      const pattern = { facebook: /\/marketplace\/item\/(\d+)/, poshmark: /-([0-9a-f]{24})(?:[/?#]|$)/, mercari: /\/item\/(m\d+)/ }[marketplace]
+      return String(url ?? "").match(pattern ?? /$^/)?.[1] ?? null
     },
 
     /** Loose text match: case/space/punctuation-insensitive. */
