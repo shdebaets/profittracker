@@ -41,6 +41,8 @@
     delist: {
       // The item page has "Edit"; the edit page has "Deactivate" and "Delete".
       buttons: [/^delete( item| listing)?$/i, /^deactivate( item| listing)?$/i, /^edit( item| listing)?$/i],
+      // Deactivate, not delete: the seller can bring it back if this ever acts by mistake.
+      auto: { open: /^edit( item| listing)?$/i, final: /^deactivate( item| listing)?$/i, confirm: /^(yes|deactivate|deactivate item|deactivate listing|confirm)$/i },
       hint: 'Click the highlighted button: "Edit", then "Delete" or "Deactivate".',
       fallback: "delete or deactivate it",
       isGone: () =>

@@ -2,12 +2,13 @@
 
 import { ExternalLink, Link2, Loader2, RefreshCw, Sparkles } from "lucide-react"
 import { useRouter } from "next/navigation"
-import { useEffect, useState, useTransition } from "react"
+import { useEffect, useState, useSyncExternalStore, useTransition } from "react"
 import { toast } from "sonner"
 import { createEbayPolicies, disconnectEbay, refreshEbayPolicies, saveEbaySettings, syncSales } from "@/app/(app)/actions/crosslist"
 import { checkExtensionSales } from "@/components/crosslist/auto-sync"
 import { FieldLabel, MoneyInput, NativeSelect, Segmented, TextInput } from "@/components/fields"
 import { relativeTime } from "@/lib/dates"
+import { autoDelistEnabled, setAutoDelist } from "@/lib/extension"
 import { missingPolicies, setupGaps } from "@/lib/marketplaces/ebay/mapping"
 import { toCents } from "@/lib/money"
 import { MARKETPLACES } from "@/lib/marketplaces/registry"
@@ -105,6 +106,8 @@ export function MarketplacesSettings({
         </p>
       </div>
 
+      <AutoDelistToggle />
+
       <div>
         <p className="mb-2 text-sm font-semibold">Copy kit</p>
         <div className="flex flex-wrap gap-1.5">
@@ -117,6 +120,33 @@ export function MarketplacesSettings({
         </p>
       </div>
     </section>
+  )
+}
+
+const autoDelistListeners = new Set<() => void>()
+function subscribeAutoDelist(listener: () => void) {
+  autoDelistListeners.add(listener)
+  return () => void autoDelistListeners.delete(listener)
+}
+
+function AutoDelistToggle() {
+  const on = useSyncExternalStore(subscribeAutoDelist, autoDelistEnabled, () => false)
+  return (
+    <label className="flex items-start gap-3 rounded-2xl border p-3">
+      <input
+        type="checkbox" checked={on} className="mt-1 size-4"
+        onChange={(e) => {
+          setAutoDelist(e.target.checked)
+          autoDelistListeners.forEach((l) => l())
+        }}
+      />
+      <span>
+        <span className="block text-sm font-semibold">Delist automatically on this computer</span>
+        <span className="mt-0.5 block text-xs text-muted-foreground">
+          When an item sells, the extension removes its Facebook, Poshmark and Mercari listings in background tabs while FlipLedger is open here. It needs each listing&apos;s link saved. These sites ban automation, so this could put your accounts at risk. Anything it can&apos;t remove stays on your delist list.
+        </span>
+      </span>
+    </label>
   )
 }
 

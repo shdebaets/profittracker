@@ -53,10 +53,12 @@ async function startJob(msg, sender) {
     itemId: msg.itemId ?? msg.listing?.itemId ?? null,
     title: msg.title ?? msg.listing?.title ?? "",
     url: msg.url ?? null,
+    auto: msg.type === "DELIST" && msg.auto === true,
     state: "opened",
   }
+  if (job.auto && !job.url) throw new Error("Auto-delist needs the listing's link")
   const target = job.kind === "list" ? site.create : job.url || site.manage
-  const tab = await chrome.tabs.create({ url: target, active: true })
+  const tab = await chrome.tabs.create({ url: target, active: !job.auto })
   await saveJob(tab.id, job)
 }
 
@@ -138,11 +140,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       if (job.kind === "list") tellApp(job, { type: "LISTED", itemId: job.itemId, url: msg.url ?? null })
       else tellApp(job, { type: "DELISTED", listingId: job.listingId, itemId: job.itemId })
       await dropJob(tabId)
+      if (job.auto) chrome.tabs.remove(tabId).catch(() => {})
       return { ok: true }
     }
     if (msg?.type === "CANCEL") {
       tellApp(job, { type: "ERROR", error: msg.reason || "Cancelled" })
       await dropJob(tabId)
+      if (job.auto) chrome.tabs.remove(tabId).catch(() => {})
       return { ok: true }
     }
     return { ok: false }

@@ -6,6 +6,7 @@ type FLT = {
   listingText(l: { description?: string; condition?: string | null; brand?: string; size?: string }): string
   findListingHref(links: { href: string; textContent: string }[], title: string, pattern?: RegExp, origin?: string): string | null
   norm(s: string): string
+  listingId(m: string, url: string | null): string | null
   conditionChoices(m: string, c: string | null): string[]
   wholeDollars(cents: number | null): string
 }
@@ -82,5 +83,14 @@ describe("extension shared helpers", () => {
     expect(FL.findListingHref(mercari, "Levi's 501 Jeans 32x30", /\/(us\/)?item\/m\d+/, "https://www.mercari.com")).toBe(
       "https://www.mercari.com/us/item/m12345678901",
     )
+  })
+
+  it("reads the listing ID out of each site's links", () => {
+    expect(FL.listingId("facebook", "https://www.facebook.com/marketplace/item/222")).toBe("222")
+    expect(FL.listingId("poshmark", "https://poshmark.com/listing/Nike-Jacket-6ae39b435ac6f2cd42f32233")).toBe("6ae39b435ac6f2cd42f32233")
+    expect(FL.listingId("mercari", "https://www.mercari.com/us/item/m12215929581/")).toBe("m12215929581")
+    expect(FL.listingId("poshmark", "https://poshmark.com/closet/someone")).toBeNull()
+    expect(FL.listingId("depop", "https://www.depop.com/products/x")).toBeNull()
+    expect(FL.listingId("mercari", null)).toBeNull()
   })
 })

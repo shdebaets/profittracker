@@ -2,7 +2,7 @@
 
 Facebook Marketplace, Poshmark and Mercari have no API for posting listings on someone's behalf. This extension does it in the seller's own logged-in browser, the same way Vendoo, List Perfectly and Crosslist do. Desktop Chrome only.
 
-Poshmark's and Mercari's terms ban automation. Sellers using these tools accept that risk; accounts there have been flagged for share/follow bots and high-volume automation, not for filling in a form the seller then submits. This extension never shares, follows, relists or submits anything by itself.
+Poshmark's and Mercari's terms ban automation. Sellers using these tools accept that risk; accounts there have been flagged for share/follow bots and high-volume automation, not for filling in a form the seller then submits. This extension never shares, follows, relists or submits a listing by itself. The only thing it does unattended is the opt-in auto-delist below.
 
 ## What it does
 
@@ -14,6 +14,7 @@ Poshmark's and Mercari's terms ban automation. Sellers using these tools accept 
   The seller checks it and clicks **Publish** (or List) themselves. The extension then records the listing, with its link, in FlipLedger.
 - **Spot sales (Mercari, plus Poshmark as a backup):** while FlipLedger is open (on load, when the tab comes back into focus, at most every 5 minutes), the extension fetches each live listing's public page and reads that listing's own status. A sold listing becomes a sale in FlipLedger, which puts every other listing of that item on the delist list (and ends eBay automatically). Normally no cookies are sent, because sold status is public; if Mercari's Cloudflare check answers, it retries once with the seller's own clearance. FlipLedger's server checks Poshmark itself, so Poshmark doesn't depend on this. Servers can't read Mercari, so Mercari does.
 - **Delist:** the "Delist these" banner (or the marketplace row) has a ✨ button. It opens the listing and highlights the next button to click (Facebook: **Mark as sold**; Poshmark: **Edit Listing** → **Delete Listing**; Mercari: **Edit** → **Delete** / **Deactivate**). It marks the listing ended in FlipLedger once the page shows it's gone. For Poshmark and Mercari, the next sale check also confirms a takedown on its own.
+- **Delist automatically (off by default):** a seller can turn this on per computer in Settings. Listings waiting to come down then open in background tabs and get removed: Facebook **Mark as sold**, Poshmark **Delete Listing**, Mercari **Deactivate**. It only clicks on a page carrying that listing's ID, and only when the listing has a saved link. Anything unexpected closes the tab and leaves the listing on the delist list.
 - It never sees your marketplace passwords.
 
 ## Install (until it's on the Chrome Web Store)

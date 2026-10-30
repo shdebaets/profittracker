@@ -44,6 +44,7 @@
     delist: {
       // The listing page has "Edit Listing"; the edit page has "Delete Listing" at the bottom.
       buttons: [/^delete listing$/i, /^edit listing$/i],
+      auto: { open: /^edit listing$/i, final: /^delete listing$/i, confirm: /^(yes|delete|delete listing|confirm)$/i },
       hint: 'Click the highlighted button: "Edit Listing", then "Delete Listing" at the bottom (or set it Not For Sale).',
       fallback: "delete it or set it Not For Sale",
       // Not on the edit page: its Availability menu always says "Not For Sale".
