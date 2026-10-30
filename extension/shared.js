@@ -3,7 +3,7 @@
 // The background worker loads it too (importScripts), so nothing here may touch the DOM.
 ;(function () {
   const FL = {
-    VERSION: "0.2.0",
+    VERSION: "0.2.1",
     /** Marketplaces this extension can drive. */
     MARKETPLACES: ["facebook", "poshmark", "mercari"],
     APP_SOURCE: "flipledger-app",
@@ -97,36 +97,65 @@
     },
 
     /**
-     * Read a public listing page's HTML and say whether the item is still for sale,
-     * from the schema.org Product data the sites publish for search engines.
-     * Only the page's first Product counts: a "similar items" list on the page must
-     * never be mistaken for this listing selling.
+     * Read a public listing page's HTML and say whether it has sold. Same rules as the
+     * app's lib/marketplaces/sale-status.ts (see why there); a test runs both on the same pages.
      *   sold:        a buyer bought it
      *   unavailable: taken down or not for sale (not a sale)
      *   available:   still live
      *   unknown:     couldn't tell (blocked, layout changed); do nothing
      */
-    saleStatus(html) {
-      for (const [, body] of String(html ?? "").matchAll(/<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)) {
-        let data
-        try {
-          data = JSON.parse(body.trim())
-        } catch {
-          continue
-        }
-        const nodes = [data].flat().flatMap((n) => [n, ...(n?.["@graph"] ?? [])])
-        const product = nodes.find((n) => n && /product/i.test(String(n["@type"] ?? "")) && n.offers)
-        if (!product) continue
-        const offer = [product.offers].flat()[0] ?? {}
-        const avail = String(offer.availability ?? "").split("/").pop().toLowerCase()
-        const p = Number(offer.price ?? offer.lowPrice)
-        const priceCents = Number.isFinite(p) && p > 0 ? Math.round(p * 100) : null
-        if (avail === "soldout") return { state: "sold", priceCents }
-        if (["instock", "limitedavailability", "onlineonly", "instoreonly", "preorder"].includes(avail)) return { state: "available", priceCents }
-        if (avail === "outofstock" || avail === "discontinued") return { state: "unavailable", priceCents }
-        return { state: "unknown", priceCents }
+    saleStatus(marketplace, url, html) {
+      const rules = {
+        poshmark: {
+          urlId: /-([0-9a-f]{24})(?:[/?#]|$)/,
+          id: /"id":"([0-9a-f]{24})"/g,
+          status: /"inventory":\{"status":"(\w+)"/g,
+          sold: ["sold_out"],
+          available: ["available"],
+          unavailable: ["not_for_sale", "removed", "deleted"],
+        },
+        mercari: {
+          urlId: /\/item\/(m\d+)/,
+          id: /"id":"(m\d+)"/g,
+          status: /"status":"(\w+)","isWebVisible"/g,
+          sold: ["trading", "sold_out", "completed"],
+          available: ["on_sale"],
+          unavailable: ["inactive", "stop", "cancel", "deleted"],
+        },
+      }[marketplace]
+      const page = String(html ?? "")
+      const ownId = rules && String(url).match(rules.urlId)?.[1]
+      if (!ownId) return { state: "unknown", priceCents: null }
+      for (const m of page.matchAll(rules.status)) {
+        const before = page.slice(Math.max(0, m.index - 20000), m.index)
+        if ([...before.matchAll(rules.id)].at(-1)?.[1] !== ownId) continue
+        const state = rules.sold.includes(m[1])
+          ? "sold"
+          : rules.available.includes(m[1])
+            ? "available"
+            : rules.unavailable.includes(m[1])
+              ? "unavailable"
+              : "unknown"
+        return { state, priceCents: FL.offerPrice(page) }
       }
       return { state: "unknown", priceCents: null }
+    },
+
+    /** The first schema.org Product offer price on the page, in cents. */
+    offerPrice(page) {
+      for (const [, body] of page.matchAll(/<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)) {
+        try {
+          const data = JSON.parse(body.trim())
+          const nodes = [data].flat().flatMap((n) => [n, ...(n?.["@graph"] ?? [])])
+          const product = nodes.find((n) => n && /product/i.test(String(n["@type"] ?? "")) && n.offers)
+          if (!product) continue
+          const p = Number([product.offers].flat()[0]?.price)
+          return Number.isFinite(p) && p > 0 ? Math.round(p * 100) : null
+        } catch {
+          // Not valid JSON; try the next block.
+        }
+      }
+      return null
     },
   }
   globalThis.FL = FL
