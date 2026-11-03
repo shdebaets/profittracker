@@ -51,7 +51,8 @@ export function useExtension() {
 export function listWithExtension(marketplace: MarketplaceId, listing: ExtListing) {
   const jobId = crypto.randomUUID()
   pendingJobs.set(jobId, { priceCents: listing.priceCents })
-  window.postMessage({ source: APP_SOURCE, type: "LIST", jobId, marketplace, listing }, location.origin)
+  const autoPublish = autoPublishEnabled() && extensionAtLeast(5)
+  window.postMessage({ source: APP_SOURCE, type: "LIST", jobId, marketplace, listing, autoPublish }, location.origin)
 }
 
 export function delistWithExtension(
@@ -98,28 +99,39 @@ export function checkSalesWithExtension(listings: { listingId: string; marketpla
   })
 }
 
-const AUTO_DELIST_KEY = "flipledger-auto-delist"
-
-/** Whether this computer's extension may take listings down by itself. Off unless the seller turned it on. */
-export function autoDelistEnabled() {
+// Per-computer switches for what the extension may do by itself. Off unless the seller turned them on.
+function readFlag(key: string) {
   try {
-    return localStorage.getItem(AUTO_DELIST_KEY) === "1"
+    return localStorage.getItem(key) === "1"
   } catch {
     return false
   }
 }
-
-export function setAutoDelist(on: boolean) {
+function writeFlag(key: string, on: boolean) {
   try {
-    if (on) localStorage.setItem(AUTO_DELIST_KEY, "1")
-    else localStorage.removeItem(AUTO_DELIST_KEY)
+    if (on) localStorage.setItem(key, "1")
+    else localStorage.removeItem(key)
   } catch {
     // Blocked storage: the setting just stays off.
   }
 }
 
-/** Older extensions don't know auto-delist and would open a normal tab for each listing. */
-export function extensionCanAutoDelist() {
-  const [major, minor] = (document.documentElement.getAttribute("data-flipledger-ext") ?? "0.0").split(".").map(Number)
-  return major > 0 || minor >= 3
+const AUTO_DELIST_KEY = "flipledger-auto-delist"
+const AUTO_PUBLISH_KEY = "flipledger-auto-publish"
+
+/** Whether this computer's extension may take listings down by itself. */
+export const autoDelistEnabled = () => readFlag(AUTO_DELIST_KEY)
+export const setAutoDelist = (on: boolean) => writeFlag(AUTO_DELIST_KEY, on)
+
+/** Whether this computer's extension may click Publish after filling a listing in. */
+export const autoPublishEnabled = () => readFlag(AUTO_PUBLISH_KEY)
+export const setAutoPublish = (on: boolean) => writeFlag(AUTO_PUBLISH_KEY, on)
+
+/** The installed extension is at least 0.minor.patch. */
+function extensionAtLeast(minor: number, patch = 0) {
+  const [major, mi, pa = 0] = (document.documentElement.getAttribute("data-flipledger-ext") ?? "0.0").split(".").map(Number)
+  return major > 0 || mi > minor || (mi === minor && pa >= patch)
 }
+
+/** Older extensions don't know auto-delist and would open a normal tab for each listing. */
+export const extensionCanAutoDelist = () => extensionAtLeast(3)

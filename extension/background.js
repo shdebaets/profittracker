@@ -54,6 +54,7 @@ async function startJob(msg, sender) {
     title: msg.title ?? msg.listing?.title ?? "",
     url: msg.url ?? null,
     auto: msg.type === "DELIST" && msg.auto === true,
+    autoPublish: msg.type === "LIST" && msg.autoPublish === true,
     state: "opened",
   }
   if (job.auto && !job.url) throw new Error("Auto-delist needs the listing's link")

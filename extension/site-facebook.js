@@ -15,6 +15,8 @@
     /** What the seller always does by hand (on top of whatever fill() couldn't do). */
     yourTurn: [],
     publishHint: "click Next and Publish",
+    /** Buttons auto-publish clicks, in order; the last one posts the listing. */
+    publish: { steps: [/^next$/i, /^publish$/i] },
 
     async fill(l, photos) {
       const done = []
