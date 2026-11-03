@@ -40,6 +40,9 @@ export function ItemCard({ item, onOpen }: { item: Item; onOpen: () => void }) {
           <span className="rounded-lg border bg-muted/60 px-2 py-1 font-mono text-xs">
             Qty: {item.quantity} unit{item.quantity === 1 ? "" : "s"}
           </span>
+          {item.cost_unknown && (
+            <span className="rounded-lg border border-brand/40 bg-brand-soft px-2 py-1 text-xs font-bold text-brand">Add cost</span>
+          )}
           <span className="ml-auto font-mono text-sm text-muted-foreground">#{item.seq}</span>
         </div>
         <div className="mt-3 flex items-start justify-between gap-3">
@@ -70,9 +73,9 @@ export function ItemCard({ item, onOpen }: { item: Item; onOpen: () => void }) {
               </>
             ) : (
               <>
-                <p className="font-mono text-xl font-bold">{formatCents(item.cost_cents * item.quantity)}</p>
+                <p className="font-mono text-xl font-bold">{item.cost_unknown ? "—" : formatCents(item.cost_cents * item.quantity)}</p>
                 <p className="font-mono text-xs text-muted-foreground">
-                  {item.quantity > 1 ? `${formatCents(item.cost_cents)} × ${item.quantity}` : "Cost basis"}
+                  {item.cost_unknown ? "Cost unknown" : item.quantity > 1 ? `${formatCents(item.cost_cents)} × ${item.quantity}` : "Cost basis"}
                 </p>
               </>
             )}

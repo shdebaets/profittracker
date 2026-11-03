@@ -102,10 +102,15 @@ export async function updateItem(id: string, input: ItemInput): Promise<ActionRe
   try {
     const i = itemSchema.parse(input)
     const { supabase } = await requireUser()
-    const { data: before } = await supabase.from("items").select("photo_paths").eq("id", id).single()
+    const { data: before } = await supabase.from("items").select("photo_paths, cost_unknown").eq("id", id).single()
     const { error } = await supabase
       .from("items")
-      .update({ ...baseColumns(i), ...(i.sale ? saleColumns(i.sale) : {}) })
+      .update({
+        ...baseColumns(i),
+        ...(i.sale ? saleColumns(i.sale) : {}),
+        // An imported item's cost stays "unknown" until the seller enters one.
+        cost_unknown: !!before?.cost_unknown && i.costCents === 0,
+      })
       .eq("id", id)
     if (error) throw error
     const dropped = ((before?.photo_paths as string[] | undefined) ?? []).filter((p) => !i.photoPaths.includes(p))

@@ -4,7 +4,7 @@ import { toCents } from "./money"
 import type { Item } from "./types"
 
 const base: Item = {
-  id: "x", seq: 1, title: "t", status: "sold", quantity: 1, cost_cents: 1000,
+  id: "x", seq: 1, title: "t", status: "sold", quantity: 1, cost_cents: 1000, cost_unknown: false,
   purchased_at: "2026-09-01T12:00:00Z", store: null, link_url: null, haul_id: null,
   sale_price_cents: 5000, buyer_shipping_cents: 0, label_cost_cents: 0, fee_pct: 0,
   fee_fixed_cents: 0, platform: "cash", sold_at: "2026-09-20T12:00:00Z",
