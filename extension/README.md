@@ -23,6 +23,9 @@ Poshmark's and Mercari's terms ban automation. Sellers using these tools accept 
 
 ## Install (until it's on the Chrome Web Store)
 
+Publishing to the store: see `STORE.md`. `npm run pack:extension` builds the zip to upload.
+
+
 1. Download this `extension` folder, or zip it and send it to the user.
 2. In Chrome, open `chrome://extensions` and turn on **Developer mode** (top right).
 3. Click **Load unpacked** and pick the `extension` folder.

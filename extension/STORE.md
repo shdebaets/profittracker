@@ -1,0 +1,52 @@
+# Chrome Web Store submission
+
+What to paste into the Chrome Web Store developer dashboard (https://chrome.google.com/webstore/devconsole). The account should be the client's: whoever owns it owns the listing. Keep this file in step with `manifest.json` when permissions change.
+
+## Upload
+
+```bash
+npm run pack:extension   # → dist/flipledger-extension-<version>.zip
+```
+
+Bump `version` in `manifest.json` before every update; the store rejects a version it has seen. Each update is reviewed again.
+
+## Store listing tab
+
+- **Name:** FlipLedger Lister (from the manifest)
+- **Summary:** from the manifest description
+- **Category:** Shopping (or Productivity → Tools)
+- **Language:** English
+- **Icon:** `extension/icons/icon-128.png`
+- **Screenshots:** at least one, 1280×800 (or 640×400). Good ones: the FlipLedger Cross-list sheet with Auto-fill, and a Poshmark or Mercari form after it's filled with the FlipLedger panel showing.
+- **Homepage URL:** https://profittracker-iye3.vercel.app
+- **Description:**
+
+> FlipLedger Lister is the companion to FlipLedger, the profit tracker and cross-lister for resellers. It needs a FlipLedger account.
+>
+> • Cross-list in a click: from FlipLedger, open Facebook Marketplace, Poshmark or Mercari with your photos, title, description, price, condition, brand, size and category already filled in. You review it and publish, or turn on auto-publish.
+> • Delist when it sells: when an item sells anywhere, FlipLedger lists the other listings to take down, and the extension removes them for you (automatically if you turn that on).
+> • Catch sales: while FlipLedger is open, the extension checks your Mercari and Poshmark listings and records sales in FlipLedger.
+> • Import what you already have: bring your live Mercari listings into FlipLedger as inventory.
+>
+> It works in your own logged-in browser and never sees your marketplace passwords. It doesn't share, follow or relist for you.
+
+## Privacy practices tab
+
+- **Single purpose:** Fills in, publishes and removes the user's own Facebook Marketplace, Poshmark and Mercari listings from their FlipLedger inventory, and reports those listings' status back to FlipLedger.
+- **Permission justifications:**
+  - `storage`: keeps each in-progress list, delist or import task (in session storage) while its marketplace tab loads, because the service worker can be suspended in between.
+  - `tabs`: opens the marketplace page for a task, sends that tab its task, notices if the user closes it, and closes it and returns to the FlipLedger tab when the task is done.
+  - Host `facebook.com`, `poshmark.com`, `mercari.com`: fills in the listing form on these sites, clicks the publish or delete buttons the user asked for, and reads the user's own listing pages to check whether they sold.
+  - Host `*.supabase.co`: downloads the user's item photos from FlipLedger's storage to attach them to the listing form.
+  - Content script on `profittracker-iye3.vercel.app`: receives the listing to post from the FlipLedger app and sends results back.
+- **Remote code:** No, I am not using remote code. (All JavaScript ships in the package.)
+- **Data usage**, tick:
+  - *Personally identifiable information*: no.
+  - *Website content*: yes (it reads the user's own listing pages and listing details to report them to FlipLedger).
+  - Leave the rest unticked: no health, financial, authentication, personal communications, location, web history or user activity data.
+- **Certify:** not sold to third parties; not used for purposes unrelated to the single purpose; not used for creditworthiness or lending.
+- **Privacy policy URL:** https://profittracker-iye3.vercel.app/privacy
+
+## Distribution tab
+
+Start **Unlisted** (only people with the link can install it), then switch to **Public** once a few real listings have gone through. After it's approved, put the store link in the app where it tells users to install the extension, and update the Install section of `README.md`.
