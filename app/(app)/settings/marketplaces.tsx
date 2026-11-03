@@ -8,7 +8,7 @@ import { createEbayPolicies, disconnectEbay, refreshEbayPolicies, saveEbaySettin
 import { checkExtensionSales } from "@/components/crosslist/auto-sync"
 import { FieldLabel, MoneyInput, NativeSelect, Segmented, TextInput } from "@/components/fields"
 import { relativeTime } from "@/lib/dates"
-import { autoDelistEnabled, setAutoDelist } from "@/lib/extension"
+import { autoDelistEnabled, autoPublishEnabled, setAutoDelist, setAutoPublish } from "@/lib/extension"
 import { missingPolicies, setupGaps } from "@/lib/marketplaces/ebay/mapping"
 import { toCents } from "@/lib/money"
 import { MARKETPLACES } from "@/lib/marketplaces/registry"
@@ -106,7 +106,16 @@ export function MarketplacesSettings({
         </p>
       </div>
 
-      <AutoDelistToggle />
+      <ExtensionToggle
+        read={autoPublishEnabled} write={setAutoPublish}
+        title="Publish automatically on this computer"
+        detail="After Auto-fill, the extension clicks Publish for you, 5 seconds after it finishes (with a Stop button), but only if it filled everything and the site's Publish button is ready. Otherwise it leaves the listing for you. Check the category it picked on your first few. These sites ban automation, so this could put your accounts at risk."
+      />
+      <ExtensionToggle
+        read={autoDelistEnabled} write={setAutoDelist}
+        title="Delist automatically on this computer"
+        detail="When an item sells, the extension removes its Facebook, Poshmark and Mercari listings in background tabs while FlipLedger is open here. It needs each listing's link saved. These sites ban automation, so this could put your accounts at risk. Anything it can't remove stays on your delist list."
+      />
 
       <div>
         <p className="mb-2 text-sm font-semibold">Copy kit</p>
@@ -123,28 +132,27 @@ export function MarketplacesSettings({
   )
 }
 
-const autoDelistListeners = new Set<() => void>()
-function subscribeAutoDelist(listener: () => void) {
-  autoDelistListeners.add(listener)
-  return () => void autoDelistListeners.delete(listener)
+const toggleListeners = new Set<() => void>()
+function subscribeToggles(listener: () => void) {
+  toggleListeners.add(listener)
+  return () => void toggleListeners.delete(listener)
 }
 
-function AutoDelistToggle() {
-  const on = useSyncExternalStore(subscribeAutoDelist, autoDelistEnabled, () => false)
+/** A per-computer extension switch (kept in this browser's storage). */
+function ExtensionToggle({ read, write, title, detail }: { read: () => boolean; write: (on: boolean) => void; title: string; detail: string }) {
+  const on = useSyncExternalStore(subscribeToggles, read, () => false)
   return (
     <label className="flex items-start gap-3 rounded-2xl border p-3">
       <input
         type="checkbox" checked={on} className="mt-1 size-4"
         onChange={(e) => {
-          setAutoDelist(e.target.checked)
-          autoDelistListeners.forEach((l) => l())
+          write(e.target.checked)
+          toggleListeners.forEach((l) => l())
         }}
       />
       <span>
-        <span className="block text-sm font-semibold">Delist automatically on this computer</span>
-        <span className="mt-0.5 block text-xs text-muted-foreground">
-          When an item sells, the extension removes its Facebook, Poshmark and Mercari listings in background tabs while FlipLedger is open here. It needs each listing&apos;s link saved. These sites ban automation, so this could put your accounts at risk. Anything it can&apos;t remove stays on your delist list.
-        </span>
+        <span className="block text-sm font-semibold">{title}</span>
+        <span className="mt-0.5 block text-xs text-muted-foreground">{detail}</span>
       </span>
     </label>
   )

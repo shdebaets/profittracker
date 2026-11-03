@@ -1,10 +1,11 @@
 // Runs on each supported marketplace, driven by that site's config (globalThis.FL_SITE,
 // from site-*.js). For a FlipLedger job in this tab it:
 //  - list:   fills the create-listing form, then stops so the seller checks it and
-//            publishes; reports the listing (with its link) back to FlipLedger.
+//            publishes (or, if the seller turned on auto-publish, publishes after a
+//            countdown when everything got filled); reports the listing back to FlipLedger.
 //  - delist: highlights the button that takes the listing down and reports back once
 //            it's gone (or the seller clicks Done).
-// It never publishes or deletes anything by itself.
+// It only publishes or deletes by itself when the seller turned that on in FlipLedger.
 ;(function () {
   const FL = globalThis.FL
   const D = globalThis.FLDOM
@@ -25,18 +26,8 @@
       await D.waitFor(site.ready, 20000)
       const { done, todo } = await site.fill(job.listing, photos)
       await send({ type: "UPDATE", patch: { state: "filled" } })
-      D.panel({
-        title: "Ready for you",
-        lines: [
-          `Filled: ${done.join(", ") || "nothing"}.`,
-          ...(site.yourTurn.length + todo.length ? [`Your turn: ${[...todo, ...site.yourTurn].join(", ")}.`] : []),
-          `Check everything${done.some((d) => d.startsWith("Category")) ? ", especially the category FlipLedger guessed" : ""}, then ${site.publishHint}. FlipLedger records it automatically.`,
-        ],
-        buttons: [
-          { label: "I published it", primary: true, onClick: () => finishListing(job) },
-          { label: "Cancel", onClick: () => cancel(`You cancelled the ${site.name} listing`) },
-        ],
-      })
+      if (job.autoPublish && !todo.length) return await autoPublish(job, done)
+      showFilled(job, done, todo)
     } catch (e) {
       D.panel({
         title: "Couldn't fill everything",
@@ -46,6 +37,61 @@
     } finally {
       busy = false
     }
+  }
+
+  function showFilled(job, done, todo, note) {
+    D.panel({
+      title: "Ready for you",
+      lines: [
+        `Filled: ${done.join(", ") || "nothing"}.`,
+        ...(site.yourTurn.length + todo.length ? [`Your turn: ${[...todo, ...site.yourTurn].join(", ")}.`] : []),
+        `Check everything${done.some((d) => d.startsWith("Category")) ? ", especially the category FlipLedger guessed" : ""}, then ${site.publishHint}. FlipLedger records it automatically.`,
+        ...(note ? [note] : []),
+      ],
+      buttons: [
+        { label: "I published it", primary: true, onClick: () => finishListing(job) },
+        { label: "Cancel", onClick: () => cancel(`You cancelled the ${site.name} listing`) },
+      ],
+    })
+  }
+
+  // ---------- auto-publish (only when the seller turned it on in FlipLedger) ----------
+  // Counts down so the seller can stop it, then clicks through the site's publish steps
+  // (e.g. Next, then Publish). Gives the listing back to the seller if a button is
+  // missing or still disabled, which means the site wants something we didn't fill.
+
+  const disabled = (b) => b.disabled || b.getAttribute("aria-disabled") === "true"
+
+  async function autoPublish(job, done) {
+    let stopped = false
+    for (let s = 5; s > 0 && !stopped; s--) {
+      D.panel({
+        title: `Publishing in ${s}…`,
+        lines: [`Filled: ${done.join(", ")}.`, "Stop to check it yourself first."],
+        buttons: [{ label: "Stop", primary: true, onClick: () => (stopped = true) }],
+      })
+      await D.sleep(1000)
+    }
+    if (stopped) return showFilled(job, done, [])
+    const { steps } = site.publish
+    const final = steps.at(-1)
+    for (let click = 0; click < steps.length + 1; click++) {
+      const btn = await D.waitFor(() => D.findButton(final) || steps.slice(0, -1).map(D.findButton).find(Boolean), 10000)
+      if (!btn || disabled(btn)) {
+        return showFilled(job, done, [], `Didn't publish by itself: ${btn ? `the site's "${btn.innerText.trim()}" button isn't ready, so it wants something filled in` : "couldn't find the Publish button"}.`)
+      }
+      const isFinal = final.test((btn.getAttribute("aria-label") || btn.innerText || "").trim())
+      btn.click()
+      if (isFinal) {
+        // Routing records it once the site shows the new listing. Still on the form
+        // means the site turned it down (usually a required field we didn't fill).
+        D.panel({ title: "Publishing…", lines: ["Waiting for the site to post it."] })
+        if (await D.waitFor(() => !site.isCreatePage(location.pathname), 15000)) return
+        return showFilled(job, done, [], "Didn't publish by itself: the site kept the form open, so check it for anything marked required.")
+      }
+      await D.sleep(1500)
+    }
+    showFilled(job, done, [], "Didn't publish by itself: the publish steps didn't finish.")
   }
 
   let finishing = false

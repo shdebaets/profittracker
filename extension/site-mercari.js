@@ -17,6 +17,8 @@
     ready: () => D.findField(TITLE),
     yourTurn: ["choose Shipping"],
     publishHint: "click List",
+    /** Buttons auto-publish clicks, in order; the last one posts the listing. */
+    publish: { steps: [/^list( item| now)?$/i] },
 
     async fill(l, photos) {
       const done = []

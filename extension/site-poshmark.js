@@ -16,6 +16,8 @@
     ready: () => D.findField(TITLE),
     yourTurn: ["enter Original Price"],
     publishHint: "click Next and List This Item",
+    /** Buttons auto-publish clicks, in order; the last one posts the listing. */
+    publish: { steps: [/^next$/i, /^list( this)? item$/i] },
 
     async fill(l, photos) {
       const done = []
