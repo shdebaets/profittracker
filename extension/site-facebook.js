@@ -12,7 +12,8 @@
     isCreatePage: (path) => path.startsWith("/marketplace/create"),
     isAfterPublish: (path) => /^\/marketplace\/(you\/selling|item\/\d+)/.test(path),
     ready: () => D.findField("Title"),
-    yourTurn: "pick a Category",
+    /** What the seller always does by hand (on top of whatever fill() couldn't do). */
+    yourTurn: [],
     publishHint: "click Next and Publish",
 
     async fill(l, photos) {
@@ -25,10 +26,14 @@
       step(!!title && D.setValue(title, l.title.slice(0, 99)), "Title")
       const price = D.findField("Price")
       step(!!price && D.setValue(price, FL.wholeDollars(l.priceCents)), "Price")
+      await D.pickCategory("facebook", "Category", l, done, todo)
       const cond = FL.facebookCondition(l.condition)
       step(!!cond && !!(await D.chooseOption("Condition", cond)), cond ? `Condition (${cond})` : "Condition")
       const desc = D.findField("Description")
       step(!!desc && D.setValue(desc, FL.listingText(l)), "Description")
+      // Clothing categories add an optional Brand box.
+      const brand = l.brand && D.findField("Brand")
+      if (brand && D.setValue(brand, l.brand)) done.push("Brand")
       return { done, todo }
     },
 

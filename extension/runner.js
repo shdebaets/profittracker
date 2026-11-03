@@ -29,8 +29,8 @@
         title: "Ready for you",
         lines: [
           `Filled: ${done.join(", ") || "nothing"}.`,
-          `Your turn: ${[site.yourTurn, ...todo].join(", ")}.`,
-          `Check everything, then ${site.publishHint}. FlipLedger records it automatically.`,
+          ...(site.yourTurn.length + todo.length ? [`Your turn: ${[...todo, ...site.yourTurn].join(", ")}.`] : []),
+          `Check everything${done.some((d) => d.startsWith("Category")) ? ", especially the category FlipLedger guessed" : ""}, then ${site.publishHint}. FlipLedger records it automatically.`,
         ],
         buttons: [
           { label: "I published it", primary: true, onClick: () => finishListing(job) },

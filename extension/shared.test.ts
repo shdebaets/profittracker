@@ -9,6 +9,8 @@ type FLT = {
   listingId(m: string, url: string | null): string | null
   conditionChoices(m: string, c: string | null): string[]
   wholeDollars(cents: number | null): string
+  guessCategory(i: { title?: string; description?: string }): { dept: string | null; kind: string | null }
+  categoryPath(m: string, g: { dept: string | null; kind: string | null }): string[][] | null
 }
 let FL: FLT
 
@@ -92,5 +94,38 @@ describe("extension shared helpers", () => {
     expect(FL.listingId("poshmark", "https://poshmark.com/closet/someone")).toBeNull()
     expect(FL.listingId("depop", "https://www.depop.com/products/x")).toBeNull()
     expect(FL.listingId("mercari", null)).toBeNull()
+  })
+
+  it("guesses what an item is from its title", () => {
+    const g = (title: string, description = "") => FL.guessCategory({ title, description })
+    expect(g("Nike Air Jordan 4 Retro Men's Size 10")).toEqual({ dept: "men", kind: "sneakers" })
+    expect(g("Jordan Essentials Hoodie Mens XL")).toEqual({ dept: "men", kind: "hoodies" })
+    expect(g("Women's Free People Maxi Dress")).toEqual({ dept: "women", kind: "dresses" })
+    expect(g("Allen Edmonds dress shoes 11")).toEqual({ dept: null, kind: "shoes" })
+    expect(g("Levi's 501 boot cut jeans")).toEqual({ dept: null, kind: "jeans" })
+    expect(g("Nike Dunk Low GS size 6Y")).toEqual({ dept: "kids", kind: "sneakers" })
+    expect(g("Lululemon Align leggings women 6")).toEqual({ dept: "women", kind: "pants" })
+    expect(g("Coach crossbody bag")).toEqual({ dept: null, kind: "bags" })
+    expect(g("Mario Kart 8 Nintendo Switch game")).toEqual({ dept: null, kind: "video_games" })
+    expect(g("PS5 Disc Edition console bundle")).toEqual({ dept: null, kind: "consoles" })
+    expect(g("Pokemon cards Charizard PSA 9")).toEqual({ dept: null, kind: "trading_cards" })
+    expect(g("Laptop Dell XPS 13")).toEqual({ dept: null, kind: "computers" })
+    expect(g("Midi skirt")).toEqual({ dept: "women", kind: "skirts" })
+    expect(g("Mystery lot", "vintage band tee")).toEqual({ dept: null, kind: "tops" })
+    expect(g("Something unusual")).toEqual({ dept: null, kind: null })
+  })
+
+  it("turns a guess into each site's category menu choices", () => {
+    expect(FL.categoryPath("facebook", { dept: "men", kind: "sneakers" })).toEqual([["Men's Clothing & Shoes"]])
+    expect(FL.categoryPath("facebook", { dept: null, kind: "bags" })).toEqual([["Bags & Luggage"]])
+    expect(FL.categoryPath("facebook", { dept: null, kind: "consoles" })).toEqual([["Video Games"]])
+    expect(FL.categoryPath("poshmark", { dept: "women", kind: "sneakers" })).toEqual([["Women"], ["Shoes"], ["Sneakers"]])
+    expect(FL.categoryPath("poshmark", { dept: null, kind: "consoles" })).toEqual([["Electronics"], ["Video Games & Consoles"]])
+    expect(FL.categoryPath("mercari", { dept: "men", kind: "jeans" })).toEqual([["Men"], ["Jeans"]])
+    // Clothing without a department is left for the seller rather than guessed.
+    expect(FL.categoryPath("poshmark", { dept: null, kind: "tops" })).toBeNull()
+    expect(FL.categoryPath("facebook", { dept: null, kind: "tops" })).toBeNull()
+    expect(FL.categoryPath("mercari", { dept: null, kind: null })).toBeNull()
+    expect(FL.categoryPath("depop", { dept: "men", kind: "tops" })).toBeNull()
   })
 })

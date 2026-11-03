@@ -15,7 +15,7 @@
     isCreatePage: (path) => /^\/(us\/)?sell\/?$/.test(path),
     isAfterPublish: (path) => ITEM_PAGE.test(path) || /^\/(us\/)?(mypage\/listings|sell\/(complete|success))/.test(path),
     ready: () => D.findField(TITLE),
-    yourTurn: "pick Category, Brand and Shipping",
+    yourTurn: ["choose Shipping"],
     publishHint: "click List",
 
     async fill(l, photos) {
@@ -28,6 +28,11 @@
       step(!!title && D.setValue(title, l.title.slice(0, 80)), "Title")
       const desc = D.findField(["Description", "Describe your item"])
       step(!!desc && D.setValue(desc, FL.listingText(l).slice(0, 1000)), "Description")
+      await D.pickCategory("mercari", "Category", l, done, todo)
+      if (l.brand) {
+        const brand = await D.typeAndPick(["Brand", "Search brand"], l.brand)
+        step(!!brand, brand ? `Brand (${brand})` : "Brand")
+      } else todo.push("Brand (or No brand)")
       const choices = FL.conditionChoices("mercari", l.condition)
       if (choices.length) {
         const picked = D.chooseRadio(choices) || (await D.chooseOption("Condition", choices))

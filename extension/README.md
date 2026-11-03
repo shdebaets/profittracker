@@ -7,9 +7,11 @@ Poshmark's and Mercari's terms ban automation. Sellers using these tools accept 
 ## What it does
 
 - **List:** in FlipLedger, Cross-list → Facebook / Poshmark / Mercari → **Auto-fill**. The site opens in a new tab and the extension fills in what it can:
-  - **Facebook:** photos, title, price, condition, description. The seller picks a category.
-  - **Poshmark:** photos, title, description, brand, listing price, condition. The seller picks category and size and enters the original price.
-  - **Mercari:** photos, title, description, condition, price. The seller picks category, brand and shipping.
+  - **Facebook:** photos, title, price, category, condition, description, brand.
+  - **Poshmark:** photos, title, description, category, size, brand, listing price, condition. The seller enters the original price.
+  - **Mercari:** photos, title, description, category, size, brand, condition, price. The seller picks shipping.
+
+  The category is a guess from the title (`guessCategory` / `categoryPath` in `shared.js`): what the item is (sneakers, hoodie, video game…) and, for clothing, whose department (women, men, kids). Clothing with no department in the title is left for the seller, and so is any menu level the site doesn't show. The panel says what was guessed so the seller checks it.
 
   The seller checks it and clicks **Publish** (or List) themselves. The extension then records the listing, with its link, in FlipLedger.
 - **Spot sales (Mercari, plus Poshmark as a backup):** while FlipLedger is open (on load, when the tab comes back into focus, at most every 5 minutes), the extension fetches each live listing's public page and reads that listing's own status. A sold listing becomes a sale in FlipLedger, which puts every other listing of that item on the delist list (and ends eBay automatically). Normally no cookies are sent, because sold status is public; if Mercari's Cloudflare check answers, it retries once with the seller's own clearance. FlipLedger's server checks Poshmark itself, so Poshmark doesn't depend on this. Servers can't read Mercari, so Mercari does.
