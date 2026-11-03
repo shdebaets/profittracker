@@ -2,8 +2,150 @@
 // Classic script: content scripts can't be ES modules, so this hangs off globalThis.FL.
 // The background worker loads it too (importScripts), so nothing here may touch the DOM.
 ;(function () {
+  // ---------- category guessing ----------
+  // Checked in order, so garments come before the brands that also make shoes
+  // ("Jordan hoodie" is a hoodie) and "dress" skips "dress shoes".
+  const KINDS = [
+    ["trading_cards", /\b(pok[eé]mon cards?|tcg|booster (box|pack)|elite trainer|etb|psa \d+|bgs \d+|topps|panini|trading cards?|yu-?gi-?oh|mtg|magic the gathering)\b/],
+    ["video_games", /\bvideo ?games?\b|\b(ps[2-5]|playstation|xbox|nintendo|switch|wii|3ds)\b.*\bgames?\b|\bgames?\b.*\b(ps[2-5]|playstation|xbox|nintendo|switch)\b/],
+    ["consoles", /\b(consoles?|ps[2-5]|playstation [2-5]|xbox (one|series [xs]|360)|nintendo switch|switch oled|steam deck|game ?boy|controllers?)\b/],
+    ["phones", /\b(iphone|galaxy s\d+|pixel \d+|smartphone|cell ?phone)\b/],
+    ["computers", /\b(laptop|macbook|chromebook|ipad|tablet|imac|desktop pc|gaming pc)\b/],
+    ["headphones", /\b(headphones?|airpods|earbuds|beats (studio|solo|fit|flex))\b/],
+    ["cameras", /\b(camera|dslr|mirrorless|gopro|camera lens)\b/],
+    ["swim", /\b(swimsuit|swimwear|bikini|swim trunks|board ?shorts|one[- ]piece swim)\b/],
+    ["dresses", /\bdress\b(?! (shoes?|shirt|pants|socks|boots?|slacks))|\b(gown|romper|jumpsuit)\b/],
+    ["skirts", /\bskirts?\b/],
+    ["hoodies", /\b(hoodie|hoody|sweatshirt|crewneck|quarter[- ]zip|1\/4 zip|half[- ]zip|pullover)\b/],
+    ["sweaters", /\b(sweater|cardigan)\b/],
+    ["jackets", /\b(jacket|coat|parka|puffer|windbreaker|anorak|blazer|vest|fleece)\b/],
+    ["jeans", /\bjeans\b/],
+    ["shorts", /\bshorts\b/],
+    ["pants", /\b(pants|joggers|trousers|leggings|sweatpants|chinos|cargos)\b/],
+    ["tops", /\b(t-?shirt|tee|shirt|blouse|tank( top)?|polo|top|jersey|camisole|button[- ](up|down)|henley)\b/],
+    ["heels", /\b(heels|pumps|stilettos)\b/],
+    ["boots", /\b(boots?|uggs?|timberlands?)\b/],
+    ["sandals", /\b(sandals?|slides|flip[- ]flops?|crocs|birkenstocks?)\b/],
+    ["sneakers", /\b(sneakers?|trainers|running shoes?|jordan|air max|air force 1|af1|dunks?|yeezy|new balance|asics|vans|converse|ultraboost)\b/],
+    ["shoes", /\b(shoes?|loafers|oxfords|flats|clogs|mules)\b/],
+    ["wallets", /\b(wallet|card ?holder)\b/],
+    ["bags", /\b(handbag|purse|backpack|tote|crossbody|clutch|duffel|duffle|bag)\b/],
+    ["hats", /\b(hat|cap|beanie|snapback)\b/],
+    ["watches", /\bwatch\b/],
+    ["sunglasses", /\bsunglasses\b/],
+    ["belts", /\bbelts?\b/],
+    ["jewelry", /\b(necklace|bracelet|earrings?|ring|pendant|jewelry)\b/],
+    ["toys", /\b(lego|funko|action figure|hot wheels|barbie|plush|squishmallows?|toys?|puzzle|board game)\b/],
+    ["books", /\b(books?|hardcover|paperback|novel)\b/],
+    ["beauty", /\b(perfume|cologne|fragrance|eau de|makeup|lipstick|mascara|skincare)\b/],
+    ["home", /\b(lamp|decor|blanket|pillow|candle|vase|cookware|mug|dinnerware|bedding)\b/],
+    ["tools", /\b(drill|impact driver|dewalt|milwaukee|makita|ryobi|tool set|tools?)\b/],
+  ]
+  // Kids first: "boys" and "GS" sneakers are kids' even when a brand says "men".
+  const DEPTS = [
+    ["kids", /\b(kids?|youth|toddler|infant|baby|boys?'?|girls?'?|children'?s|gs|td|\d{1,2}t)\b/],
+    ["women", /\b(women'?s?|womens|ladies|lady|wmns)\b/],
+    ["men", /\b(men'?s?|mens|man's)\b/],
+  ]
+  const ACCESSORIES = new Set(["wallets", "bags", "hats", "watches", "sunglasses", "belts", "jewelry"])
+  const FASHION = new Set([
+    "swim", "dresses", "skirts", "hoodies", "sweaters", "jackets", "jeans", "shorts", "pants", "tops",
+    "heels", "boots", "sandals", "sneakers", "shoes", ...ACCESSORIES,
+  ])
+
+  const FACEBOOK = {
+    trading_cards: ["Antiques & Collectibles", "Toys & Games"],
+    video_games: ["Video Games"],
+    consoles: ["Video Games"],
+    phones: ["Mobile Phones", "Electronics & Computers"],
+    computers: ["Electronics & Computers"],
+    headphones: ["Electronics & Computers"],
+    cameras: ["Electronics & Computers"],
+    toys: ["Toys & Games"],
+    books: ["Books, Movies & Music"],
+    beauty: ["Health & Beauty"],
+    home: ["Household", "Home Goods"],
+    tools: ["Tools"],
+  }
+
+  // Poshmark: Department › Category › Subcategory (the subcategory is optional there).
+  const POSHMARK = {
+    depts: { women: ["Women"], men: ["Men"], kids: ["Kids"] },
+    women: {
+      tops: [["Tops"]], hoodies: [["Tops"], ["Sweatshirts & Hoodies"]], sweaters: [["Sweaters"]],
+      jackets: [["Jackets & Coats"]], jeans: [["Jeans"]], pants: [["Pants & Jumpsuits", "Pants"]], shorts: [["Shorts"]],
+      skirts: [["Skirts"]], dresses: [["Dresses"]], swim: [["Swim"]],
+      sneakers: [["Shoes"], ["Sneakers"]], heels: [["Shoes"], ["Heels"]], sandals: [["Shoes"], ["Sandals"]], boots: [["Shoes"]], shoes: [["Shoes"]],
+      bags: [["Bags"]], wallets: [["Bags"], ["Wallets"]], jewelry: [["Jewelry"]],
+      hats: [["Accessories"], ["Hats"]], watches: [["Accessories"], ["Watches"]], sunglasses: [["Accessories"], ["Sunglasses"]], belts: [["Accessories"], ["Belts"]],
+    },
+    men: {
+      tops: [["Shirts"]], hoodies: [["Shirts", "Sweaters"], ["Sweatshirts & Hoodies"]], sweaters: [["Sweaters"]],
+      jackets: [["Jackets & Coats"]], jeans: [["Jeans"]], pants: [["Pants"]], shorts: [["Shorts"]], swim: [["Swim"]],
+      sneakers: [["Shoes"], ["Sneakers"]], boots: [["Shoes"], ["Boots"]], sandals: [["Shoes"], ["Sandals & Flip-Flops", "Sandals"]], shoes: [["Shoes"]],
+      bags: [["Bags"]], wallets: [["Accessories"], ["Wallets"]], jewelry: [["Accessories"], ["Jewelry"]],
+      hats: [["Accessories"], ["Hats"]], watches: [["Accessories"], ["Watches"]], sunglasses: [["Accessories"], ["Sunglasses"]], belts: [["Accessories"], ["Belts"]],
+    },
+    kids: {
+      tops: [["Shirts & Tops"]], hoodies: [["Shirts & Tops"]], sweaters: [["Shirts & Tops"]], jackets: [["Jackets & Coats"]],
+      jeans: [["Bottoms"]], pants: [["Bottoms"]], shorts: [["Bottoms"]], skirts: [["Bottoms"]], dresses: [["Dresses"]], swim: [["Swim"]],
+      sneakers: [["Shoes"]], boots: [["Shoes"]], sandals: [["Shoes"]], heels: [["Shoes"]], shoes: [["Shoes"]],
+      bags: [["Accessories"]], wallets: [["Accessories"]], jewelry: [["Accessories"]], hats: [["Accessories"]], watches: [["Accessories"]], sunglasses: [["Accessories"]], belts: [["Accessories"]],
+    },
+    other: {
+      video_games: [["Electronics"], ["Video Games & Consoles"]],
+      consoles: [["Electronics"], ["Video Games & Consoles"]],
+      phones: [["Electronics"], ["Cell Phones & Accessories"]],
+      computers: [["Electronics"], ["Computers, Laptops & Parts", "Computers"]],
+      headphones: [["Electronics"], ["Headphones"]],
+      cameras: [["Electronics"], ["Cameras, Photo & Video", "Cameras"]],
+      toys: [["Kids"], ["Toys"]],
+      home: [["Home"]],
+    },
+  }
+
+  // Mercari: Category › Subcategory › Type. Its tree is deeper and changes more, so
+  // these stop early where unsure and the seller picks the last level.
+  const MERCARI = {
+    depts: { women: ["Women"], men: ["Men"], kids: ["Kids"] },
+    women: {
+      tops: [["Tops & blouses", "Tops"]], hoodies: [["Sweats & hoodies", "Tops & blouses"]], sweaters: [["Sweaters"]],
+      jackets: [["Coats & jackets"]], jeans: [["Jeans"]], pants: [["Pants"]], shorts: [["Shorts"]], skirts: [["Skirts"]],
+      dresses: [["Dresses"]], swim: [["Swimwear"]],
+      sneakers: [["Shoes"], ["Athletic", "Sneakers"]], heels: [["Shoes"], ["Heels", "Pumps"]], sandals: [["Shoes"], ["Sandals"]], boots: [["Shoes"], ["Boots"]], shoes: [["Shoes"]],
+      bags: [["Women's handbags", "Handbags", "Bags"]], wallets: [["Women's accessories", "Accessories"], ["Wallets"]], jewelry: [["Jewelry"]],
+      hats: [["Women's accessories", "Accessories"], ["Hats"]], watches: [["Women's accessories", "Accessories"], ["Watches"]],
+      sunglasses: [["Women's accessories", "Accessories"], ["Sunglasses"]], belts: [["Women's accessories", "Accessories"], ["Belts"]],
+    },
+    men: {
+      tops: [["Tops", "Shirts"]], hoodies: [["Sweats & hoodies", "Sweatshirts & hoodies"]], sweaters: [["Sweaters"]],
+      jackets: [["Coats & jackets"]], jeans: [["Jeans"]], pants: [["Pants"]], shorts: [["Shorts"]], swim: [["Swimwear"]],
+      sneakers: [["Shoes"], ["Athletic", "Sneakers"]], boots: [["Shoes"], ["Boots"]], sandals: [["Shoes"], ["Sandals"]], shoes: [["Shoes"]],
+      bags: [["Bags"]], wallets: [["Men's accessories", "Accessories"], ["Wallets"]], jewelry: [["Jewelry"]],
+      hats: [["Men's accessories", "Accessories"], ["Hats"]], watches: [["Men's accessories", "Accessories"], ["Watches"]],
+      sunglasses: [["Men's accessories", "Accessories"], ["Sunglasses"]], belts: [["Men's accessories", "Accessories"], ["Belts"]],
+    },
+    kids: {
+      sneakers: [["Shoes"]], boots: [["Shoes"]], sandals: [["Shoes"]], shoes: [["Shoes"]],
+    },
+    other: {
+      video_games: [["Electronics"], ["Video games & consoles"], ["Games"]],
+      consoles: [["Electronics"], ["Video games & consoles"]],
+      phones: [["Electronics"], ["Cell phones & accessories"]],
+      computers: [["Electronics"], ["Computers, laptops & parts", "Computers"]],
+      headphones: [["Electronics"], ["TV, audio & surveillance", "Audio"]],
+      cameras: [["Electronics"], ["Cameras & photography", "Cameras"]],
+      trading_cards: [["Toys & Collectibles", "Toys", "Vintage & collectibles"], ["Trading cards", "Collectible card games"]],
+      toys: [["Toys & Collectibles", "Toys"]],
+      books: [["Books"]],
+      beauty: [["Beauty"]],
+      home: [["Home"]],
+      tools: [["Tools", "Home"]],
+    },
+  }
+
   const FL = {
-    VERSION: "0.3.0",
+    VERSION: "0.4.0",
     /** Marketplaces this extension can drive. */
     MARKETPLACES: ["facebook", "poshmark", "mercari"],
     APP_SOURCE: "flipledger-app",
@@ -48,6 +190,42 @@
         },
       }
       return table[marketplace]?.[condition] ?? []
+    },
+
+    /**
+     * What an item probably is, from its title (then its description): { dept, kind }.
+     * dept is "women" | "men" | "kids" | null; kind is a key of KINDS, or null when unsure.
+     * Used to pick each site's category; the seller checks it before publishing.
+     */
+    guessCategory({ title, description }) {
+      const find = (s) => KINDS.find(([, re]) => re.test(s))?.[0] ?? null
+      const t = String(title ?? "").toLowerCase()
+      const kind = find(t) ?? find(String(description ?? "").toLowerCase())
+      let dept = DEPTS.find(([, re]) => re.test(t))?.[0] ?? null
+      if (!dept && ["dresses", "skirts", "heels"].includes(kind)) dept = "women"
+      return { dept, kind }
+    },
+
+    /**
+     * The menu choices that pick `guess`'s category on a marketplace: one array of
+     * acceptable option texts per level (best first), or null when there's no good match.
+     */
+    categoryPath(marketplace, { dept, kind }) {
+      if (!kind) return null
+      const fashion = FASHION.has(kind)
+      if (marketplace === "facebook") {
+        if (!fashion) return FACEBOOK[kind] ? [FACEBOOK[kind]] : null
+        if (kind === "bags" || kind === "wallets") return [["Bags & Luggage"]]
+        if (ACCESSORIES.has(kind)) return [["Jewelry & Accessories"]]
+        const d = { women: ["Women's Clothing & Shoes"], men: ["Men's Clothing & Shoes"], kids: ["Baby & Kids", "Kids"] }[dept]
+        return d ? [d] : null
+      }
+      const table = { poshmark: POSHMARK, mercari: MERCARI }[marketplace]
+      if (!table) return null
+      if (!fashion) return table.other[kind] ?? null
+      const top = table.depts[dept]
+      const rest = top && table[dept][kind]
+      return rest ? [top, ...rest] : null
     },
 
     /** The listing's ID in a marketplace link, or null. Auto-delist only acts on pages carrying this ID. */

@@ -14,7 +14,7 @@
     isCreatePage: (path) => path.startsWith("/create-listing"),
     isAfterPublish: (path) => /^\/(listing|closet)\//.test(path),
     ready: () => D.findField(TITLE),
-    yourTurn: "pick Category and Size, enter Original Price, check Brand",
+    yourTurn: ["enter Original Price"],
     publishHint: "click Next and List This Item",
 
     async fill(l, photos) {
@@ -31,6 +31,7 @@
         const brand = D.findField(["Brand", "Enter the Brand/Designer"])
         step(!!brand && D.setValue(brand, l.brand), "Brand")
       }
+      await D.pickCategory("poshmark", "Category", l, done, todo)
       const price = D.findField(["Listing Price"])
       step(!!price && D.setValue(price, FL.wholeDollars(l.priceCents)), "Listing Price")
       const choices = FL.conditionChoices("poshmark", l.condition)

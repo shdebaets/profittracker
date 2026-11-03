@@ -85,33 +85,106 @@
 
   const OPTION = '[role="option"],[role="menuitemradio"],[role="menuitem"],[role="listbox"] li,ul[class*="dropdown"] li'
 
+  /** Option text matches `want`: starts with it, or (exact) equals it, so size "10" skips "10.5". */
+  const matches = (t, want, exact) => (exact ? t === FL.norm(want) : t.startsWith(FL.norm(want)))
+  const findOption = (want, exact) => [...document.querySelectorAll(OPTION)].find((o) => visible(o) && matches(text(o), want, exact))
+  const closeMenu = () => document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))
+
+  /** Click the dropdown labelled `labels` open. Returns the box, or null. */
+  async function openMenu(labels) {
+    const box = findField(labels)
+    if (!box || box instanceof HTMLSelectElement) return box
+    box.click()
+    // Some menus open from their wrapping label (Facebook) rather than the box itself.
+    const lab = box.closest("label")
+    if (lab && lab !== box && !(await waitFor(() => [...document.querySelectorAll(OPTION)].some(visible), 600))) lab.click()
+    return box
+  }
+
   /** Pick the first of `options` that exists in the dropdown labelled `labels`. Returns the text picked, or null. */
-  async function chooseOption(labels, options) {
+  async function chooseOption(labels, options, { exact = false } = {}) {
     const wants = [options].flat().filter(Boolean)
     if (!wants.length) return null
-    const box = findField(labels)
+    const box = await openMenu(labels)
     if (!box) return null
     if (box instanceof HTMLSelectElement) {
       for (const want of wants) {
-        const opt = [...box.options].find((o) => FL.norm(o.text).startsWith(FL.norm(want)))
+        const opt = [...box.options].find((o) => matches(FL.norm(o.text), want, exact))
         if (opt && setValue(box, opt.value)) return want
       }
       return null
     }
-    const menuOpen = () => [...document.querySelectorAll(OPTION)].some(visible)
-    box.click()
-    // Some menus open from their wrapping label (Facebook) rather than the box itself.
-    const lab = box.closest("label")
-    if (lab && lab !== box && !(await waitFor(menuOpen, 600))) lab.click()
     for (const want of wants) {
-      const opt = await waitFor(() => [...document.querySelectorAll(OPTION)].find((o) => visible(o) && text(o).startsWith(FL.norm(want))), 2500)
+      const opt = await waitFor(() => findOption(want, exact), 2500)
       if (opt) {
         opt.click()
         return want
       }
     }
-    document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))
+    closeMenu()
     return null
+  }
+
+  /**
+   * Walk a nested category menu: open the dropdown labelled `labels`, then click one
+   * option per level (each level lists acceptable texts, best first). Returns the
+   * texts picked, which can be fewer than the levels if the menu ran out of matches.
+   */
+  async function choosePath(labels, levels) {
+    if (!levels?.length) return []
+    const box = await openMenu(labels)
+    if (!box) return []
+    const picked = []
+    for (const wants of levels) {
+      let hit = null
+      const opt = await waitFor(() => {
+        for (const want of wants) {
+          const o = findOption(want)
+          if (o) return (hit = want), o
+        }
+        return null
+      }, 2500)
+      if (!opt) break
+      opt.click()
+      picked.push(hit)
+      await sleep(300)
+    }
+    // A menu still showing options wants more levels than we know; leave it for the seller.
+    if (picked.length < levels.length) closeMenu()
+    return picked
+  }
+
+  /** Type into a search-as-you-type box (e.g. Brand) and pick the suggestion that is `value`. */
+  async function typeAndPick(labels, value) {
+    const box = findField(labels)
+    if (!box || !value) return null
+    if (!(box instanceof HTMLInputElement)) return setValue(box, value) ? value : null
+    box.focus()
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(box, value)
+    box.dispatchEvent(new Event("input", { bubbles: true }))
+    const opt = (await waitFor(() => findOption(value, true), 3000)) || findOption(value)
+    if (!opt) return null
+    const picked = (opt.innerText || opt.textContent).trim()
+    opt.click()
+    return picked
+  }
+
+  /**
+   * Pick FlipLedger's guess at `listing`'s category in the menu labelled `labels`, then
+   * its size (exact match) if the category brought up a Size field. Fills `done`/`todo`.
+   */
+  async function pickCategory(marketplace, labels, listing, done, todo) {
+    const path = FL.categoryPath(marketplace, FL.guessCategory(listing))
+    const picked = path ? await choosePath(labels, path) : []
+    if (picked.length) done.push(`Category (${picked.join(" › ")})`)
+    if (!path || picked.length < path.length) todo.push(picked.length ? "finish Category" : "pick a Category")
+    if (picked.length && listing.size) {
+      await sleep(500)
+      const size = findField("Size") && (await chooseOption("Size", [listing.size], { exact: true }))
+      if (size) done.push(`Size (${size})`)
+      else if (findField("Size")) todo.push("Size")
+    }
+    return picked.length > 0
   }
 
   /** Click the first of `options` shown as a radio or toggle button (e.g. Mercari's condition). */
@@ -179,5 +252,5 @@
     panelRoot = null
   }
 
-  globalThis.FLDOM = { sleep, waitFor, visible, findField, setValue, setPhotos, chooseOption, chooseRadio, findButton, panel, closePanel }
+  globalThis.FLDOM = { sleep, waitFor, visible, findField, setValue, setPhotos, chooseOption, choosePath, typeAndPick, pickCategory, chooseRadio, findButton, panel, closePanel }
 })()

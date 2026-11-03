@@ -416,7 +416,7 @@ function ListingKit({ item, m, draft, saveDraft }: { item: Item; m: Marketplace;
             <Wand2 className="size-4" /> Auto-fill on {m.short}
           </button>
           <p className="text-xs text-muted-foreground">
-            The FlipLedger extension opens {m.label} and fills in your photos and details. You pick the category and click Publish; it records the listing here. Or do it by hand below.
+            The FlipLedger extension opens {m.label}, fills in your photos and details, and picks a category when it can tell from the title. You check it and click Publish; it records the listing here. Or do it by hand below.
           </p>
         </>
       ) : (
