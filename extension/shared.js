@@ -145,7 +145,7 @@
   }
 
   const FL = {
-    VERSION: "0.6.0",
+    VERSION: "0.6.1",
     /** Marketplaces this extension can drive. */
     MARKETPLACES: ["facebook", "poshmark", "mercari"],
     APP_SOURCE: "flipledger-app",

@@ -35,7 +35,6 @@ Bump `version` in `manifest.json` before every update; the store rejects a versi
 - **Single purpose:** Fills in, publishes and removes the user's own Facebook Marketplace, Poshmark and Mercari listings from their FlipLedger inventory, and reports those listings' status back to FlipLedger.
 - **Permission justifications:**
   - `storage`: keeps each in-progress list, delist or import task (in session storage) while its marketplace tab loads, because the service worker can be suspended in between.
-  - `tabs`: opens the marketplace page for a task, sends that tab its task, notices if the user closes it, and closes it and returns to the FlipLedger tab when the task is done.
   - Host `facebook.com`, `poshmark.com`, `mercari.com`: fills in the listing form on these sites, clicks the publish or delete buttons the user asked for, and reads the user's own listing pages to check whether they sold.
   - Host `*.supabase.co`: downloads the user's item photos from FlipLedger's storage to attach them to the listing form.
   - Content script on `profittracker-iye3.vercel.app`: receives the listing to post from the FlipLedger app and sends results back.
