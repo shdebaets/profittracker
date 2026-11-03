@@ -3,6 +3,7 @@
 // Talks to the FlipLedger Chrome extension (extension/ in this repo) through
 // window.postMessage. The extension's content script on this site relays to it.
 import { useEffect, useState } from "react"
+import type { ImportCandidate } from "@/lib/import/plan"
 import type { MarketplaceId } from "@/lib/marketplaces/registry"
 
 const APP_SOURCE = "flipledger-app"
@@ -135,3 +136,31 @@ function extensionAtLeast(minor: number, patch = 0) {
 
 /** Older extensions don't know auto-delist and would open a normal tab for each listing. */
 export const extensionCanAutoDelist = () => extensionAtLeast(3)
+
+/** Importing Mercari listings arrived in extension 0.6.0. */
+export const extensionCanImport = () => extensionAtLeast(6)
+
+/**
+ * Ask the extension to read the seller's live Mercari listings (it opens their listings
+ * page in a background tab, then reads each listing). Needs them logged in to Mercari in Chrome.
+ */
+export function importWithExtension(marketplace: "mercari"): Promise<{ ok: true; candidates: ImportCandidate[] } | { ok: false; error: string }> {
+  const jobId = crypto.randomUUID()
+  return new Promise((resolve) => {
+    const finish = (r: { ok: true; candidates: ImportCandidate[] } | { ok: false; error: string }) => {
+      clearTimeout(timer)
+      window.removeEventListener("message", onMsg)
+      resolve(r)
+    }
+    const onMsg = (e: MessageEvent) => {
+      if (e.source !== window || e.origin !== location.origin) return
+      const d = e.data
+      if (d?.source !== EXT_SOURCE || d.jobId !== jobId) return
+      if (d.type === "IMPORTED") finish({ ok: true, candidates: Array.isArray(d.candidates) ? d.candidates : [] })
+      else if (d.type === "ERROR") finish({ ok: false, error: d.error })
+    }
+    const timer = setTimeout(() => finish({ ok: false, error: "The extension took too long. Try again with Mercari open in Chrome." }), 5 * 60_000)
+    window.addEventListener("message", onMsg)
+    window.postMessage({ source: APP_SOURCE, type: "IMPORT", jobId, marketplace }, location.origin)
+  })
+}

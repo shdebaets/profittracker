@@ -10,6 +10,8 @@ export type Item = {
   status: ItemStatus
   quantity: number
   cost_cents: number
+  /** Imported from a marketplace: the seller hasn't entered what they paid yet. */
+  cost_unknown: boolean
   purchased_at: string
   store: string | null
   link_url: string | null

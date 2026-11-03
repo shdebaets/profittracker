@@ -1,6 +1,6 @@
 "use client"
 
-import { Boxes, Cloud, Download, Package, RotateCcw, Search, Share2, ShoppingBag, Sparkles } from "lucide-react"
+import { Boxes, CircleDollarSign, Cloud, Download, Package, RotateCcw, Search, Share2, ShoppingBag, Sparkles } from "lucide-react"
 import { useState } from "react"
 import { PageTitle } from "@/components/app-header"
 import { DelistAlerts } from "@/components/crosslist/delist-alerts"
@@ -31,7 +31,7 @@ export function InventoryView({ items, email, focusSearch = false }: { items: It
   const [tab, setTab] = useState<Tab>("all")
   const [time, setTime] = useState<Range>("all")
   const [query, setQuery] = useState("")
-  const [chip, setChip] = useState<"all" | "returns" | "unlisted">("all")
+  const [chip, setChip] = useState<"all" | "returns" | "unlisted" | "cost">("all")
   useSyncItems(items)
 
   const sales = items.filter((i) => i.status === "sold")
@@ -43,12 +43,14 @@ export function InventoryView({ items, email, focusSearch = false }: { items: It
   const timeCounts = Object.fromEntries(TIME.map((t) => [t.value, byTab.filter((i) => inRange(itemDate(i), t.value)).length]))
   const returnCount = byTab.filter(isReturnEligible).length
   const unlistedCount = byTab.filter(isUnlisted).length
+  const noCostCount = byTab.filter((i) => i.cost_unknown).length
 
   const q = query.trim().toLowerCase()
   const visible = byTab.filter((i) => {
     if (!inRange(itemDate(i), time)) return false
     if (chip === "returns" && !isReturnEligible(i)) return false
     if (chip === "unlisted" && !isUnlisted(i)) return false
+    if (chip === "cost" && !i.cost_unknown) return false
     if (!q) return true
     return (
       (i.title ?? "").toLowerCase().includes(q) ||
@@ -214,6 +216,17 @@ export function InventoryView({ items, email, focusSearch = false }: { items: It
             )}
           >
             <Share2 className="size-4" /> Not Listed ({unlistedCount})
+          </button>
+        )}
+        {noCostCount > 0 && (
+          <button
+            onClick={() => setChip("cost")}
+            className={cn(
+              "flex shrink-0 items-center gap-1.5 rounded-full px-4 py-2 text-sm font-semibold",
+              chip === "cost" ? "bg-brand text-ink" : "border border-brand/40 bg-card text-brand",
+            )}
+          >
+            <CircleDollarSign className="size-4" /> Needs Cost ({noCostCount})
           </button>
         )}
       </div>

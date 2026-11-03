@@ -187,6 +187,43 @@
     return gone ? send({ type: "DONE" }) : autoFail("the listing is still up")
   }
 
+  // ---------- import (the seller's listings page) ----------
+  // Collects the links to the seller's own listings; the background worker then reads
+  // each listing's public page. Scrolls (or clicks "Load more") until no more show up.
+  // The tab has to stay in front: background tabs don't render, so the list stops growing.
+
+  let importing = false
+  async function collectListings() {
+    if (importing) return
+    importing = true
+    if (/\/(login|signin|signup)/i.test(location.pathname)) {
+      return send({ type: "CANCEL", reason: `Log in to ${site.name} in this Chrome window, then import again.` })
+    }
+    D.panel({ title: "Importing your listings…", lines: ["Leave this tab open while it scrolls through your listings.", "It closes by itself and goes back to FlipLedger."] })
+    const links = () => {
+      const urls = new Set()
+      for (const a of document.querySelectorAll("a[href]")) {
+        const m = a.href.match(site.itemPattern)
+        if (m) urls.add(a.href.slice(0, m.index + m[0].length))
+      }
+      return urls
+    }
+    await D.waitFor(() => links().size, 15000)
+    let last = -1
+    for (let round = 0; round < 40 && links().size !== last; round++) {
+      last = links().size
+      // Step back first: a page that's already at the bottom (restored scroll) wouldn't move or load.
+      window.scrollTo(0, Math.max(0, document.body.scrollHeight - 2 * innerHeight))
+      await D.sleep(150)
+      window.scrollTo(0, document.body.scrollHeight)
+      // Scroll events only fire on rendered frames; nudge pages that listen for them.
+      window.dispatchEvent(new Event("scroll"))
+      D.findButton(/^(load|show|see) more( items| listings)?$/i)?.click()
+      await D.sleep(1500)
+    }
+    return send({ type: "DONE", urls: [...links()] })
+  }
+
   // ---------- routing (these sites are single-page apps, so watch the URL) ----------
 
   let lastPath = ""
@@ -196,6 +233,7 @@
     const onCreate = site.isCreatePage(location.pathname)
     const { job, photos } = (await send({ type: "GET_JOB", withPhotos: onCreate })) ?? {}
     if (!job) return
+    if (job.kind === "import") return collectListings()
     if (job.kind === "list") {
       if (onCreate) return fillListing(job, (photos ?? []).slice(0, site.photoLimit))
       // The site lands on the new listing (or your listings) after publishing.

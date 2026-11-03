@@ -38,7 +38,7 @@ function initialFromItem(item: Item) {
     title: item.title ?? "",
     link: item.link_url ?? "",
     store: item.store ?? "",
-    cost: centsToInput(item.cost_cents),
+    cost: item.cost_unknown ? "" : centsToInput(item.cost_cents),
     price: centsToInput(item.sale_price_cents),
     qty: item.quantity,
     buyerShip: centsToInput(item.buyer_shipping_cents),
@@ -231,7 +231,7 @@ export function EntryForm(props: Props) {
         <div className="rounded-2xl border bg-card p-4">
           <p className="font-semibold">{props.item.title || `Item #${props.item.seq}`}</p>
           <p className="text-sm text-muted-foreground">
-            Cost {formatCents(props.item.cost_cents)} / unit · {props.item.quantity} in stock
+            {props.item.cost_unknown ? "Cost not entered yet (edit the item to add it)" : `Cost ${formatCents(props.item.cost_cents)} / unit`} · {props.item.quantity} in stock
           </p>
         </div>
       ) : (
@@ -275,6 +275,9 @@ export function EntryForm(props: Props) {
           <div>
             <FieldLabel htmlFor="cost">Purchase Cost (COG) {qty > 1 && <span className="font-normal text-muted-foreground">per unit</span>}</FieldLabel>
             <MoneyInput id="cost" big value={cost} onChange={setCost} />
+            {item?.cost_unknown && !cost && (
+              <p className="mt-1 text-xs text-brand">Imported from a marketplace. Enter what you paid so profit is right.</p>
+            )}
           </div>
         </>
       )}

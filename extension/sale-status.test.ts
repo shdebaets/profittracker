@@ -56,3 +56,36 @@ describe.each([
     expect(parser()("depop", POSH_URL, poshPage("sold_out")).state).toBe("unknown")
   })
 })
+
+describe("mercariItem (extension import)", () => {
+  type Item = Record<string, unknown> | null
+  let mercariItem: (url: string, html: string) => Item
+  beforeAll(() => {
+    mercariItem = (globalThis as unknown as { FL: { mercariItem: typeof mercariItem } }).FL.mercariItem
+  })
+  const product = (extra: object) =>
+    `<script type="application/ld+json">${JSON.stringify({
+      "@context": "https://schema.org", "@type": "Product", name: "Levi's 501 Jeans 32x30", description: "Barely worn",
+      image: ["https://u-mercari-images.mercdn.net/photos/m12215929581_1.jpg"], brand: { "@type": "Brand", name: "Levi's" },
+      offers: { "@type": "Offer", price: "38.00", availability: "https://schema.org/InStock", itemCondition: "https://schema.org/UsedCondition" },
+      ...extra,
+    })}</script>`
+  const page = (status: string, extra: object = {}) =>
+    `<html>${product(extra)}<script>{"item":{"id":"m12215929581","buyer":null,"status":"${status}","isWebVisible":true}}</script></html>`
+
+  it("reads a live listing into an import candidate", () => {
+    expect(mercariItem(MERC_URL, page("on_sale"))).toEqual({
+      marketplace: "mercari", externalId: "m12215929581", url: "https://www.mercari.com/us/item/m12215929581/",
+      title: "Levi's 501 Jeans 32x30", description: "Barely worn", priceCents: 3800, brand: "Levi's", size: "",
+      condition: null, photoUrl: "https://u-mercari-images.mercdn.net/photos/m12215929581_1.jpg",
+    })
+    expect(mercariItem(MERC_URL, page("on_sale", { itemCondition: "https://schema.org/NewCondition" }))?.condition).toBe("new")
+  })
+
+  it("skips sold, inactive and unreadable listings", () => {
+    expect(mercariItem(MERC_URL, page("trading"))).toBeNull()
+    expect(mercariItem(MERC_URL, page("inactive"))).toBeNull()
+    expect(mercariItem(MERC_URL, "<html><title>Just a moment...</title></html>")).toBeNull()
+    expect(mercariItem("https://www.mercari.com/us/", page("on_sale"))).toBeNull()
+  })
+})

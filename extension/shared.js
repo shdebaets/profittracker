@@ -145,7 +145,7 @@
   }
 
   const FL = {
-    VERSION: "0.5.0",
+    VERSION: "0.6.0",
     /** Marketplaces this extension can drive. */
     MARKETPLACES: ["facebook", "poshmark", "mercari"],
     APP_SOURCE: "flipledger-app",
@@ -325,21 +325,52 @@
       return { state: "unknown", priceCents: null }
     },
 
-    /** The first schema.org Product offer price on the page, in cents. */
-    offerPrice(page) {
+    /** The first schema.org Product (with an offer) on the page, or null. */
+    productData(page) {
       for (const [, body] of page.matchAll(/<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)) {
         try {
           const data = JSON.parse(body.trim())
           const nodes = [data].flat().flatMap((n) => [n, ...(n?.["@graph"] ?? [])])
           const product = nodes.find((n) => n && /product/i.test(String(n["@type"] ?? "")) && n.offers)
-          if (!product) continue
-          const p = Number([product.offers].flat()[0]?.price)
-          return Number.isFinite(p) && p > 0 ? Math.round(p * 100) : null
+          if (product) return product
         } catch {
           // Not valid JSON; try the next block.
         }
       }
       return null
+    },
+
+    /** The first schema.org Product offer price on the page, in cents. */
+    offerPrice(page) {
+      const p = Number([FL.productData(page)?.offers].flat()[0]?.price)
+      return Number.isFinite(p) && p > 0 ? Math.round(p * 100) : null
+    },
+
+    /**
+     * A live Mercari listing read from its public page, in the shape the app imports
+     * (lib/import/plan.ts ImportCandidate), or null if it isn't for sale or can't be read.
+     */
+    mercariItem(url, html) {
+      const id = FL.listingId("mercari", url)
+      if (!id || FL.saleStatus("mercari", url, html).state !== "available") return null
+      const p = FL.productData(String(html ?? ""))
+      if (!p?.name) return null
+      const image = [p.image].flat()[0]
+      const offer = [p.offers].flat()[0] ?? {}
+      const condition = String(p.itemCondition ?? offer.itemCondition ?? "")
+      return {
+        marketplace: "mercari",
+        externalId: id,
+        url: `https://www.mercari.com/us/item/${id}/`,
+        title: String(p.name).trim().slice(0, 200),
+        description: String(p.description ?? "").trim().slice(0, 5000),
+        priceCents: FL.offerPrice(html),
+        brand: String((typeof p.brand === "object" ? p.brand?.name : p.brand) ?? "").trim().slice(0, 100),
+        size: "",
+        // schema.org only says new or used; the seller can set the exact grade later.
+        condition: /NewCondition/i.test(condition) ? "new" : null,
+        photoUrl: typeof image === "string" ? image : (image?.url ?? image?.contentUrl ?? null),
+      }
     },
   }
   globalThis.FL = FL

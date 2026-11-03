@@ -1,7 +1,8 @@
 // Service worker: opens marketplace tabs for jobs sent by the FlipLedger app,
 // hands each tab its job, and routes the result back to the app tab.
 // Jobs live in chrome.storage.session because the worker can be suspended.
-// Also checks public listing pages for sales (CHECK_SALES).
+// Also checks public listing pages for sales (CHECK_SALES) and imports a seller's
+// Mercari listings (IMPORT: a background tab collects the links, then each page is read).
 importScripts("shared.js")
 
 const SITES = {
@@ -43,8 +44,10 @@ function tellApp(job, payload) {
 async function startJob(msg, sender) {
   const site = SITES[msg.marketplace]
   if (!site) throw new Error(`${msg.marketplace} isn't supported by this extension yet`)
+  const kind = { LIST: "list", DELIST: "delist", IMPORT: "import" }[msg.type]
+  if (kind === "import" && msg.marketplace !== "mercari") throw new Error(`Importing from ${msg.marketplace} isn't supported yet`)
   const job = {
-    kind: msg.type === "LIST" ? "list" : "delist",
+    kind,
     jobId: msg.jobId,
     marketplace: msg.marketplace,
     appTabId: sender.tab?.id ?? null,
@@ -58,7 +61,8 @@ async function startJob(msg, sender) {
     state: "opened",
   }
   if (job.auto && !job.url) throw new Error("Auto-delist needs the listing's link")
-  const target = job.kind === "list" ? site.create : job.url || site.manage
+  const target = job.kind === "list" ? site.create : job.kind === "import" ? site.manage : job.url || site.manage
+  // Import stays in front: Chrome doesn't render background tabs, so their lists never load more on scroll.
   const tab = await chrome.tabs.create({ url: target, active: !job.auto })
   await saveJob(tab.id, job)
 }
@@ -81,22 +85,45 @@ async function checkSales(listings) {
     if (!host || url.protocol !== "https:" || url.hostname.replace(/^www\./, "") !== host.replace(/^www\./, "")) return
     url.hostname = host
     try {
-      const get = (credentials) => fetch(url.href, { credentials, redirect: "follow", signal: AbortSignal.timeout(10_000) })
-      let res = await get("omit")
-      // Mercari's Cloudflare check: retry with the clearance the seller got by browsing Mercari.
-      if (res.headers.get("cf-mitigated") === "challenge") res = await get("include")
+      const res = await fetchPublicPage(url.href)
       if (res.status === 404 || res.status === 410) results.push({ listingId: l.listingId, state: "unavailable", priceCents: null })
       else if (res.ok) results.push({ listingId: l.listingId, ...FL.saleStatus(l.marketplace, url.href, await res.text()) })
     } catch (e) {
       console.warn("FlipLedger: couldn't check", url.href, e)
     }
   }
-  // A few at a time: quick enough for the app's wait, gentle on the sites.
-  const queue = (listings ?? []).slice(0, 100)
-  await Promise.all(Array.from({ length: 4 }, async () => {
-    while (queue.length) await check(queue.shift())
-  }))
+  await inBatches((listings ?? []).slice(0, 100), check)
   return results
+}
+
+async function fetchPublicPage(href) {
+  const get = (credentials) => fetch(href, { credentials, redirect: "follow", signal: AbortSignal.timeout(10_000) })
+  const res = await get("omit")
+  // Mercari's Cloudflare check: retry with the clearance the seller got by browsing Mercari.
+  return res.headers.get("cf-mitigated") === "challenge" ? get("include") : res
+}
+
+/** A few at a time: quick enough for the app's wait, gentle on the sites. */
+async function inBatches(list, fn) {
+  const queue = [...list]
+  await Promise.all(Array.from({ length: 4 }, async () => {
+    while (queue.length) await fn(queue.shift())
+  }))
+}
+
+/** Read each of the seller's Mercari listing pages; keep the ones still for sale. */
+async function readMercariListings(urls) {
+  const items = []
+  await inBatches(urls.slice(0, 600), async (u) => {
+    try {
+      const res = await fetchPublicPage(u)
+      const item = res.ok && FL.mercariItem(u, await res.text())
+      if (item) items.push(item)
+    } catch (e) {
+      console.warn("FlipLedger: couldn't read", u, e)
+    }
+  })
+  return items
 }
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
@@ -137,6 +164,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       await saveJob(tabId, { ...job, ...msg.patch })
       return { ok: true }
     }
+    if (msg?.type === "DONE" && job.kind === "import") {
+      await dropJob(tabId)
+      chrome.tabs.remove(tabId).catch(() => {})
+      if (job.appTabId != null) chrome.tabs.update(job.appTabId, { active: true }).catch(() => {})
+      const urls = (msg.urls ?? []).filter((u) => FL.listingId("mercari", u))
+      tellApp(job, { type: "IMPORTED", candidates: urls.length ? await readMercariListings(urls) : [] })
+      return { ok: true }
+    }
     if (msg?.type === "DONE") {
       if (job.kind === "list") tellApp(job, { type: "LISTED", itemId: job.itemId, url: msg.url ?? null })
       else tellApp(job, { type: "DELISTED", listingId: job.listingId, itemId: job.itemId })
@@ -147,7 +182,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (msg?.type === "CANCEL") {
       tellApp(job, { type: "ERROR", error: msg.reason || "Cancelled" })
       await dropJob(tabId)
-      if (job.auto) chrome.tabs.remove(tabId).catch(() => {})
+      if (job.auto || job.kind === "import") chrome.tabs.remove(tabId).catch(() => {})
       return { ok: true }
     }
     return { ok: false }

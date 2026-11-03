@@ -6,6 +6,7 @@ import { useEffect, useState, useSyncExternalStore, useTransition } from "react"
 import { toast } from "sonner"
 import { createEbayPolicies, disconnectEbay, refreshEbayPolicies, saveEbaySettings, syncSales } from "@/app/(app)/actions/crosslist"
 import { checkExtensionSales } from "@/components/crosslist/auto-sync"
+import { ImportListings } from "@/components/crosslist/import-listings"
 import { FieldLabel, MoneyInput, NativeSelect, Segmented, TextInput } from "@/components/fields"
 import { relativeTime } from "@/lib/dates"
 import { autoDelistEnabled, autoPublishEnabled, setAutoDelist, setAutoPublish } from "@/lib/extension"
@@ -116,6 +117,8 @@ export function MarketplacesSettings({
         title="Delist automatically on this computer"
         detail="When an item sells, the extension removes its Facebook, Poshmark and Mercari listings in background tabs while FlipLedger is open here. It needs each listing's link saved. These sites ban automation, so this could put your accounts at risk. Anything it can't remove stays on your delist list."
       />
+
+      <ImportListings />
 
       <div>
         <p className="mb-2 text-sm font-semibold">Copy kit</p>
