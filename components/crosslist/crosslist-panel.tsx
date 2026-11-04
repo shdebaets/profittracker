@@ -15,7 +15,7 @@ import { FieldLabel, MoneyInput, NativeSelect, TextInput } from "@/components/fi
 import type { Aspect, CategorySuggestion, ConditionOption } from "@/lib/marketplaces/ebay/adapter"
 import { defaultConditionId } from "@/lib/marketplaces/ebay/mapping"
 import { ITEM_CONDITIONS, MARKETPLACES, type ItemCondition, type Marketplace } from "@/lib/marketplaces/registry"
-import { delistWithExtension, listWithExtension, useExtension } from "@/lib/extension"
+import { delistWithExtension, EXTENSION_STORE_URL, listWithExtension, useExtension } from "@/lib/extension"
 import { centsToInput, formatCents, toCents } from "@/lib/money"
 import type { Item, Listing } from "@/lib/types"
 import { cn } from "@/lib/utils"
@@ -422,7 +422,13 @@ function ListingKit({ item, m, draft, saveDraft }: { item: Item; m: Marketplace;
       ) : (
         <p className="text-sm text-muted-foreground">
           {m.label} has no public listing API, so you post it and FlipLedger keeps track. When the item sells anywhere, you&apos;ll get a reminder to take this one down.
-          {m.extension && " On a computer, the FlipLedger Chrome extension can fill it in for you."}
+          {m.extension && (
+            <>
+              {" "}On a computer, the{" "}
+              <a href={EXTENSION_STORE_URL} target="_blank" rel="noreferrer" className="font-semibold underline">FlipLedger Chrome extension</a>
+              {" "}can fill it in for you.
+            </>
+          )}
         </p>
       )}
       <div className="grid grid-cols-2 gap-2">

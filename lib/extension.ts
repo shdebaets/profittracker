@@ -6,6 +6,9 @@ import { useEffect, useState } from "react"
 import type { ImportCandidate } from "@/lib/import/plan"
 import type { MarketplaceId } from "@/lib/marketplaces/registry"
 
+/** Where sellers install the extension. */
+export const EXTENSION_STORE_URL = "https://chromewebstore.google.com/detail/flipledger-lister/cagenhmfjlembnkfonjocdjjbdicimgp"
+
 const APP_SOURCE = "flipledger-app"
 const EXT_SOURCE = "flipledger-ext"
 
