@@ -48,4 +48,4 @@ Bump `version` in `manifest.json` before every update; the store rejects a versi
 
 ## Distribution tab
 
-Public since 0.6.1 (Nov 2026): https://chromewebstore.google.com/detail/flipledger-lister/cagenhmfjlembnkfonjocdjjbdicimgp. The app links to it through `EXTENSION_STORE_URL` in `lib/extension.ts`. 0.6.0 was rejected for requesting `tabs` without using it.
+Public since 0.6.1 (Nov 2026): https://chromewebstore.google.com/detail/flipledger-lister/cagenhmfjlembnkfonjocdjjbdicimgp. The app links to it through `EXTENSION_STORE_URL` in `lib/marketplaces/registry.ts`. 0.6.0 was rejected for requesting `tabs` without using it.

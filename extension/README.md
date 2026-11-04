@@ -23,7 +23,7 @@ Poshmark's and Mercari's terms ban automation. Sellers using these tools accept 
 
 ## Install
 
-Sellers install it from the Chrome Web Store: https://chromewebstore.google.com/detail/flipledger-lister/cagenhmfjlembnkfonjocdjjbdicimgp (linked in the app as `EXTENSION_STORE_URL` in `lib/extension.ts`). Chrome keeps it updated.
+Sellers install it from the Chrome Web Store: https://chromewebstore.google.com/detail/flipledger-lister/cagenhmfjlembnkfonjocdjjbdicimgp (linked in the app as `EXTENSION_STORE_URL` in `lib/marketplaces/registry.ts`). Chrome keeps it updated.
 
 Publishing to the store: see `STORE.md`. `npm run pack:extension` builds the zip to upload.
 

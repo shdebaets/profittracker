@@ -9,10 +9,10 @@ import { checkExtensionSales } from "@/components/crosslist/auto-sync"
 import { ImportListings } from "@/components/crosslist/import-listings"
 import { FieldLabel, MoneyInput, NativeSelect, Segmented, TextInput } from "@/components/fields"
 import { relativeTime } from "@/lib/dates"
-import { autoDelistEnabled, autoPublishEnabled, EXTENSION_STORE_URL, setAutoDelist, setAutoPublish, useExtension } from "@/lib/extension"
+import { autoDelistEnabled, autoPublishEnabled, setAutoDelist, setAutoPublish, useExtension } from "@/lib/extension"
 import { missingPolicies, setupGaps } from "@/lib/marketplaces/ebay/mapping"
 import { toCents } from "@/lib/money"
-import { MARKETPLACES } from "@/lib/marketplaces/registry"
+import { EXTENSION_STORE_URL, MARKETPLACES } from "@/lib/marketplaces/registry"
 import type { EbayPolicy, MarketplaceConnection } from "@/lib/types"
 import { cn } from "@/lib/utils"
 import { GENERIC_ERROR } from "@/lib/errors"
@@ -139,11 +139,21 @@ export function MarketplacesSettings({
 /** Store link, or a note that this computer already has the extension. */
 function ExtensionInstall() {
   const ext = useExtension()
-  if (ext.info) return <p className="mt-2 text-xs font-semibold text-muted-foreground">Installed on this computer (version {ext.info.version}).</p>
+  const guide = <a href="/extension" target="_blank" className="text-sm font-semibold underline">How to use it</a>
+  if (ext.info) {
+    return (
+      <p className="mt-2 flex flex-wrap items-center gap-x-3 text-xs font-semibold text-muted-foreground">
+        Installed on this computer (version {ext.info.version}). {guide}
+      </p>
+    )
+  }
   return (
-    <a href={EXTENSION_STORE_URL} target="_blank" rel="noreferrer" className="mt-2 inline-flex h-10 items-center gap-1.5 rounded-xl border bg-card px-3 text-sm font-semibold">
-      <ExternalLink className="size-4" /> Add to Chrome
-    </a>
+    <div className="mt-2 flex flex-wrap items-center gap-3">
+      <a href={EXTENSION_STORE_URL} target="_blank" rel="noreferrer" className="inline-flex h-10 items-center gap-1.5 rounded-xl border bg-card px-3 text-sm font-semibold">
+        <ExternalLink className="size-4" /> Add to Chrome
+      </a>
+      {guide}
+    </div>
   )
 }
 
