@@ -2,7 +2,7 @@
 
 # FlipLedger
 
-Reseller profit tracker plus cross-lister. It's a PWA for many unrelated resellers: each user signs up and only ever sees their own data. The client is Nick (repo `shdebaets/profittracker`). Production runs at https://profittracker-iye3.vercel.app on Vercel, with Supabase via the Vercel Marketplace integration.
+Reseller profit tracker plus cross-lister. It's a PWA for many unrelated resellers: each user signs up and only ever sees their own data. The client is Nick (repo `shdebaets/profittracker`). Production runs at https://profit.emoneydeals.com on Vercel (the old https://profittracker-iye3.vercel.app still works; keep it in the extension manifest), with Supabase via the Vercel Marketplace integration.
 
 ## Keep this file current
 

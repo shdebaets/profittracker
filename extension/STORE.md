@@ -18,7 +18,7 @@ Bump `version` in `manifest.json` before every update; the store rejects a versi
 - **Language:** English
 - **Icon:** `extension/icons/icon-128.png`
 - **Screenshots:** at least one, 1280×800 (or 640×400). Good ones: the FlipLedger Cross-list sheet with Auto-fill, and a Poshmark or Mercari form after it's filled with the FlipLedger panel showing.
-- **Homepage URL:** https://profittracker-iye3.vercel.app
+- **Homepage URL:** https://profit.emoneydeals.com
 - **Description:**
 
 > FlipLedger Lister is the companion to FlipLedger, the profit tracker and cross-lister for resellers. It needs a FlipLedger account.
@@ -37,14 +37,14 @@ Bump `version` in `manifest.json` before every update; the store rejects a versi
   - `storage`: keeps each in-progress list, delist or import task (in session storage) while its marketplace tab loads, because the service worker can be suspended in between.
   - Host `facebook.com`, `poshmark.com`, `mercari.com`: fills in the listing form on these sites, clicks the publish or delete buttons the user asked for, and reads the user's own listing pages to check whether they sold.
   - Host `*.supabase.co`: downloads the user's item photos from FlipLedger's storage to attach them to the listing form.
-  - Content script on `profittracker-iye3.vercel.app`: receives the listing to post from the FlipLedger app and sends results back.
+  - Content script on `profit.emoneydeals.com` (and the old `profittracker-iye3.vercel.app`): receives the listing to post from the FlipLedger app and sends results back.
 - **Remote code:** No, I am not using remote code. (All JavaScript ships in the package.)
 - **Data usage**, tick:
   - *Personally identifiable information*: no.
   - *Website content*: yes (it reads the user's own listing pages and listing details to report them to FlipLedger).
   - Leave the rest unticked: no health, financial, authentication, personal communications, location, web history or user activity data.
 - **Certify:** not sold to third parties; not used for purposes unrelated to the single purpose; not used for creditworthiness or lending.
-- **Privacy policy URL:** https://profittracker-iye3.vercel.app/privacy
+- **Privacy policy URL:** https://profit.emoneydeals.com/privacy
 
 ## Distribution tab
 
