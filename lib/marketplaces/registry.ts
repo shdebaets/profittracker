@@ -1,5 +1,8 @@
 import type { Platform } from "@/lib/types"
 
+/** Where sellers install the FlipLedger Chrome extension (guide at /extension). */
+export const EXTENSION_STORE_URL = "https://chromewebstore.google.com/detail/flipledger-lister/cagenhmfjlembnkfonjocdjjbdicimgp"
+
 export type MarketplaceId = "ebay" | "mercari" | "facebook" | "depop" | "vinted" | "poshmark" | "etsy"
 
 export type Marketplace = {

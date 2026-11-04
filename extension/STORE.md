@@ -48,4 +48,4 @@ Bump `version` in `manifest.json` before every update; the store rejects a versi
 
 ## Distribution tab
 
-Start **Unlisted** (only people with the link can install it), then switch to **Public** once a few real listings have gone through. After it's approved, put the store link in the app where it tells users to install the extension, and update the Install section of `README.md`.
+Public since 0.6.1 (Nov 2026): https://chromewebstore.google.com/detail/flipledger-lister/cagenhmfjlembnkfonjocdjjbdicimgp. The app links to it through `EXTENSION_STORE_URL` in `lib/marketplaces/registry.ts`. 0.6.0 was rejected for requesting `tabs` without using it.

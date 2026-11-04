@@ -9,10 +9,10 @@ import { checkExtensionSales } from "@/components/crosslist/auto-sync"
 import { ImportListings } from "@/components/crosslist/import-listings"
 import { FieldLabel, MoneyInput, NativeSelect, Segmented, TextInput } from "@/components/fields"
 import { relativeTime } from "@/lib/dates"
-import { autoDelistEnabled, autoPublishEnabled, setAutoDelist, setAutoPublish } from "@/lib/extension"
+import { autoDelistEnabled, autoPublishEnabled, setAutoDelist, setAutoPublish, useExtension } from "@/lib/extension"
 import { missingPolicies, setupGaps } from "@/lib/marketplaces/ebay/mapping"
 import { toCents } from "@/lib/money"
-import { MARKETPLACES } from "@/lib/marketplaces/registry"
+import { EXTENSION_STORE_URL, MARKETPLACES } from "@/lib/marketplaces/registry"
 import type { EbayPolicy, MarketplaceConnection } from "@/lib/types"
 import { cn } from "@/lib/utils"
 import { GENERIC_ERROR } from "@/lib/errors"
@@ -105,6 +105,7 @@ export function MarketplacesSettings({
         <p className="mt-2 text-xs text-muted-foreground">
           On a computer, the extension opens the site and fills in your photos and details; you check it and click Publish. On your phone, use the copy kit. Poshmark sales are spotted automatically on any device. Mercari sales are spotted while FlipLedger is open on a computer with the extension. Both need the listing&apos;s link saved.
         </p>
+        <ExtensionInstall />
       </div>
 
       <ExtensionToggle
@@ -132,6 +133,27 @@ export function MarketplacesSettings({
         </p>
       </div>
     </section>
+  )
+}
+
+/** Store link, or a note that this computer already has the extension. */
+function ExtensionInstall() {
+  const ext = useExtension()
+  const guide = <a href="/extension" target="_blank" className="text-sm font-semibold underline">How to use it</a>
+  if (ext.info) {
+    return (
+      <p className="mt-2 flex flex-wrap items-center gap-x-3 text-xs font-semibold text-muted-foreground">
+        Installed on this computer (version {ext.info.version}). {guide}
+      </p>
+    )
+  }
+  return (
+    <div className="mt-2 flex flex-wrap items-center gap-3">
+      <a href={EXTENSION_STORE_URL} target="_blank" rel="noreferrer" className="inline-flex h-10 items-center gap-1.5 rounded-xl border bg-card px-3 text-sm font-semibold">
+        <ExternalLink className="size-4" /> Add to Chrome
+      </a>
+      {guide}
+    </div>
   )
 }
 

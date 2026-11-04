@@ -6,6 +6,7 @@ import { toast } from "sonner"
 import { findPoshmarkListings, importListings, previewImport, type ImportPreview } from "@/app/(app)/actions/import"
 import { TextInput } from "@/components/fields"
 import { extensionCanImport, importWithExtension, useExtension } from "@/lib/extension"
+import { EXTENSION_STORE_URL } from "@/lib/marketplaces/registry"
 import type { ImportCandidate } from "@/lib/import/plan"
 import { GENERIC_ERROR } from "@/lib/errors"
 
@@ -125,7 +126,7 @@ export function ImportListings() {
               ? "Mercari needs this computer: the extension reads your listings while you're logged in to Mercari in Chrome."
               : ext.info
                 ? "Mercari import needs the newest FlipLedger extension. Update it in chrome://extensions."
-                : "Mercari import needs the FlipLedger Chrome extension on a computer."}
+                : <>Mercari import needs the <a href={EXTENSION_STORE_URL} target="_blank" rel="noreferrer" className="font-semibold underline">FlipLedger Chrome extension</a> on a computer.</>}
           </p>
           {busy && <p className="flex items-center gap-2 text-sm"><Loader2 className="size-4 animate-spin" /> {busy}</p>}
         </>

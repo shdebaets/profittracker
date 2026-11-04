@@ -21,15 +21,17 @@ Poshmark's and Mercari's terms ban automation. Sellers using these tools accept 
 - **Delist automatically (off by default):** a seller can turn this on per computer in Settings. Listings waiting to come down then open in background tabs and get removed: Facebook **Mark as sold**, Poshmark **Delete Listing**, Mercari **Deactivate**. It only clicks on a page carrying that listing's ID, and only when the listing has a saved link. Anything unexpected closes the tab and leaves the listing on the delist list.
 - It never sees your marketplace passwords.
 
-## Install (until it's on the Chrome Web Store)
+## Install
+
+Sellers install it from the Chrome Web Store: https://chromewebstore.google.com/detail/flipledger-lister/cagenhmfjlembnkfonjocdjjbdicimgp (linked in the app as `EXTENSION_STORE_URL` in `lib/marketplaces/registry.ts`). Chrome keeps it updated.
 
 Publishing to the store: see `STORE.md`. `npm run pack:extension` builds the zip to upload.
 
+To try local changes, load it unpacked (remove the store version first, or both will run):
 
-1. Download this `extension` folder, or zip it and send it to the user.
-2. In Chrome, open `chrome://extensions` and turn on **Developer mode** (top right).
-3. Click **Load unpacked** and pick the `extension` folder.
-4. Reload FlipLedger. The Facebook, Poshmark and Mercari rows in Cross-list now show **Auto-fill**.
+1. In Chrome, open `chrome://extensions` and turn on **Developer mode** (top right).
+2. Click **Load unpacked** and pick the `extension` folder.
+3. Reload FlipLedger. The Facebook, Poshmark and Mercari rows in Cross-list now show **Auto-fill**.
 
 ## Files
 
