@@ -4,7 +4,7 @@ import { decrypt, encrypt } from "@/lib/crypto"
 import { UserError } from "@/lib/errors"
 import { createAdminClient } from "@/lib/supabase/admin"
 import type { EbaySettings } from "@/lib/types"
-import { EBAY_SCOPES, EbayError, ebayConfig } from "./client"
+import { EBAY_SCOPES, EbayError, ebayConfig, LEGACY_EBAY_SCOPES } from "./client"
 
 export const STATE_COOKIE = "ebay_oauth_state"
 
@@ -64,6 +64,8 @@ export type EbayAccount = {
   settings: EbaySettings
   last_synced_at: string | null
   created_at: string
+  /** Granted OAuth scopes; null for accounts connected before we saved them. */
+  scopes: string[] | null
 }
 
 /** Save tokens from a code exchange (encrypted at rest). */
@@ -86,6 +88,7 @@ export async function saveTokens(
       refresh_expires_at: t.refresh_token_expires_in
         ? new Date(now + t.refresh_token_expires_in * 1000).toISOString()
         : null,
+      scopes: EBAY_SCOPES,
     },
     { onConflict: "user_id,marketplace" },
   )
@@ -116,7 +119,8 @@ export async function getUserToken(
   const t = await tokenRequest({
     grant_type: "refresh_token",
     refresh_token: decrypt(row.refresh_token_enc),
-    scope: EBAY_SCOPES.join(" "),
+    // eBay rejects a refresh that asks for more than the seller granted.
+    scope: (account.scopes ?? LEGACY_EBAY_SCOPES).join(" "),
   }).catch((e) => {
     console.error("[ebay] token refresh failed", e)
     throw new UserError("Your eBay connection has expired. Reconnect eBay in Settings → Marketplaces.")

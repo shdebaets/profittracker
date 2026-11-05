@@ -48,6 +48,16 @@ describe("friendlyError", () => {
       expect(friendlyError(ebay(400, "Fulfillment policy is not valid."))).toMatch(/policies/)
       expect(friendlyError(ebay(400, "Condition is not supported for this category."))).toMatch(/condition/)
     })
+    it("promotion problems say the listing isn't promoted", () => {
+      const promo = (status: number, longMessage: string) =>
+        new EbayError(`Promoted listing: ${longMessage}`, status, [{ errorId: 35001, message: longMessage, longMessage }])
+      expect(friendlyError(promo(400, "The listing is not eligible for Promoted Listings. Details."))).toBe(
+        "eBay couldn't promote this listing: The listing is not eligible for Promoted Listings.",
+      )
+      expect(friendlyError(promo(403, "Insufficient permissions"))).toMatch(/Reconnect eBay/)
+      // A price word in a promotion error must not be read as a listing price problem.
+      expect(friendlyError(promo(400, "Bid percentage must be at least 2.0 for this price."))).toMatch(/^eBay couldn't promote/)
+    })
     it("anything else keeps eBay's first sentence", () => {
       expect(friendlyError(ebay(400, "Your seller account is restricted. See Seller Hub. More text."))).toBe(
         "eBay couldn't do that: Your seller account is restricted.",

@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest"
 import { decrypt, encrypt } from "@/lib/crypto"
 import { fitWithin } from "@/lib/image"
 import { challengeResponse } from "./deletion"
-import { defaultConditionId, EBAY_CONDITION_ENUM, ebayTitle, missingPolicies, ordersToSales, policyBodies, setupGaps, type EbayOrder } from "./mapping"
+import { adFeeCents, canPromote, defaultConditionId, EBAY_CONDITION_ENUM, EBAY_MARKETING_SCOPE, formatAdRate, normalizeAdRate, ebayTitle, missingPolicies, ordersToSales, policyBodies, setupGaps, type EbayOrder } from "./mapping"
 
 describe("ordersToSales", () => {
   const order: EbayOrder = {
@@ -136,5 +136,28 @@ describe("starter business policies", () => {
   it("only creates the policies that aren't picked yet", () => {
     expect(missingPolicies({})).toEqual(["fulfillment", "payment", "return"])
     expect(missingPolicies({ fulfillmentPolicyId: "1", returnPolicyId: "3" })).toEqual(["payment"])
+  })
+})
+
+describe("Promoted Listings", () => {
+  it("keeps ad rates eBay accepts: 2.0 to 100.0, one decimal", () => {
+    expect(normalizeAdRate(2)).toBe(2)
+    expect(normalizeAdRate(2.25)).toBe(2.3)
+    expect(normalizeAdRate(1.9)).toBeNull()
+    expect(normalizeAdRate(100.04)).toBe(100)
+    expect(normalizeAdRate(100.1)).toBeNull()
+    expect(normalizeAdRate(Number.NaN)).toBeNull()
+    expect(formatAdRate(2)).toBe("2.0")
+    expect(formatAdRate(12.5)).toBe("12.5")
+  })
+  it("estimates the ad fee on what the buyer paid", () => {
+    // 2% of (2 x $25 + $8 shipping) = $1.16
+    expect(adFeeCents(2, { salePriceCents: 2500, quantity: 2, buyerShippingCents: 800 })).toBe(116)
+    expect(adFeeCents(null, { salePriceCents: 2500, quantity: 1, buyerShippingCents: 0 })).toBe(0)
+  })
+  it("needs the marketing scope, which old connections don't have", () => {
+    expect(canPromote(null)).toBe(false)
+    expect(canPromote(["https://api.ebay.com/oauth/api_scope"])).toBe(false)
+    expect(canPromote([EBAY_MARKETING_SCOPE])).toBe(true)
   })
 })

@@ -4,6 +4,7 @@ import { STATE_COOKIE, exchangeCode, saveTokens } from "@/lib/marketplaces/ebay/
 import { getIdentity, loadPolicies, saveSettings } from "@/lib/marketplaces/ebay/setup"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { requireUser } from "@/lib/supabase/server"
+import type { EbaySettings } from "@/lib/types"
 
 /** eBay redirects here (the RuName's accept URL) with ?code&state after the seller consents. */
 export async function GET(request: NextRequest) {
@@ -20,12 +21,24 @@ export async function GET(request: NextRequest) {
 
   try {
     const tokens = await exchangeCode(code)
-    const identity = await getIdentity(tokens.access_token).catch(() => ({}))
+    const identity: { userId?: string; username?: string } = await getIdentity(tokens.access_token).catch(() => ({}))
+    const admin = createAdminClient()
+    // Reconnecting the same eBay account (e.g. to allow promoting) keeps its ZIP, location,
+    // promote default and campaign. A different eBay account starts fresh.
+    const { data: prev } = await admin
+      .from("marketplace_accounts")
+      .select("external_user_id, settings")
+      .eq("user_id", userId)
+      .eq("marketplace", "ebay")
+      .maybeSingle()
+    const sameAccount = !!prev && !!identity.userId && prev.external_user_id === identity.userId
+    const base: EbaySettings = sameAccount ? { ...(prev.settings as EbaySettings), setupError: undefined } : {}
     await saveTokens(userId, tokens, identity)
-    const settings = await loadPolicies(tokens.access_token, {}).catch((e) => ({
+    const settings = await loadPolicies(tokens.access_token, base).catch((e) => ({
+      ...base,
       setupError: e instanceof Error ? e.message : "Couldn't load your eBay business policies",
     }))
-    await saveSettings(createAdminClient(), userId, settings)
+    await saveSettings(admin, userId, settings)
   } catch (e) {
     console.error("eBay connect failed", e)
     return back("error")

@@ -11,8 +11,9 @@ import {
   type Aspect, type CategorySuggestion, type ConditionOption,
 } from "@/lib/marketplaces/ebay/adapter"
 import { ebayConfig } from "@/lib/marketplaces/ebay/client"
-import { setupGaps } from "@/lib/marketplaces/ebay/mapping"
-import { getUserToken } from "@/lib/marketplaces/ebay/oauth"
+import { AD_RATE_DEFAULT, AD_RATE_MAX, AD_RATE_MIN, canPromote, normalizeAdRate, setupGaps } from "@/lib/marketplaces/ebay/mapping"
+import { getUserToken, requireUserToken } from "@/lib/marketplaces/ebay/oauth"
+import { promoteListing } from "@/lib/marketplaces/ebay/promote"
 import { createPolicies, ensureLocation, loadPolicies, saveSettings } from "@/lib/marketplaces/ebay/setup"
 import { syncEbaySales } from "@/lib/marketplaces/ebay/sync"
 import { checkPoshmarkListings } from "@/lib/marketplaces/assisted-sync"
@@ -251,11 +252,37 @@ const publishSchema = z.object({
   conditionId: z.string().regex(/^\d+$/, "Pick the item's condition for eBay").optional(),
   priceCents: cents.min(99, "eBay needs a price of at least $0.99"),
   aspects: z.record(z.string(), z.array(z.string().trim().min(1).max(65)).max(30)),
+  /** Promote at this ad rate (percent) right after listing; null/absent = don't promote. */
+  adRate: z.number().nullable().optional(),
 })
 
-export async function publishEbay(itemId: string, input: z.input<typeof publishSchema>): Promise<ActionResult> {
+const adRateSchema = z
+  .number()
+  .transform((r, ctx) => normalizeAdRate(r) ?? (ctx.addIssue({ code: "custom", message: `Enter an ad rate from ${AD_RATE_MIN}% to ${AD_RATE_MAX}%` }), z.NEVER))
+
+/**
+ * Add a live eBay listing to the seller's FlipLedger campaign and record the rate.
+ * Throws on failure; the listing itself stays live either way.
+ */
+async function promoteOnEbay(userId: string, listing: { id: string; external_id: string | null }, rate: number) {
+  if (!listing.external_id) throw new UserError("This listing has no eBay listing ID yet. List it on eBay first.")
+  const admin = createAdminClient()
+  const { token, account } = await requireUserToken(userId, admin)
+  if (!canPromote(account.scopes))
+    throw new UserError("To promote listings, reconnect eBay in Settings → Marketplaces (FlipLedger needs eBay's OK to manage your ads).")
+  const { campaignId } = await promoteListing(token, account.settings, listing.external_id, rate)
+  if (campaignId !== account.settings.campaignId) await saveSettings(admin, userId, { ...account.settings, campaignId })
+  const { error } = await admin.from("marketplace_listings").update({ ad_rate: rate }).eq("id", listing.id).eq("user_id", userId)
+  if (error) throw error
+}
+
+export async function publishEbay(
+  itemId: string,
+  input: z.input<typeof publishSchema>,
+): Promise<Result<{ promoteError?: string }>> {
   try {
     const p = publishSchema.parse(input)
+    const adRate = p.adRate == null ? null : adRateSchema.parse(p.adRate)
     const { supabase, userId } = await requireUser()
     const { data: item, error } = await supabase.from("items").select("*").eq("id", itemId).single()
     if (error) throw error
@@ -274,23 +301,59 @@ export async function publishEbay(itemId: string, input: z.input<typeof publishS
       aspects: Object.fromEntries(Object.entries(p.aspects).filter(([, v]) => v.length)),
       imageUrls: ((item.photo_paths as string[]) ?? []).map((path) => photoLink(origin, path)),
     })
-    const { error: upErr } = await supabase.from("marketplace_listings").upsert(
-      {
-        item_id: itemId,
-        marketplace: "ebay",
-        status: "active",
-        external_id: res.listingId,
-        offer_id: res.offerId,
-        external_url: res.url,
-        price_cents: p.priceCents,
-        listed_at: new Date().toISOString(),
-        delisted_at: null,
-        last_error: null,
-      },
-      { onConflict: "item_id,marketplace" },
-    )
+    const { data: listing, error: upErr } = await supabase
+      .from("marketplace_listings")
+      .upsert(
+        {
+          item_id: itemId,
+          marketplace: "ebay",
+          status: "active",
+          external_id: res.listingId,
+          offer_id: res.offerId,
+          external_url: res.url,
+          price_cents: p.priceCents,
+          listed_at: new Date().toISOString(),
+          delisted_at: null,
+          last_error: null,
+          ad_rate: null, // a relist is a new eBay listing; it's promoted below if asked
+        },
+        { onConflict: "item_id,marketplace" },
+      )
+      .select("id, external_id")
+      .single()
     if (upErr) throw upErr
     if (item.list_price_cents == null) await supabase.from("items").update({ list_price_cents: p.priceCents }).eq("id", itemId)
+
+    // The listing is live now; a failed promotion is reported but doesn't undo it.
+    let promoteError: string | undefined
+    if (adRate != null) {
+      try {
+        await promoteOnEbay(userId, listing, adRate)
+      } catch (e) {
+        promoteError = reportError(e, "ebay promote")
+      }
+    }
+    revalidatePath("/", "layout")
+    return { ok: true, data: { promoteError } }
+  } catch (e) {
+    return fail(e) as { ok: false; error: string }
+  }
+}
+
+/** Promote a live eBay listing (or change its ad rate). */
+export async function promoteEbayListing(listingId: string, rate: number): Promise<ActionResult> {
+  try {
+    const id = z.uuid().parse(listingId)
+    const adRate = adRateSchema.parse(rate)
+    const { supabase, userId } = await requireUser()
+    const { data: l, error } = await supabase
+      .from("marketplace_listings")
+      .select("id, external_id, marketplace, status")
+      .eq("id", id)
+      .single()
+    if (error) throw error
+    if (l.marketplace !== "ebay" || l.status !== "active") throw new UserError("Only live eBay listings can be promoted.")
+    await promoteOnEbay(userId, l, adRate)
     return done()
   } catch (e) {
     return fail(e)
@@ -335,6 +398,7 @@ const ebaySettingsSchema = z.object({
   paymentPolicyId: z.string().max(40).optional(),
   returnPolicyId: z.string().max(40).optional(),
   postalCode: z.string().trim().regex(/^\d{5}(-\d{4})?$/, "Enter a 5-digit ZIP code").optional(),
+  promote: z.object({ enabled: z.boolean(), rate: adRateSchema }).optional(),
 })
 
 export async function saveEbaySettings(input: z.input<typeof ebaySettingsSchema>): Promise<ActionResult> {
@@ -407,21 +471,34 @@ export async function disconnectEbay(): Promise<ActionResult> {
   }
 }
 
-export type EbayStatus = { configured: boolean; connected: boolean; sandbox: boolean; username: string | null; gaps: string[] }
+export type EbayStatus = {
+  configured: boolean
+  connected: boolean
+  sandbox: boolean
+  username: string | null
+  gaps: string[]
+  /** False until the seller reconnects eBay with ad permission. */
+  canPromote: boolean
+  /** Their default from Settings: promote new listings, and at what rate. */
+  promote: { enabled: boolean; rate: number }
+}
 
 export async function getEbayStatus(): Promise<EbayStatus> {
   const { supabase } = await requireUser()
   const cfg = ebayConfig()
   const { data } = await supabase
     .from("marketplace_connections")
-    .select("external_username, settings")
+    .select("external_username, settings, scopes")
     .eq("marketplace", "ebay")
     .maybeSingle()
+  const settings = data?.settings ?? {}
   return {
     configured: cfg.configured,
     connected: !!data,
     sandbox: cfg.sandbox,
     username: data?.external_username ?? null,
-    gaps: data ? setupGaps(data.settings ?? {}) : [],
+    gaps: data ? setupGaps(settings) : [],
+    canPromote: canPromote(data?.scopes),
+    promote: settings.promote ?? { enabled: false, rate: AD_RATE_DEFAULT },
   }
 }
