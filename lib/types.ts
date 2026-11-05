@@ -53,6 +53,8 @@ export type Listing = {
   last_error: string | null
   listed_at: string | null
   delisted_at: string | null
+  /** eBay Promoted Listings ad rate in percent; null when not promoted. */
+  ad_rate: number | null
 }
 
 export type MarketplaceConnection = {
@@ -61,6 +63,7 @@ export type MarketplaceConnection = {
   external_username: string | null
   settings: EbaySettings
   last_synced_at: string | null
+  scopes: string[] | null
 }
 
 export type EbayPolicy = { id: string; name: string }
@@ -72,6 +75,10 @@ export type EbaySettings = {
   postalCode?: string
   policies?: { fulfillment: EbayPolicy[]; payment: EbayPolicy[]; return: EbayPolicy[] }
   setupError?: string
+  /** Promote new eBay listings by default (Promoted Listings, cost per sale) at this ad rate. */
+  promote?: { enabled: boolean; rate: number }
+  /** The seller's "FlipLedger promoted listings" campaign. */
+  campaignId?: string
 }
 
 export type Expense = {

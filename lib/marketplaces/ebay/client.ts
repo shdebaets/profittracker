@@ -1,14 +1,19 @@
 import "server-only"
+import { EBAY_MARKETING_SCOPE } from "./mapping"
 
 // Thin fetch wrapper around eBay's REST APIs (sandbox or production via EBAY_ENV).
 
-export const EBAY_SCOPES = [
+/** What sellers who connected before Promoted Listings granted (marketplace_accounts.scopes is null). */
+export const LEGACY_EBAY_SCOPES = [
   "https://api.ebay.com/oauth/api_scope",
   "https://api.ebay.com/oauth/api_scope/sell.inventory",
   "https://api.ebay.com/oauth/api_scope/sell.account",
   "https://api.ebay.com/oauth/api_scope/sell.fulfillment",
   "https://api.ebay.com/oauth/api_scope/commerce.identity.readonly",
 ]
+
+/** Asked for on connect. A refresh may only ask for what was granted, so it uses the account's saved scopes. */
+export const EBAY_SCOPES = [...LEGACY_EBAY_SCOPES, EBAY_MARKETING_SCOPE]
 
 export const EBAY_MARKETPLACE_ID = "EBAY_US"
 

@@ -8,12 +8,12 @@ import { useEffect, useState, useTransition } from "react"
 import { toast } from "sonner"
 import {
   delistEverywhere, ebayCategories, ebayCategoryDetails, endListing, forgetListing, getEbayStatus,
-  markAssistedListed, publishEbay, saveListingDetails, type EbayStatus,
+  markAssistedListed, promoteEbayListing, publishEbay, saveListingDetails, type EbayStatus,
 } from "@/app/(app)/actions/crosslist"
 import { readSheetStore, writeSheetStore } from "@/components/entry/sheet-storage"
-import { FieldLabel, MoneyInput, NativeSelect, TextInput } from "@/components/fields"
+import { FieldLabel, MoneyInput, NativeSelect, TextInput, Toggle } from "@/components/fields"
 import type { Aspect, CategorySuggestion, ConditionOption } from "@/lib/marketplaces/ebay/adapter"
-import { defaultConditionId } from "@/lib/marketplaces/ebay/mapping"
+import { AD_RATE_MAX, AD_RATE_MIN, defaultConditionId, normalizeAdRate } from "@/lib/marketplaces/ebay/mapping"
 import { EXTENSION_STORE_URL, ITEM_CONDITIONS, MARKETPLACES, type ItemCondition, type Marketplace } from "@/lib/marketplaces/registry"
 import { delistWithExtension, listWithExtension, useExtension } from "@/lib/extension"
 import { centsToInput, formatCents, toCents } from "@/lib/money"
@@ -484,7 +484,13 @@ function EbayRow({
   const [open, setOpen] = useState(listing?.status === "error")
 
   let body: React.ReactNode
-  if (live) body = <LiveActions listing={listing} m={m} title={item.title ?? ""} />
+  if (live)
+    body = (
+      <>
+        <LiveActions listing={listing} m={m} title={item.title ?? ""} />
+        {listing.status === "active" && status?.connected && <EbayPromoteLive listing={listing} status={status} />}
+      </>
+    )
   else if (item.status !== "inventory") body = null
   else if (!status) body = <p className="text-sm text-muted-foreground">Checking your eBay connection…</p>
   else if (!status.configured) body = <p className="text-sm text-muted-foreground">eBay listing isn&apos;t switched on for this app yet (API keys pending).</p>
@@ -501,7 +507,7 @@ function EbayRow({
         <Link href="/settings#marketplaces" className="font-semibold text-profit underline">Settings</Link>.
       </p>
     )
-  else body = <EbayPublish item={item} draft={draft} saveDraft={saveDraft} sandbox={status.sandbox} />
+  else body = <EbayPublish item={item} draft={draft} saveDraft={saveDraft} status={status} />
 
   return (
     <RowShell m={m} status={statusChip(listing)} open={open} onToggle={() => setOpen((o) => !o)}>
@@ -510,7 +516,91 @@ function EbayRow({
   )
 }
 
-function EbayPublish({ item, draft, saveDraft, sandbox }: { item: Item; draft: Draft; saveDraft: () => Promise<boolean>; sandbox: boolean }) {
+const RECONNECT_TO_PROMOTE = "To promote listings, reconnect eBay in Settings. FlipLedger needs eBay's OK to manage your ads."
+
+/** Promoted Listings switch and ad rate, shared by "List on eBay" and live listings. */
+function PromoteFields({
+  on, setOn, rate, setRate, canPromote,
+}: {
+  on: boolean
+  setOn: (v: boolean) => void
+  rate: string
+  setRate: (v: string) => void
+  canPromote: boolean
+}) {
+  return (
+    <div className="rounded-xl border p-3">
+      <div className="flex items-center gap-3">
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-semibold">Promote on eBay</p>
+          <p className="text-xs text-muted-foreground">Promoted Listings: you pay the ad rate only when it sells through the ad.</p>
+        </div>
+        <Toggle checked={on && canPromote} onChange={setOn} label="Promote on eBay" />
+      </div>
+      {!canPromote && on && (
+        <p className="mt-2 text-xs">
+          {RECONNECT_TO_PROMOTE}{" "}
+          <Link href="/settings#marketplaces" className="font-semibold text-profit underline">Settings</Link>
+        </p>
+      )}
+      {on && canPromote && (
+        <div className="mt-3 flex items-center gap-2">
+          <label htmlFor="ad-rate" className="text-sm font-semibold">Ad rate</label>
+          <div className="relative w-24">
+            <TextInput
+              id="ad-rate" inputMode="decimal" value={rate} onChange={(e) => setRate(e.target.value)}
+              className="h-10 pr-7 text-right"
+            />
+            <span className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-sm text-muted-foreground">%</span>
+          </div>
+          <span className="text-xs text-muted-foreground">{AD_RATE_MIN}–{AD_RATE_MAX}%</span>
+        </div>
+      )}
+    </div>
+  )
+}
+
+const parseRate = (s: string) => normalizeAdRate(Number(s.replace(",", ".")))
+
+/** On a live eBay listing: shows the ad rate, or lets the seller promote it now. */
+function EbayPromoteLive({ listing, status }: { listing: Listing; status: EbayStatus }) {
+  const [editing, setEditing] = useState(false)
+  const [rate, setRate] = useState(String(listing.ad_rate ?? status.promote.rate))
+  const [pending, run] = useRun()
+  const promoted = listing.ad_rate != null
+
+  if (promoted && !editing)
+    return (
+      <p className="flex items-center justify-between gap-2 text-sm">
+        <span><span className="font-semibold text-profit">Promoted</span> at {Number(listing.ad_rate)}% ad rate</span>
+        <button type="button" onClick={() => setEditing(true)} className="text-xs font-semibold text-muted-foreground underline">Change</button>
+      </p>
+    )
+  if (!status.canPromote)
+    return <p className="text-xs text-muted-foreground">Not promoted. {RECONNECT_TO_PROMOTE}</p>
+
+  const r = parseRate(rate)
+  return (
+    <div className="flex items-center gap-2">
+      <div className="relative w-24">
+        <TextInput inputMode="decimal" value={rate} onChange={(e) => setRate(e.target.value)} className="h-11 pr-7 text-right" aria-label="Ad rate" />
+        <span className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-sm text-muted-foreground">%</span>
+      </div>
+      <button
+        type="button" disabled={pending || r == null}
+        onClick={() => r != null && run(() => promoteEbayListing(listing.id, r), `Promoted at ${r}%`, () => setEditing(false))}
+        className="flex h-11 flex-1 items-center justify-center gap-1.5 rounded-xl bg-blue-600 font-semibold text-white disabled:opacity-50"
+      >
+        {pending && <Loader2 className="size-4 animate-spin" />} {promoted ? "Update ad rate" : "Promote on eBay"}
+      </button>
+    </div>
+  )
+}
+
+function EbayPublish({ item, draft, saveDraft, status }: { item: Item; draft: Draft; saveDraft: () => Promise<boolean>; status: EbayStatus }) {
+  const sandbox = status.sandbox
+  const [promote, setPromote] = useState(status.promote.enabled)
+  const [adRate, setAdRate] = useState(String(status.promote.rate))
   const [q, setQ] = useState(draft.title)
   const [cats, setCats] = useState<CategorySuggestion[] | null>(null)
   const [cat, setCat] = useState<CategorySuggestion | null>(null)
@@ -554,12 +644,15 @@ function EbayPublish({ item, draft, saveDraft, sandbox }: { item: Item; draft: D
     })
   }
 
+  const promoting = promote && status.canPromote
+
   // Everything eBay will reject the listing without. The button stays disabled until it's empty.
   const missing = [
     !cat && "Category",
     cat && aspects && conditionRequired && conditions.length > 0 && !conditionId && "Condition",
     ...(aspects?.filter((a) => a.required && !values[a.name]?.trim()).map((a) => a.name) ?? []),
     toCents(price) < 99 && "Price (at least $0.99)",
+    promoting && parseRate(adRate) == null && `Ad rate (${AD_RATE_MIN}–${AD_RATE_MAX}%)`,
   ].filter((x): x is string => !!x)
 
   function publish() {
@@ -573,9 +666,12 @@ function EbayPublish({ item, draft, saveDraft, sandbox }: { item: Item; draft: D
         aspects: Object.fromEntries(
           Object.entries(values).map(([k, v]) => [k, v.split(",").map((x) => x.trim()).filter(Boolean)]),
         ),
+        adRate: promoting ? parseRate(adRate) : null,
       })
       if (!res.ok) return void toast.error(res.error)
-      toast.success(sandbox ? "Listed on eBay (sandbox)" : "Listed on eBay!")
+      const listed = sandbox ? "Listed on eBay (sandbox)" : "Listed on eBay!"
+      if (res.data.promoteError) toast.warning(`${listed} It isn't promoted yet. ${res.data.promoteError}`, { duration: 10_000 })
+      else toast.success(promoting ? `${listed} Promoted at ${parseRate(adRate)}%.` : listed)
     })
   }
 
@@ -656,6 +752,7 @@ function EbayPublish({ item, draft, saveDraft, sandbox }: { item: Item; draft: D
         <FieldLabel>eBay price<span className="text-loss"> *</span></FieldLabel>
         <MoneyInput value={price} onChange={setPrice} />
       </div>
+      <PromoteFields on={promote} setOn={setPromote} rate={adRate} setRate={setAdRate} canPromote={status.canPromote} />
       {cat && aspects && missing.length > 0 && (
         <p className="text-sm text-loss">Still needed: {missing.join(", ")}</p>
       )}

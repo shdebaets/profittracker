@@ -58,6 +58,12 @@ function fromEbay(e: Obj): string {
   if (status === 401 || ids.includes(1001) || /invalid_grant|refresh token|access token/i.test(text)) return RECONNECT_EBAY
   if (status === 429) return "eBay is busy right now. Wait a minute and try again."
   if (status >= 500 || ids.includes(25001)) return "eBay is having trouble right now. Try again in a few minutes."
+  if (/^promoted listing:/i.test(str(e.message))) {
+    if (status === 403)
+      return "eBay didn't let FlipLedger promote this listing. Reconnect eBay in Settings → Marketplaces, and check in Seller Hub that your account can use Promoted Listings."
+    const detail = firstSentence(str(errors[0]?.longMessage) || str(errors[0]?.message) || "")
+    return detail ? `eBay couldn't promote this listing: ${detail}` : "eBay couldn't promote this listing. Try again from the item's eBay row."
+  }
   if (status === 403) return "eBay didn't allow that. Make sure your eBay account is set up to sell, then reconnect it in Settings."
   if (/create a seller'?s account|register as a seller|seller registration|before you can list this item/i.test(text))
     return "Your eBay account isn't set up to sell yet. On ebay.com, start a listing or open Seller Hub and finish eBay's seller setup (usually adding payout details), then try again."
