@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "FlipLedger Lister",
-  "version": "0.6.1",
+  "version": "0.6.2",
   "description": "Fills in your Facebook Marketplace, Poshmark and Mercari listings from FlipLedger and keeps your cross-listings in sync.",
   "minimum_chrome_version": "116",
   "icons": { "16": "icons/icon-16.png", "32": "icons/icon-32.png", "48": "icons/icon-48.png", "128": "icons/icon-128.png" },
@@ -17,6 +17,7 @@
   "content_scripts": [
     {
       "matches": [
+        "https://profit.emoneydeals.com/*",
         "https://profittracker-iye3.vercel.app/*",
         "http://localhost:3000/*",
         "http://127.0.0.1:3000/*"
