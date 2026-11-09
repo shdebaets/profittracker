@@ -12,9 +12,15 @@ export default async function LoginPage({ searchParams }: PageProps<"/login">) {
         </h1>
         <p className="text-muted-foreground">Know exactly what every flip made you.</p>
       </div>
+      {error === "browser" && (
+        <p className="rounded-xl bg-muted px-4 py-3 text-sm">
+          Your email is confirmed, but the link opened in a different browser than the one you signed up in.
+          Sign in below.
+        </p>
+      )}
       {error === "link" && (
         <p className="rounded-xl bg-destructive/10 px-4 py-3 text-sm text-destructive">
-          That sign-in link is invalid or expired. Try again.
+          That link has expired or was already used. Sign in below, or request a new link.
         </p>
       )}
       <LoginForm />
