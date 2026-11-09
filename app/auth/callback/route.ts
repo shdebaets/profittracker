@@ -12,14 +12,19 @@ export async function GET(request: NextRequest) {
   const code = searchParams.get("code")
   const tokenHash = searchParams.get("token_hash")
   const type = searchParams.get("type") as EmailOtpType | null
+
+  // Email links (token_hash) go to a page with a button: verifying here on GET
+  // let mail scanners and link previews use up the one-time token before the
+  // person's own click, which then showed "expired" even though it had worked.
+  if (tokenHash && type) {
+    const next = new URLSearchParams({ token_hash: tokenHash, type })
+    return to(`/auth/confirm?${next}`)
+  }
+
   const supabase = await createClient()
 
   let error: unknown = new Error("auth callback: no code or token_hash")
-  if (code) {
-    error = (await supabase.auth.exchangeCodeForSession(code)).error
-  } else if (tokenHash && type) {
-    error = (await supabase.auth.verifyOtp({ token_hash: tokenHash, type })).error
-  }
+  if (code) error = (await supabase.auth.exchangeCodeForSession(code)).error
   if (!error) return to("/")
 
   // The link was already used (clicked twice, or opened by a mail app's preview)
