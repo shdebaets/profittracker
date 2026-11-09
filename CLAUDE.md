@@ -103,6 +103,7 @@ A Capacitor app could put the same fill-in scripts in an in-app web view for pho
 ## Data and deploys
 
 - **Migrations:** files in `supabase/migrations/` run on every production deploy (`vercel.json` buildCommand → `scripts/migrate.mjs`, using `POSTGRES_URL_NON_POOLING`). Preview deploys skip it, and a failed migration fails the deploy. **Never edit an applied migration; add a new numbered file.** Production's `0001` was originally applied by hand and is recorded in `supabase_migrations.schema_migrations`.
+- **Auth email templates:** `supabase/templates/*.html` only reach local Supabase through `config.toml`. Production uses whatever is pasted into Supabase → Authentication → Email Templates. Those must be our `token_hash` links: Supabase's default `{{ .ConfirmationURL }}` is a PKCE link that only works in the browser that signed up. `/auth/callback` sends those failures to `/login?error=browser`.
 - **Cron:** daily, because Vercel Hobby doesn't allow more often. Use `*/10 * * * *` on Pro.
 - **Env vars** (full list in `.env.example`):
   - Supabase: `SUPABASE_SERVICE_ROLE_KEY` (from the integration)
