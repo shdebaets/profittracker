@@ -10,7 +10,8 @@ Installable web app (PWA) for resellers. Users log inventory and sales, and the 
 - **Add entry (+):** record a sale or add inventory. Includes fee presets (Cash, Card 2.9%+30¢, Mercari/Depop 10%, eBay 13.25%, Poshmark 15%, custom), buyer-paid shipping, label cost, and a live net-profit estimate.
 - **Log Haul:** enter one receipt total and it splits across items, weighted by estimated value (or evenly per unit).
 - **Inventory:** All/Sales/Stock tabs, time filters, search, and a return-window countdown with **Mark Returned**. **Mark Sold** handles partial lots, e.g. selling 2 of 5 splits the row. Exports to CSV.
-- **Calculator:** what-if profit and break-even price. "Log sale" prefills the add sheet.
+- **Calculator:** what-if profit and break-even price. "Log sale" prefills the add sheet. Opens from the Research tab.
+- **Research:** search a product and see what it really sells for on eBay. You get sold medians, units sold per day, live listings, sell-through, charts and the cheapest Buy It Now offers. Enter your cost for a BUY/THIN/SKIP verdict and the most you can pay, then add it to inventory when you buy. Research is shared across users. Each user gets 3 brand-new product checks a day, and items someone already tracks are free. Sold history is read by the Chrome extension.
 - **Expenses:** ledger with categories, manual mileage log at a configurable IRS rate, monthly subscriptions (pause or resume), and CSV export.
 - **Settings:** mileage rate, default return window, sign out.
 - **PWA:** installable, and the app shell and offline page are cached. Data still needs a connection.
@@ -56,7 +57,7 @@ net     = revenue − fees − label_cost − unit_cost × qty
 
 ## Not in v1 (candidates for later)
 
-Receipt OCR, photo item ID, eBay sold-comps lookup, GPS auto mileage tracking, barcode scanning, and offline data entry.
+Receipt OCR, photo item ID, GPS auto mileage tracking, barcode scanning, and offline data entry.
 
 ## Cross-listing setup (eBay)
 

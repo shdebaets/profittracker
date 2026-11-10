@@ -1,6 +1,7 @@
 "use client"
 
-import { ExternalLink, Pencil, RotateCcw, Share2, Trash2, DollarSign } from "lucide-react"
+import { ExternalLink, Pencil, RotateCcw, ScanSearch, Share2, Trash2, DollarSign } from "lucide-react"
+import Link from "next/link"
 import { useTransition } from "react"
 import { toast } from "sonner"
 import { deleteItem, markReturned } from "@/app/(app)/actions/items"
@@ -93,6 +94,12 @@ export function ItemDetail({
           className="flex items-center gap-2 truncate text-sm font-semibold text-profit">
           <ExternalLink className="size-4 shrink-0" /> <span className="truncate">{item.link_url}</span>
         </a>
+      )}
+      {item.title && (
+        <Link href={`/research?q=${encodeURIComponent(item.title.slice(0, 120))}`}
+          className="flex items-center gap-2 text-sm font-semibold text-blue-600">
+          <ScanSearch className="size-4 shrink-0" /> Check eBay comps
+        </Link>
       )}
 
       {item.listings.length > 0 && (

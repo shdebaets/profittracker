@@ -126,11 +126,127 @@ async function readMercariListings(urls) {
   return items
 }
 
+// ---------- Research: eBay sold history ----------
+// eBay has no public sold-listings API, so the seller's own Chrome reads eBay's sold
+// search pages (same as browsing them) in one background tab, one page at a time.
+
+const SOLD_CHECK = "eBay needs you to sign in or pass a check. Open ebay.com in Chrome, finish it, then try again."
+const wait = (ms) => new Promise((r) => setTimeout(r, ms))
+const soldPath = (keyword, page) => `/sch/i.html?_nkw=${encodeURIComponent(keyword)}&LH_Sold=1&LH_Complete=1&_ipg=240&_pgn=${page}`
+let soldBusy = false
+
+async function waitComplete(tabId) {
+  for (let i = 0; i < 120; i++) {
+    const t = await chrome.tabs.get(tabId)
+    if (t.status === "complete") return
+    await wait(500)
+  }
+  throw new Error("The eBay tab didn't finish loading.")
+}
+
+// Injected into the eBay tab: fetch one sold page same-origin (with the seller's eBay cookies) and parse it.
+async function readSoldPage(path) {
+  try {
+    if (location.origin !== "https://www.ebay.com") return { blocked: true }
+    if (typeof globalThis.FL_collectSoldCards !== "function") return { error: "collector-missing" }
+    const res = await fetch(path, { credentials: "include" })
+    if (/splashui\/captcha|signin\.ebay\.com/i.test(res.url)) return { blocked: true }
+    const doc = new DOMParser().parseFromString(await res.text(), "text/html")
+    if (/Security Measure|Sign in or Register|Pardon Our Interruption/i.test(doc.title)) return { blocked: true }
+    if (!res.ok) return { error: `eBay returned an error (${res.status}).` }
+    if (!doc.querySelector(".srp-results") && !/no exact matches/i.test(doc.body.textContent || "")) return { error: "eBay returned a page that couldn't be read." }
+    return globalThis.FL_collectSoldCards(doc)
+  } catch (e) {
+    return { error: "Page script failed: " + (e?.message || String(e)) }
+  }
+}
+
+async function readSold(tabId, path) {
+  let reason = ""
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      await chrome.scripting.executeScript({ target: { tabId }, files: ["ebay-sold.js"] })
+      const [out] = await chrome.scripting.executeScript({ target: { tabId }, func: readSoldPage, args: [path] })
+      if (out?.result && out.result.error !== "collector-missing") return out.result
+      reason = out?.result?.error || "no result"
+    } catch (e) {
+      reason = e?.message || String(e)
+    }
+    await wait(1000)
+  }
+  // Fallback: load the page in the tab itself and read the loaded document.
+  try {
+    await chrome.tabs.update(tabId, { url: "https://www.ebay.com" + path })
+    await waitComplete(tabId)
+    await chrome.scripting.executeScript({ target: { tabId }, files: ["ebay-sold.js"] })
+    const [out] = await chrome.scripting.executeScript({
+      target: { tabId },
+      func: () => {
+        if (/splashui\/captcha|signin\.ebay\.com/i.test(location.href) || /Security Measure|Sign in or Register|Pardon Our Interruption/i.test(document.title)) return { blocked: true }
+        return globalThis.FL_collectSoldCards ? globalThis.FL_collectSoldCards(document) : { error: "collector-missing" }
+      },
+    })
+    if (out?.result) return out.result
+  } catch (e) {
+    reason = e?.message || String(e)
+  }
+  return { error: `Couldn't read eBay's sold results (${reason}).` }
+}
+
+/** Every sold page for each keyword (up to 20 pages; 2 for a refresh, stopping at known listings). */
+async function pullSold(msg, sender) {
+  const job = { jobId: msg.jobId, appTabId: sender.tab?.id }
+  const say = (payload) => tellApp(job, payload)
+  const keywords = (msg.keywords ?? []).filter((k) => typeof k === "string" && k.length <= 200).slice(0, 12)
+  const known = new Set(msg.knownIds ?? [])
+  const maxPages = msg.refresh ? 2 : 20
+  let tabId = null
+  try {
+    if (!keywords.length) throw new Error("No keywords to search.")
+    const tab = await chrome.tabs.create({ url: "https://www.ebay.com" + soldPath(keywords[0], 1), active: false })
+    tabId = tab.id
+    await chrome.tabs.update(tabId, { autoDiscardable: false }).catch(() => {})
+    await waitComplete(tabId)
+    const rows = new Map()
+    for (let k = 0; k < keywords.length; k++) {
+      for (let page = 1; page <= maxPages; page++) {
+        say({ type: "SOLD_PROGRESS", keyword: k + 1, keywords: keywords.length, page, count: rows.size })
+        const found = await readSold(tabId, soldPath(keywords[k], page))
+        if (found?.blocked) throw new Error(SOLD_CHECK)
+        if (found?.error) throw new Error(found.error)
+        for (const row of found.rows) {
+          const old = rows.get(row.external_id)
+          if (old) {
+            if (!old.variants_matched.includes(keywords[k])) old.variants_matched.push(keywords[k])
+          }
+          else rows.set(row.external_id, { ...row, variants_matched: [keywords[k]] })
+        }
+        const allKnown = found.rows.length > 0 && found.rows.every((r) => known.has(r.external_id))
+        if (found.soldCardCount < 200 || (msg.refresh && allKnown)) break
+        await wait(500)
+      }
+      await wait(500)
+    }
+    say({ type: "SOLD_RESULTS", rows: [...rows.values()] })
+  } catch (e) {
+    say({ type: "ERROR", error: String(e?.message ?? e) })
+  } finally {
+    soldBusy = false
+    if (tabId != null) chrome.tabs.remove(tabId).catch(() => {})
+  }
+}
+
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   ;(async () => {
     // From the FlipLedger app tab.
     if (msg?.from === "app" && msg.type === "CHECK_SALES") {
       return { ok: true, results: await checkSales(msg.listings) }
+    }
+    if (msg?.from === "app" && msg.type === "PULL_SOLD") {
+      if (soldBusy) return { ok: false, error: "A sold-history pull is already running in this Chrome." }
+      soldBusy = true
+      void pullSold(msg, sender)
+      return { ok: true }
     }
     if (msg?.from === "app") {
       await startJob(msg, sender)

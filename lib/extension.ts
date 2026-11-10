@@ -164,3 +164,50 @@ export function importWithExtension(marketplace: "mercari"): Promise<{ ok: true;
     window.postMessage({ source: APP_SOURCE, type: "IMPORT", jobId, marketplace }, location.origin)
   })
 }
+
+/** Reading eBay sold history for Research arrived in extension 0.7.0. */
+export const extensionCanPullSold = () => extensionAtLeast(7)
+
+export type SoldRow = {
+  external_id: string
+  title: string
+  sold_on: string
+  price: number
+  shipping: number | null
+  best_offer: boolean
+  format: string | null
+  condition: string | null
+  seller: string | null
+  variants_matched: string[]
+}
+export type SoldProgress = { keyword: number; keywords: number; page: number; count: number }
+
+/**
+ * Ask the extension to read eBay's sold results for these keywords (in a background
+ * eBay tab, with the seller's own eBay session). A refresh reads only the newest pages.
+ */
+export function pullSoldWithExtension(
+  keywords: string[],
+  opts: { refresh: boolean; knownIds: string[] },
+  onProgress: (p: SoldProgress) => void,
+): Promise<{ ok: true; rows: SoldRow[] } | { ok: false; error: string }> {
+  const jobId = crypto.randomUUID()
+  return new Promise((resolve) => {
+    const finish = (r: { ok: true; rows: SoldRow[] } | { ok: false; error: string }) => {
+      clearTimeout(timer)
+      window.removeEventListener("message", onMsg)
+      resolve(r)
+    }
+    const onMsg = (e: MessageEvent) => {
+      if (e.source !== window || e.origin !== location.origin) return
+      const d = e.data
+      if (d?.source !== EXT_SOURCE || d.jobId !== jobId) return
+      if (d.type === "SOLD_PROGRESS") onProgress(d as SoldProgress)
+      else if (d.type === "SOLD_RESULTS") finish({ ok: true, rows: Array.isArray(d.rows) ? d.rows : [] })
+      else if (d.type === "ERROR") finish({ ok: false, error: d.error })
+    }
+    const timer = setTimeout(() => finish({ ok: false, error: "Reading eBay took too long. Try again." }), 15 * 60_000)
+    window.addEventListener("message", onMsg)
+    window.postMessage({ source: APP_SOURCE, type: "PULL_SOLD", jobId, keywords, refresh: opts.refresh, knownIds: opts.knownIds }, location.origin)
+  })
+}

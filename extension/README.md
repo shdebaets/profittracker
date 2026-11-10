@@ -19,6 +19,7 @@ Poshmark's and Mercari's terms ban automation. Sellers using these tools accept 
 - **Spot sales (Mercari, plus Poshmark as a backup):** while FlipLedger is open (on load, when the tab comes back into focus, at most every 5 minutes), the extension fetches each live listing's public page and reads that listing's own status. A sold listing becomes a sale in FlipLedger, which puts every other listing of that item on the delist list (and ends eBay automatically). Normally no cookies are sent, because sold status is public; if Mercari's Cloudflare check answers, it retries once with the seller's own clearance. FlipLedger's server checks Poshmark itself, so Poshmark doesn't depend on this. Servers can't read Mercari, so Mercari does.
 - **Delist:** the "Delist these" banner (or the marketplace row) has a ✨ button. It opens the listing and highlights the next button to click (Facebook: **Mark as sold**; Poshmark: **Edit Listing** → **Delete Listing**; Mercari: **Edit** → **Delete** / **Deactivate**). It marks the listing ended in FlipLedger once the page shows it's gone. For Poshmark and Mercari, the next sale check also confirms a takedown on its own.
 - **Delist automatically (off by default):** a seller can turn this on per computer in Settings. Listings waiting to come down then open in background tabs and get removed: Facebook **Mark as sold**, Poshmark **Delete Listing**, Mercari **Deactivate**. It only clicks on a page carrying that listing's ID, and only when the listing has a saved link. Anything unexpected closes the tab and leaves the listing on the delist list.
+- **eBay sold history for Research (0.7.0+):** opening an item in FlipLedger Research whose sold data is missing or 12+ hours old (or tapping **Pull now**) sends its search keywords here. The extension opens one background eBay tab and fetches eBay's sold search pages for each keyword, one at a time, 500 ms apart, up to 20 pages each (2 for an update, stopping at listings it already has). It parses them with `ebay-sold.js` and returns the rows to the FlipLedger page, which saves them. It uses the seller's own eBay session in that tab, stops with a clear message on a sign-in or security-check page, and closes the tab when done. It never stores FlipLedger credentials.
 - It never sees your marketplace passwords.
 
 ## Install
@@ -39,6 +40,7 @@ To try local changes, load it unpacked (remove the store version first, or both 
 | --- | --- | --- |
 | `shared.js` | everywhere | Pure helpers (condition mapping, link finding, sold-page parsing); unit-tested in `shared.test.ts` |
 | `content-app.js` | the FlipLedger site | Relays messages between the page and the extension |
+| `ebay-sold.js` | a background www.ebay.com tab (injected) | Parses eBay sold search results into rows (`FL_collectSoldCards`) |
 | `background.js` | service worker | Opens marketplace tabs, holds each job, sends results back, runs sale checks |
 | `dom.js` | marketplace sites | Finds fields by label/placeholder, fills them, draws the FlipLedger panel |
 | `runner.js` | marketplace sites | The list / record / delist flow, driven by the site's config |

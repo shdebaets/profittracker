@@ -27,14 +27,17 @@ Bump `version` in `manifest.json` before every update; the store rejects a versi
 > • Delist when it sells: when an item sells anywhere, FlipLedger lists the other listings to take down, and the extension removes them for you (automatically if you turn that on).
 > • Catch sales: while FlipLedger is open, the extension checks your Mercari and Poshmark listings and records sales in FlipLedger.
 > • Import what you already have: bring your live Mercari listings into FlipLedger as inventory.
+> • Research before you buy: when you open an item in FlipLedger Research, the extension reads eBay's sold results for it so you see real sold prices and how fast it sells.
 >
 > It works in your own logged-in browser and never sees your marketplace passwords. It doesn't share, follow or relist for you.
 
 ## Privacy practices tab
 
-- **Single purpose:** Fills in, publishes and removes the user's own Facebook Marketplace, Poshmark and Mercari listings from their FlipLedger inventory, and reports those listings' status back to FlipLedger.
+- **Single purpose:** Connects the user's marketplace accounts to FlipLedger: fills in, publishes and removes their own Facebook Marketplace, Poshmark and Mercari listings, reports those listings' status back, and reads eBay sold-price results for items they research in FlipLedger.
 - **Permission justifications:**
   - `storage`: keeps each in-progress list, delist or import task (in session storage) while its marketplace tab loads, because the service worker can be suspended in between.
+  - `scripting`: reads eBay's sold search results page in a background eBay tab when the user researches an item in FlipLedger (the page's parser is packaged with the extension, `ebay-sold.js`).
+  - Host `www.ebay.com`: opens eBay's public sold search results for the item the user is researching and reads the sold prices and dates; nothing is posted to eBay.
   - Host `facebook.com`, `poshmark.com`, `mercari.com`: fills in the listing form on these sites, clicks the publish or delete buttons the user asked for, and reads the user's own listing pages to check whether they sold.
   - Host `*.supabase.co`: downloads the user's item photos from FlipLedger's storage to attach them to the listing form.
   - Content script on `profit.emoneydeals.com` (and the old `profittracker-iye3.vercel.app`): receives the listing to post from the FlipLedger app and sends results back.

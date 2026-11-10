@@ -1,6 +1,6 @@
 "use client"
 
-import { Calculator, LayoutGrid, Plus, Receipt, ShoppingBag } from "lucide-react"
+import { LayoutGrid, Plus, Receipt, ScanSearch, ShoppingBag } from "lucide-react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { useEntry } from "@/components/entry/entry-provider"
@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils"
 
 const TABS = [
   { href: "/", label: "Dashboard", icon: LayoutGrid },
-  { href: "/calculator", label: "Calculator", icon: Calculator },
+  { href: "/research", label: "Research", icon: ScanSearch },
   null,
   { href: "/inventory", label: "Inventory", icon: ShoppingBag },
   { href: "/expenses", label: "Expenses", icon: Receipt },
