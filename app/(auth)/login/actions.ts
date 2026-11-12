@@ -5,6 +5,7 @@ import { redirect } from "next/navigation"
 import { z } from "zod"
 import { createClient } from "@/lib/supabase/server"
 import { friendlyError } from "@/lib/errors"
+import { whopConfig } from "@/lib/whop/config"
 import { EXISTING_ACCOUNT, isExistingAccount } from "@/lib/auth/existing-account"
 
 /** `mode` tells the form to switch tabs (to Sign in, when the email already has an account). */
@@ -26,6 +27,8 @@ async function callbackUrl() {
 
 // Auth runs on the server so the browser only ever talks to this app, never to Supabase directly.
 export async function authenticate(_prev: LoginState, formData: FormData): Promise<LoginState> {
+  // Production signs in with Whop only; email login is for local QA (ALLOW_EMAIL_LOGIN=1).
+  if (!whopConfig().emailLogin) return { error: "Sign in with Whop instead." }
   const parsed = schema.safeParse(Object.fromEntries(formData))
   if (!parsed.success) return { error: parsed.error.issues[0]?.message }
   const { mode, email, password = "" } = parsed.data

@@ -1,9 +1,19 @@
 import { Logo } from "@/components/logo"
+import { whopConfig } from "@/lib/whop/config"
 import { LoginForm } from "./login-form"
+
+const ERRORS: Record<string, string> = {
+  link: "That link has expired or was already used. Sign in below, or request a new link.",
+  whop: "Signing in with Whop didn't work. Try again.",
+  "whop-email": "Verify your email on Whop first, then sign in again.",
+  "whop-linked": "This email's FlipLedger account is already linked to a different Whop account. Sign in with that Whop account.",
+}
 
 // Sign-in uses the design's dark landing look; the app itself stays light.
 export default async function LoginPage({ searchParams }: PageProps<"/login">) {
   const { error } = await searchParams
+  const { clientId, emailLogin } = whopConfig()
+  const message = typeof error === "string" ? ERRORS[error] : undefined
   return (
     <div className="dark relative min-h-dvh overflow-hidden bg-background text-foreground">
       <div
@@ -31,12 +41,17 @@ export default async function LoginPage({ searchParams }: PageProps<"/login">) {
             Sign in below.
           </p>
         )}
-        {error === "link" && (
-          <p className="rounded-2xl bg-destructive/10 px-4 py-3 text-sm text-destructive">
-            That link has expired or was already used. Sign in below, or request a new link.
-          </p>
+        {message && <p className="rounded-2xl bg-destructive/10 px-4 py-3 text-sm text-destructive">{message}</p>}
+        {clientId && (
+          // A plain link, not next/link: the route redirects off-site to Whop.
+          <a
+            href="/auth/whop/start"
+            className="flex h-12 items-center justify-center rounded-2xl bg-primary font-semibold text-primary-foreground shadow-sm"
+          >
+            Sign in with Whop
+          </a>
         )}
-        <LoginForm />
+        {emailLogin && <LoginForm />}
       </main>
     </div>
   )
