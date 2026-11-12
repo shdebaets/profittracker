@@ -5,8 +5,10 @@ import { redirect } from "next/navigation"
 import { z } from "zod"
 import { createClient } from "@/lib/supabase/server"
 import { friendlyError } from "@/lib/errors"
+import { EXISTING_ACCOUNT, isExistingAccount } from "@/lib/auth/existing-account"
 
-export type LoginState = { error?: string; sentTo?: string; email?: string }
+/** `mode` tells the form to switch tabs (to Sign in, when the email already has an account). */
+export type LoginState = { error?: string; sentTo?: string; email?: string; mode?: "signin" }
 
 const schema = z.object({
   mode: z.enum(["signin", "signup", "magic"]),
@@ -38,7 +40,14 @@ export async function authenticate(_prev: LoginState, formData: FormData): Promi
   }
   if (mode === "signup") {
     const { data, error } = await supabase.auth.signUp({ email, password, options: { emailRedirectTo } })
-    if (error) return { error: friendlyError(error), email }
+    if (error) {
+      const code = (error as { code?: string }).code
+      const exists = code === "user_already_exists" || code === "email_exists"
+      return { error: friendlyError(error), email, ...(exists && { mode: "signin" as const }) }
+    }
+    // With email confirmation on, Supabase hides existing accounts: no error, and a fake user
+    // with no identities. Without this check the form says "check your email" and nothing comes.
+    if (isExistingAccount(data.user)) return { error: EXISTING_ACCOUNT, email, mode: "signin" }
     if (!data.session) return { sentTo: email }
   } else {
     const { error } = await supabase.auth.signInWithPassword({ email, password })
