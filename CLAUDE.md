@@ -78,6 +78,32 @@ Local QA logins live in `.env.example` (`qa-a@flipledger.test`, `qa-b@flipledger
   - **Mercari** blocks servers with a Cloudflare challenge; don't try to get around it. The extension checks it from the seller's browser (`AutoSync`, at most every 5 minutes, desktop only) and also checks Poshmark as a fallback.
   - `lib/crosslist/assisted-sales.ts` records the sale (one unit, fee from the marketplace's preset, price = page price) and confirms `delist_pending` listings that are gone. Idempotent via `marketplace_sales` (`external_line_id` = listing id). Needs the listing's URL.
 
+### Research (eBay price research, ported from the team's CompAmp tool)
+
+- **What it is:** the Research tab (`app/(app)/research`) finds what a product really sells for on eBay: live listings, sold history, units sold per day, medians, sell-through, days of supply, and a BUY/THIN/SKIP verdict at the user's cost (`lib/research/calc.ts`, dollars not cents: market prices, not ledger rows). "Bought it" creates an inventory item at that cost, and inventory items link back with "Check eBay comps".
+- **Shared data:** `research_products/listings/sales/snapshots/runs` are global. Every signed-in user reads them (RLS select `true`), and only the server writes them (admin client). Each product is researched once for everyone, so eBay's app-wide Browse quota (5,000 calls/day, `RESEARCH_EBAY_DAILY_BUDGET`) and AI cost scale with products, not users. Per user: `research_watch` (their list, cost, linked item) and `research_usage`.
+- **Limits:** 3 brand-new product checks per user per day (`lib/research/limits.ts`, taken atomically by `research_take_check`). Opening or refreshing a product someone already tracks is free. Users in `research_members` (team) have no limit; add them by SQL.
+- **Pipeline** (`lib/research/pipeline.ts`, bounded chunks):
+  - Search every profile keyword to eBay's 10,000-result cap.
+  - Rules first (exclusions, `editionRule`, price band), then Claude judges the rest in batches of 60 (`lib/research/ai.ts`). Claude is called through structured outputs, so answers always parse. A row with no verdict twice goes to review.
+  - Price guard.
+  - Listing details: new or repriced listings, plus a 3-day rotation capped at 150 per product per day (`detailsTodo`).
+    - Fetched 20 per call with Browse getItems (`itemsByLegacyBatch`). That's a limited-release method: a 403/404/405 turns it off and falls back to one call per listing.
+    - Item groups (error 11006) always go through `get_items_by_item_group`.
+    - The daily cron skips when 75% of the quota is used, keeping the rest for people using the app.
+  - Every eBay call is counted in `research_api_usage`, and work pauses with 5% of the day's budget left.
+- **Background runs:** Vercel Workflow (`workflows/research.ts` orchestrates, `workflows/research-steps.ts` holds the `"use step"` wrappers). Steps live in their own file so database and eBay code stays out of the workflow sandbox. Runs need no open page and no minute cron, which Hobby can't do. `/api/cron/research-refresh` (daily) restarts products someone watches. `next.config.ts` is wrapped in `withWorkflow`, and `proxy.ts` must keep excluding `.well-known/workflow/`.
+- **Sold history:** eBay has no public sold API. Extension 0.7.0+ reads eBay's sold search pages in a background tab with the user's own eBay session (`extension/ebay-sold.js` parser, `pullSold` in `background.js`, 500 ms apart, stopping on sign-in or captcha pages). It returns the rows to the page. The page saves them with `uploadSoldRows` (batches of 800) and starts `matchSoldHistory`. The extension holds no FlipLedger credentials. An item with missing or 12-hour-old sold data pulls automatically when opened on desktop Chrome.
+- **Numbers** (`lib/research/metrics.ts`, tested):
+  - Days are America/New_York. "Nd" means the N full days ending yesterday.
+  - Medians leave out best offers and presales sold after `profile.release_date`.
+  - Multi-unit listings spread their units from max(created, release).
+  - Live means not ended and with stock left.
+  - Lowest and median BIN use only listings whose version is confirmed.
+  - Past supply includes listings that ended unsold.
+  - Charts are one axis each: price, units sold per day, live listings. The colors are the validated `--viz-1`/`--viz-2` tokens.
+- **Product page cost:** `getResearchItem` computes everything on the server, and `research_products.summary` caches the headline for lists.
+
 ### Marketplace strategy (researched Oct 2026)
 
 | Site | Approach | Why |
@@ -105,10 +131,11 @@ A Capacitor app could put the same fill-in scripts in an in-app web view for pho
 
 - **Migrations:** files in `supabase/migrations/` run on every production deploy (`vercel.json` buildCommand → `scripts/migrate.mjs`, using `POSTGRES_URL_NON_POOLING`). Preview deploys skip it, and a failed migration fails the deploy. **Never edit an applied migration; add a new numbered file.** Production's `0001` was originally applied by hand and is recorded in `supabase_migrations.schema_migrations`.
 - **Auth email templates:** `supabase/templates/*.html` only reach local Supabase through `config.toml`. Production uses whatever is pasted into Supabase → Authentication → Email Templates. Those must be our `token_hash` links: Supabase's default `{{ .ConfirmationURL }}` is a PKCE link that only works in the browser that signed up. `/auth/callback` sends those failures to `/login?error=browser`. `token_hash` links go from `/auth/callback` to `/auth/confirm`, which verifies only when the person taps Continue (a POST); verifying on GET let mail scanners and link previews use up the one-time token first.
-- **Cron:** daily, because Vercel Hobby doesn't allow more often. Use `*/10 * * * *` on Pro.
+- **Cron:** daily, because Vercel Hobby doesn't allow more often. Use `*/10 * * * *` on Pro. Anything that must run more often or longer uses Vercel Workflow (see Research).
 - **Env vars** (full list in `.env.example`):
   - Supabase: `SUPABASE_SERVICE_ROLE_KEY` (from the integration)
   - Generated by us: `TOKEN_ENCRYPTION_KEY` (never change it once set), `CRON_SECRET`
+  - Research: `ANTHROPIC_API_KEY` (required for Research), `RESEARCH_EBAY_DAILY_BUDGET`, `RESEARCH_ID_MODEL`, `RESEARCH_JUDGE_MODEL` (optional)
   - `CANONICAL_HOST` (e.g. `profit.emoneydeals.com`): when set, `proxy.ts` redirects production `*.vercel.app` visits there (`lib/canonical-host.ts`), except `/api`. Leave it unset until the domain resolves.
   - eBay: `EBAY_ENV`, `EBAY_CLIENT_ID`, `EBAY_CLIENT_SECRET`, `EBAY_RUNAME`, `EBAY_VERIFICATION_TOKEN`, `EBAY_DELETION_ENDPOINT`
   - Vercel marks secrets "Sensitive"; `vercel env pull` can't read those.

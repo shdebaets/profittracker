@@ -21,7 +21,7 @@
         .catch(() => reply(null))
       return
     }
-    if (msg.type !== "LIST" && msg.type !== "DELIST" && msg.type !== "IMPORT") return
+    if (msg.type !== "LIST" && msg.type !== "DELIST" && msg.type !== "IMPORT" && msg.type !== "PULL_SOLD") return
     const fail = (error) =>
       window.postMessage({ source: EXT_SOURCE, type: "ERROR", jobId: msg.jobId, marketplace: msg.marketplace, error }, location.origin)
     chrome.runtime

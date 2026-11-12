@@ -85,6 +85,9 @@
   --chart-3: #2563eb;
   --chart-4: #d97706;
   --chart-5: #6b6e76;
+  /* Research charts: validated categorical slots 1-2 (dataviz reference palette). */
+  --viz-1: #2a78d6;
+  --viz-2: #eb6834;
   --radius: 1rem;
   --sidebar: #ffffff;
   --sidebar-foreground: #16171b;
@@ -127,6 +130,8 @@
   --chart-3: #60a5fa;
   --chart-4: #ffb65c;
   --chart-5: #8a8d96;
+  --viz-1: #3987e5;
+  --viz-2: #d95926;
   --sidebar: #16171b;
   --sidebar-foreground: #e9eaee;
   --sidebar-primary: #f5982a;

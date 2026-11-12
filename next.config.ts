@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import { withWorkflow } from "workflow/next";
 
 const nextConfig: NextConfig = {
   // Let phones on the local network use the dev server (e.g. http://192.168.x.x:3000).
@@ -6,4 +7,5 @@ const nextConfig: NextConfig = {
   allowedDevOrigins: ["127.0.0.1", "192.168.*.*", "10.*.*.*", "*.local"],
 };
 
-export default nextConfig;
+// Workflow SDK: compiles "use workflow" / "use step" (research runs).
+export default withWorkflow(nextConfig);

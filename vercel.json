@@ -5,6 +5,10 @@
     {
       "path": "/api/cron/sync-sales",
       "schedule": "0 13 * * *"
+    },
+    {
+      "path": "/api/cron/research-refresh",
+      "schedule": "0 11 * * *"
     }
   ]
 }
