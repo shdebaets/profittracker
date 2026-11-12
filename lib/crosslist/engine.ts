@@ -12,7 +12,7 @@ export type ListingPatch = Partial<Pick<Listing, "status" | "last_error" | "deli
 
 /** Persistence the engine needs; implemented over Supabase in ./store.ts and faked in tests. */
 export type CrosslistStore = {
-  sell(itemId: string, qty: number, sale: SaleColumns): Promise<{ remaining: number }>
+  sell(itemId: string, qty: number, sale: SaleColumns): Promise<{ remaining: number; soldItemId?: string }>
   listings(itemId: string): Promise<Listing[]>
   updateListing(id: string, patch: ListingPatch): Promise<void>
 }
@@ -23,7 +23,8 @@ export type TakedownOutcome = {
   failed: { marketplace: MarketplaceId; error: string }[]
 }
 
-export type SaleOutcome = TakedownOutcome & { remaining: number }
+/** soldItemId: the sold row (a new row when units remain, else the item itself). */
+export type SaleOutcome = TakedownOutcome & { remaining: number; soldItemId?: string }
 
 /** Listings that may still be live somewhere. "error" = an earlier end attempt failed. */
 const LIVE: ListingStatus[] = ["active", "error"]
@@ -70,7 +71,7 @@ export async function recordSale(
   adapters: Adapters,
   e: { itemId: string; qty: number; sale: SaleColumns; soldOn?: MarketplaceId | null; now?: Date },
 ): Promise<SaleOutcome> {
-  const { remaining } = await store.sell(e.itemId, e.qty, e.sale)
+  const { remaining, soldItemId } = await store.sell(e.itemId, e.qty, { ...e.sale, sold_on: e.soldOn ?? e.sale.sold_on ?? null })
   const listings = await store.listings(e.itemId)
 
   if (e.soldOn && remaining === 0) {
@@ -79,7 +80,7 @@ export async function recordSale(
   }
 
   if (remaining > 0) {
-    const out: SaleOutcome = { remaining, ended: [], needsDelist: [], failed: [] }
+    const out: SaleOutcome = { remaining, soldItemId, ended: [], needsDelist: [], failed: [] }
     for (const l of listings) {
       // The marketplace it sold on already adjusted its own quantity.
       if (l.status !== "active" || l.marketplace === e.soldOn) continue
@@ -94,5 +95,5 @@ export async function recordSale(
     return out
   }
 
-  return { remaining, ...(await takeDown(store, adapters, e.itemId, { except: e.soldOn, now: e.now })) }
+  return { remaining, soldItemId, ...(await takeDown(store, adapters, e.itemId, { except: e.soldOn, now: e.now })) }
 }
