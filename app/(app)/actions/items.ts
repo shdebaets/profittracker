@@ -121,6 +121,24 @@ export async function updateItem(id: string, input: ItemInput): Promise<ActionRe
   }
 }
 
+/**
+ * Enter what the seller paid for an item whose cost was unknown (imported, or a sale of
+ * something listed straight on eBay/Mercari). Per unit; $0 is allowed and clears the flag.
+ */
+export async function setItemCost(id: string, costCents: number): Promise<ActionResult> {
+  try {
+    const itemId = z.string().uuid().parse(id)
+    const cost = cents.parse(costCents)
+    const { supabase } = await requireUser()
+    const { data, error } = await supabase.from("items").update({ cost_cents: cost, cost_unknown: false }).eq("id", itemId).select("id")
+    if (error) throw error
+    if (!data?.length) throw new UserError("This item isn't there any more. Refresh and try again.")
+    return done()
+  } catch (e) {
+    return fail(e)
+  }
+}
+
 /** Sell some or all units of an inventory lot, then take it down on the other marketplaces. */
 export async function markSold(
   id: string,

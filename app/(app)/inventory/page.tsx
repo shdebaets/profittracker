@@ -4,5 +4,5 @@ import { InventoryView } from "./inventory-view"
 
 export default async function InventoryPage({ searchParams }: PageProps<"/inventory">) {
   const [items, params, { email }] = await Promise.all([getItems(), searchParams, requireUser()])
-  return <InventoryView items={items} email={email} focusSearch={params.search === "1"} />
+  return <InventoryView items={items} email={email} focusSearch={params.search === "1"} needsCost={params.filter === "cost"} />
 }

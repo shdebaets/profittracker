@@ -1,11 +1,12 @@
 "use client"
 
-import { ExternalLink, Pencil, RotateCcw, Share2, Trash2, DollarSign } from "lucide-react"
-import { useTransition } from "react"
+import { CircleDollarSign, ExternalLink, Pencil, RotateCcw, Share2, Trash2, DollarSign } from "lucide-react"
+import { useState, useTransition } from "react"
 import { toast } from "sonner"
-import { deleteItem, markReturned } from "@/app/(app)/actions/items"
+import { deleteItem, markReturned, setItemCost } from "@/app/(app)/actions/items"
+import { MoneyInput } from "@/components/fields"
 import { daysUntil, formatDate, formatDateTime } from "@/lib/dates"
-import { formatCents, formatPct } from "@/lib/money"
+import { formatCents, formatPct, toCents } from "@/lib/money"
 import { itemSale, presetFor } from "@/lib/profit"
 import type { Item } from "@/lib/types"
 import { cn } from "@/lib/utils"
@@ -22,6 +23,7 @@ export function ItemDetail({
   onCrosslist: () => void
 }) {
   const [pending, startTransition] = useTransition()
+  const [cost, setCost] = useState("")
   const sale = item.status === "sold" ? itemSale(item) : null
 
   function run(fn: () => Promise<{ ok: boolean; error?: string }>, msg: string) {
@@ -35,8 +37,8 @@ export function ItemDetail({
 
   const rows: [string, string][] = [
     ["Quantity", `${item.quantity} unit${item.quantity === 1 ? "" : "s"}`],
-    ["Cost / unit", formatCents(item.cost_cents)],
-    ["Total cost", formatCents(item.cost_cents * item.quantity)],
+    ["Cost / unit", item.cost_unknown ? "Not entered" : formatCents(item.cost_cents)],
+    ["Total cost", item.cost_unknown ? "Not entered" : formatCents(item.cost_cents * item.quantity)],
     ["Purchased", formatDate(item.purchased_at)],
   ]
   if (item.store) rows.push(["Store", item.store])
@@ -73,11 +75,36 @@ export function ItemDetail({
           ))}
         </div>
       )}
+      {item.cost_unknown && (
+        <form
+          className="flex flex-col gap-2 rounded-2xl border border-brand/40 bg-brand-soft p-4"
+          onSubmit={(e) => {
+            e.preventDefault()
+            run(() => setItemCost(item.id, toCents(cost)), "Cost saved")
+          }}
+        >
+          <p className="flex items-center gap-1.5 font-bold text-brand"><CircleDollarSign className="size-4" /> Add cost</p>
+          <p className="text-sm text-muted-foreground">
+            {item.status === "sold"
+              ? "This sale came in from the marketplace, so FlipLedger doesn't know what you paid. Enter it to get the real profit."
+              : "Imported from a marketplace. Enter what you paid so profit is right."}
+          </p>
+          <div className="flex gap-2">
+            <MoneyInput id="add-cost" value={cost} onChange={setCost} className="flex-1" autoFocus />
+            <button type="submit" disabled={pending || !cost.trim()} className="shrink-0 rounded-2xl bg-brand px-5 font-bold text-ink disabled:opacity-60">
+              Save
+            </button>
+          </div>
+          {item.quantity > 1 && <p className="text-xs text-muted-foreground">Per unit, for {item.quantity} units.</p>}
+        </form>
+      )}
       {sale && (
         <div className="rounded-2xl border border-profit/30 bg-profit-soft p-4">
-          <p className="text-xs font-bold tracking-wide text-profit uppercase">Net profit</p>
+          <p className="text-xs font-bold tracking-wide text-profit uppercase">{item.cost_unknown ? "Profit before cost" : "Net profit"}</p>
           <p className={cn("font-mono text-3xl font-bold", sale.net < 0 ? "text-loss" : "text-profit")}>{formatCents(sale.net)}</p>
-          <p className="font-mono text-sm text-muted-foreground">{formatPct(sale.margin)} margin</p>
+          <p className="font-mono text-sm text-muted-foreground">
+            {item.cost_unknown ? "Not your real profit until you add the cost" : `${formatPct(sale.margin)} margin`}
+          </p>
         </div>
       )}
       <dl className="divide-y rounded-2xl border bg-card">

@@ -69,7 +69,7 @@ export function ItemCard({ item, onOpen }: { item: Item; onOpen: () => void }) {
                 <p className={cn("font-mono text-xl font-bold", sale.net < 0 ? "text-loss" : "text-profit")}>
                   {formatSignedCents(sale.net)}
                 </p>
-                <p className="font-mono text-xs text-muted-foreground">{formatPct(sale.margin)} margin</p>
+                <p className="font-mono text-xs text-muted-foreground">{item.cost_unknown ? "before cost" : `${formatPct(sale.margin)} margin`}</p>
               </>
             ) : (
               <>

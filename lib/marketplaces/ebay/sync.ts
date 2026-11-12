@@ -3,15 +3,18 @@ import type { SupabaseClient } from "@supabase/supabase-js"
 import { recordSale } from "@/lib/crosslist/engine"
 import { adapters, supabaseStore } from "@/lib/crosslist/store"
 import { fetchOrders } from "./adapter"
-import { adFeeCents, ordersToSales } from "./mapping"
+import { adFeeCents, ordersToSales, type EbaySaleLine } from "./mapping"
 import { getUserToken } from "./oauth"
+import { ebaySoldItem, isItemId } from "@/lib/sales/untracked"
 
 const OVERLAP_MS = 15 * 60_000
 
 /**
- * Pull new eBay orders for one user and turn each line into a sale, which ends
- * the item's other listings. Idempotent: processed lines are recorded in
- * marketplace_sales (claimed before processing so concurrent syncs can't double-sell).
+ * Pull new eBay orders for one user and turn each line into a sale. A line for one of
+ * the user's items sells it (ending its other listings); any other line (listed straight
+ * on eBay) becomes a new sold item with an unknown cost. Idempotent: processed lines are
+ * recorded in marketplace_sales (claimed before processing so concurrent syncs can't
+ * double-count). Runs on the admin client, so every query is scoped to userId.
  */
 export async function syncEbaySales(admin: SupabaseClient, userId: string) {
   const auth = await getUserToken(userId, admin)
@@ -23,8 +26,13 @@ export async function syncEbaySales(admin: SupabaseClient, userId: string) {
   const lines = ordersToSales(await fetchOrders(token, since))
   let sales = 0
   for (const line of lines) {
-    const { data: item } = await admin.from("items").select("id, user_id, status").eq("id", line.itemId).maybeSingle()
-    if (!item || item.user_id !== userId) continue // not listed through FlipLedger
+    const { data: item } = isItemId(line.sku)
+      ? await admin.from("items").select("id, user_id, status").eq("id", line.sku).eq("user_id", userId).maybeSingle()
+      : { data: null }
+    if (!item) {
+      if (await recordUntrackedLine(admin, userId, line)) sales++
+      continue
+    }
 
     const { error: claimErr } = await admin.from("marketplace_sales").insert({
       marketplace: "ebay",
@@ -62,11 +70,38 @@ export async function syncEbaySales(admin: SupabaseClient, userId: string) {
       sales++
     } catch (e) {
       // Release the claim so the next sync retries this line.
-      await admin.from("marketplace_sales").delete().eq("marketplace", "ebay").eq("external_line_id", line.lineItemId)
+      await admin.from("marketplace_sales").delete().eq("marketplace", "ebay").eq("external_line_id", line.lineItemId).eq("user_id", userId)
       console.error("eBay sale sync failed", line, e)
     }
   }
 
   await admin.from("marketplace_accounts").update({ last_synced_at: startedAt.toISOString() }).eq("id", account.id)
   return { sales }
+}
+
+/** A sale of something not listed through FlipLedger: a new sold item, cost to be added. */
+async function recordUntrackedLine(admin: SupabaseClient, userId: string, line: EbaySaleLine) {
+  const { error: claimErr } = await admin.from("marketplace_sales").insert({
+    marketplace: "ebay",
+    external_line_id: line.lineItemId,
+    external_order_id: line.orderId,
+    user_id: userId,
+    item_id: null,
+  })
+  if (claimErr) return false // already processed (unique violation)
+  try {
+    const { data: created, error } = await admin.from("items").insert(ebaySoldItem(line, userId)).select("id").single()
+    if (error) throw error
+    await admin
+      .from("marketplace_sales")
+      .update({ item_id: created.id })
+      .eq("marketplace", "ebay")
+      .eq("external_line_id", line.lineItemId)
+      .eq("user_id", userId)
+    return true
+  } catch (e) {
+    await admin.from("marketplace_sales").delete().eq("marketplace", "ebay").eq("external_line_id", line.lineItemId).eq("user_id", userId)
+    console.error("eBay sale sync failed (untracked item)", line, e)
+    return false
+  }
 }

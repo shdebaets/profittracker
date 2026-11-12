@@ -12,6 +12,8 @@
     origin: "https://www.mercari.com",
     photoLimit: 12,
     itemPattern: /\/(us\/)?item\/m\d+/,
+    // Sold lists may link each sale to its transaction page instead of the item page.
+    soldPattern: /\/(us\/)?(item|transaction)s?\/m\d+/,
     isCreatePage: (path) => /^\/(us\/)?sell\/?$/.test(path),
     isAfterPublish: (path) => ITEM_PAGE.test(path) || /^\/(us\/)?(mypage\/listings|sell\/(complete|success))/.test(path),
     ready: () => D.findField(TITLE),
