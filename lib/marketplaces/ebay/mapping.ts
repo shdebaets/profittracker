@@ -143,6 +143,8 @@ export type EbayOrder = {
   lineItems: {
     lineItemId: string
     sku?: string
+    title?: string
+    legacyItemId?: string
     quantity: number
     lineItemCost?: { value: string }
     deliveryCost?: { shippingCost?: { value: string } }
@@ -183,7 +185,11 @@ export function adFeeCents(rate: number | null | undefined, line: Pick<EbaySaleL
 export type EbaySaleLine = {
   orderId: string
   lineItemId: string
-  itemId: string
+  /** The listing's SKU: our item id when it was listed through FlipLedger, else the seller's own SKU or null. */
+  sku: string | null
+  title: string
+  /** eBay's listing number, for a link to the listing. */
+  listingId: string | null
   quantity: number
   salePriceCents: number // per unit
   buyerShippingCents: number
@@ -193,23 +199,25 @@ export type EbaySaleLine = {
 
 /**
  * Turn paid, uncancelled orders into per-line sales. The order's real eBay fee
- * is split across lines by line value; SKU is our item id.
+ * is split across lines by line value. Lines listed through FlipLedger carry our
+ * item id as SKU; the rest (listed straight on eBay) come through too, by title.
  */
 export function ordersToSales(orders: EbayOrder[]): EbaySaleLine[] {
   const out: EbaySaleLine[] = []
   for (const o of orders) {
     if (o.orderPaymentStatus && o.orderPaymentStatus !== "PAID") continue
     if (o.cancelStatus?.cancelState === "CANCELED") continue
-    const lines = o.lineItems.filter((l) => l.sku)
     const value = (l: EbayOrder["lineItems"][number]) => cents(l.lineItemCost) + cents(l.deliveryCost?.shippingCost)
     const total = o.lineItems.reduce((a, l) => a + value(l), 0)
     const fee = cents(o.totalMarketplaceFee)
-    for (const l of lines) {
+    for (const l of o.lineItems) {
       const qty = Math.max(1, l.quantity)
       out.push({
         orderId: o.orderId,
         lineItemId: l.lineItemId,
-        itemId: l.sku!,
+        sku: l.sku?.trim() || null,
+        title: (l.title ?? "").trim().replace(/\s+/g, " ").slice(0, 200),
+        listingId: l.legacyItemId ?? null,
         quantity: qty,
         salePriceCents: Math.round(cents(l.lineItemCost) / qty),
         buyerShippingCents: cents(l.deliveryCost?.shippingCost),

@@ -13,19 +13,25 @@ describe("ordersToSales", () => {
     cancelStatus: { cancelState: "NONE_REQUESTED" },
     totalMarketplaceFee: { value: "9.00" },
     lineItems: [
-      { lineItemId: "a", sku: "item-1", quantity: 2, lineItemCost: { value: "40.00" }, deliveryCost: { shippingCost: { value: "5.00" } } },
+      { lineItemId: "a", sku: "item-1", title: "Nike Hoodie", quantity: 2, lineItemCost: { value: "40.00" }, deliveryCost: { shippingCost: { value: "5.00" } } },
       { lineItemId: "b", sku: "item-2", quantity: 1, lineItemCost: { value: "15.00" } },
-      { lineItemId: "c", quantity: 1, lineItemCost: { value: "30.00" } }, // listed outside FlipLedger (no SKU)
+      // Listed straight on eBay (no SKU).
+      { lineItemId: "c", title: "  Levi's  501 Jeans ", legacyItemId: "1234567890", quantity: 1, lineItemCost: { value: "30.00" } },
     ],
   }
 
   it("maps lines to per-unit sales and splits the real fee by line value", () => {
     const [a, b] = ordersToSales([order])
-    expect(a).toMatchObject({ itemId: "item-1", quantity: 2, salePriceCents: 2000, buyerShippingCents: 500, soldAt: order.creationDate })
+    expect(a).toMatchObject({ sku: "item-1", title: "Nike Hoodie", quantity: 2, salePriceCents: 2000, buyerShippingCents: 500, soldAt: order.creationDate })
     // total value 45 + 15 + 30 = 90; fee 900¢ → a: 450, b: 150
     expect(a.feeCents).toBe(450)
-    expect(b).toMatchObject({ itemId: "item-2", salePriceCents: 1500, feeCents: 150 })
-    expect(ordersToSales([order])).toHaveLength(2)
+    expect(b).toMatchObject({ sku: "item-2", title: "", salePriceCents: 1500, feeCents: 150 })
+  })
+
+  it("keeps lines listed outside FlipLedger, with their title and eBay item number", () => {
+    const lines = ordersToSales([order])
+    expect(lines).toHaveLength(3)
+    expect(lines[2]).toMatchObject({ sku: null, title: "Levi's 501 Jeans", listingId: "1234567890", salePriceCents: 3000, feeCents: 300 })
   })
 
   it("skips unpaid and cancelled orders", () => {

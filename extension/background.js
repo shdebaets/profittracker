@@ -3,12 +3,19 @@
 // Jobs live in chrome.storage.session because the worker can be suspended.
 // Also checks public listing pages for sales (CHECK_SALES) and imports a seller's
 // Mercari listings (IMPORT: a background tab collects the links, then each page is read).
+// IMPORT_SALES does the same on the seller's Mercari sold lists, to record sales of
+// items FlipLedger didn't know about. It only reads pages; it never clicks anything.
 importScripts("shared.js")
 
 const SITES = {
   facebook: { create: "https://www.facebook.com/marketplace/create/item", manage: "https://www.facebook.com/marketplace/you/selling" },
   poshmark: { create: "https://poshmark.com/create-listing", manage: "https://poshmark.com/closet" },
-  mercari: { create: "https://www.mercari.com/sell/", manage: "https://www.mercari.com/mypage/listings/" },
+  mercari: {
+    create: "https://www.mercari.com/sell/",
+    manage: "https://www.mercari.com/mypage/listings/",
+    // The seller's sold items: waiting to ship/rate, then completed. Paths not yet checked on the real site.
+    sold: ["https://www.mercari.com/mypage/listings/in_progress/", "https://www.mercari.com/mypage/listings/complete/"],
+  },
 }
 const SALE_CHECK_HOSTS = { poshmark: "poshmark.com", mercari: "www.mercari.com" }
 
@@ -44,8 +51,8 @@ function tellApp(job, payload) {
 async function startJob(msg, sender) {
   const site = SITES[msg.marketplace]
   if (!site) throw new Error(`${msg.marketplace} isn't supported by this extension yet`)
-  const kind = { LIST: "list", DELIST: "delist", IMPORT: "import" }[msg.type]
-  if (kind === "import" && msg.marketplace !== "mercari") throw new Error(`Importing from ${msg.marketplace} isn't supported yet`)
+  const kind = { LIST: "list", DELIST: "delist", IMPORT: "import", IMPORT_SALES: "sales" }[msg.type]
+  if ((kind === "import" || kind === "sales") && msg.marketplace !== "mercari") throw new Error(`Importing from ${msg.marketplace} isn't supported yet`)
   const job = {
     kind,
     jobId: msg.jobId,
@@ -59,9 +66,12 @@ async function startJob(msg, sender) {
     auto: msg.type === "DELIST" && msg.auto === true,
     autoPublish: msg.type === "LIST" && msg.autoPublish === true,
     state: "opened",
+    // IMPORT_SALES: sold-list pages still to read, and the item links found so far.
+    pages: kind === "sales" ? site.sold.slice(1) : [],
+    urls: [],
   }
   if (job.auto && !job.url) throw new Error("Auto-delist needs the listing's link")
-  const target = job.kind === "list" ? site.create : job.kind === "import" ? site.manage : job.url || site.manage
+  const target = job.kind === "list" ? site.create : job.kind === "import" ? site.manage : job.kind === "sales" ? site.sold[0] : job.url || site.manage
   // Import stays in front: Chrome doesn't render background tabs, so their lists never load more on scroll.
   const tab = await chrome.tabs.create({ url: target, active: !job.auto })
   await saveJob(tab.id, job)
@@ -109,6 +119,21 @@ async function inBatches(list, fn) {
   await Promise.all(Array.from({ length: 4 }, async () => {
     while (queue.length) await fn(queue.shift())
   }))
+}
+
+/** Read each sold Mercari item's page; keep the ones that really sold. */
+async function readMercariSales(urls) {
+  const sales = []
+  await inBatches(urls.slice(0, 600), async (u) => {
+    try {
+      const res = await fetchPublicPage(u)
+      const sale = res.ok && FL.mercariSoldItem(u, await res.text())
+      if (sale) sales.push(sale)
+    } catch (e) {
+      console.warn("FlipLedger: couldn't read", u, e)
+    }
+  })
+  return sales
 }
 
 /** Read each of the seller's Mercari listing pages; keep the ones still for sale. */
@@ -164,6 +189,22 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       await saveJob(tabId, { ...job, ...msg.patch })
       return { ok: true }
     }
+    if (msg?.type === "DONE" && job.kind === "sales") {
+      const ids = new Set([...job.urls, ...(msg.urls ?? [])].map((u) => FL.mercariId(u)).filter(Boolean))
+      const urls = [...ids].map((id) => `https://www.mercari.com/us/item/${id}/`)
+      if (job.pages.length) {
+        // Next sold list in the same tab; the runner collects again when it loads.
+        const [next, ...rest] = job.pages
+        await saveJob(tabId, { ...job, pages: rest, urls })
+        await chrome.tabs.update(tabId, { url: next })
+        return { ok: true }
+      }
+      await dropJob(tabId)
+      chrome.tabs.remove(tabId).catch(() => {})
+      if (job.appTabId != null) chrome.tabs.update(job.appTabId, { active: true }).catch(() => {})
+      tellApp(job, { type: "SOLD_ITEMS", sales: urls.length ? await readMercariSales(urls) : [] })
+      return { ok: true }
+    }
     if (msg?.type === "DONE" && job.kind === "import") {
       await dropJob(tabId)
       chrome.tabs.remove(tabId).catch(() => {})
@@ -182,7 +223,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (msg?.type === "CANCEL") {
       tellApp(job, { type: "ERROR", error: msg.reason || "Cancelled" })
       await dropJob(tabId)
-      if (job.auto || job.kind === "import") chrome.tabs.remove(tabId).catch(() => {})
+      if (job.auto || job.kind === "import" || job.kind === "sales") chrome.tabs.remove(tabId).catch(() => {})
       return { ok: true }
     }
     return { ok: false }

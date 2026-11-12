@@ -69,6 +69,8 @@ export type Summary = {
   cogSold: number
   fees: number
   salesCount: number
+  /** Sales whose cost the seller hasn't entered: their profit counts the cost as $0, so net is too high. */
+  unknownCostSales: number
   avgProfit: number
   margin: number
   inventoryValue: number
@@ -80,7 +82,7 @@ export type Summary = {
 
 /** Sales are filtered by sold_at within range; inventory is always a current snapshot. */
 export function summarize(items: Item[], range: Range, now = new Date()): Summary {
-  let net = 0, revenue = 0, cogSold = 0, fees = 0, salesCount = 0
+  let net = 0, revenue = 0, cogSold = 0, fees = 0, salesCount = 0, unknownCostSales = 0
   let inventoryValue = 0, inventoryUnits = 0, inventoryItems = 0, totalItems = 0
   let best: Summary["best"] = null
 
@@ -98,7 +100,9 @@ export function summarize(items: Item[], range: Range, now = new Date()): Summar
       fees += s.fees
       salesCount++
       totalItems++
-      if (!best || s.net > best.sale.net) best = { item: i, sale: s }
+      if (i.cost_unknown) unknownCostSales++
+      // A sale with no cost entered would look like the best one just for missing its cost.
+      else if (!best || s.net > best.sale.net) best = { item: i, sale: s }
     }
   }
 
@@ -108,6 +112,7 @@ export function summarize(items: Item[], range: Range, now = new Date()): Summar
     cogSold,
     fees,
     salesCount,
+    unknownCostSales,
     avgProfit: salesCount ? Math.round(net / salesCount) : 0,
     margin: revenue ? net / revenue : 0,
     inventoryValue,

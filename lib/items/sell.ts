@@ -58,6 +58,7 @@ export async function sellItem(
       size: item.size,
       haul_id: item.haul_id,
       cost_cents: item.cost_cents,
+      cost_unknown: item.cost_unknown,
       purchased_at: item.purchased_at,
       returnable: false,
       quantity: qty,

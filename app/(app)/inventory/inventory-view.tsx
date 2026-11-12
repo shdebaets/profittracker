@@ -26,12 +26,14 @@ const isReturnEligible = (i: Item) =>
   i.status === "inventory" && !!i.return_deadline && daysUntil(i.return_deadline) >= 0
 const isUnlisted = (i: Item) => i.status === "inventory" && !i.listings.some((l) => l.status === "active")
 
-export function InventoryView({ items, email, focusSearch = false }: { items: Item[]; email?: string; focusSearch?: boolean }) {
+export function InventoryView({
+  items, email, focusSearch = false, needsCost = false,
+}: { items: Item[]; email?: string; focusSearch?: boolean; needsCost?: boolean }) {
   const { openItem, openHaul, openEntry } = useEntry()
   const [tab, setTab] = useState<Tab>("all")
   const [time, setTime] = useState<Range>("all")
   const [query, setQuery] = useState("")
-  const [chip, setChip] = useState<"all" | "returns" | "unlisted" | "cost">("all")
+  const [chip, setChip] = useState<"all" | "returns" | "unlisted" | "cost">(needsCost ? "cost" : "all")
   useSyncItems(items)
 
   const sales = items.filter((i) => i.status === "sold")
@@ -71,8 +73,9 @@ export function InventoryView({ items, email, focusSearch = false }: { items: It
           title: i.title ?? "",
           status: i.status,
           quantity: i.quantity,
-          unit_cost: dollars(i.cost_cents),
-          total_cost: dollars(i.cost_cents * i.quantity),
+          unit_cost: i.cost_unknown ? "" : dollars(i.cost_cents),
+          total_cost: i.cost_unknown ? "" : dollars(i.cost_cents * i.quantity),
+          cost_missing: i.cost_unknown ? "yes" : "",
           store: i.store ?? "",
           purchased_at: i.purchased_at,
           sold_at: i.sold_at ?? "",
@@ -218,7 +221,7 @@ export function InventoryView({ items, email, focusSearch = false }: { items: It
             <Share2 className="size-4" /> Not Listed ({unlistedCount})
           </button>
         )}
-        {noCostCount > 0 && (
+        {(noCostCount > 0 || chip === "cost") && (
           <button
             onClick={() => setChip("cost")}
             className={cn(

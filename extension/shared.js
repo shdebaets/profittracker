@@ -145,7 +145,7 @@
   }
 
   const FL = {
-    VERSION: "0.6.1",
+    VERSION: "0.7.0",
     /** Marketplaces this extension can drive. */
     MARKETPLACES: ["facebook", "poshmark", "mercari"],
     APP_SOURCE: "flipledger-app",
@@ -369,6 +369,39 @@
         size: "",
         // schema.org only says new or used; the seller can set the exact grade later.
         condition: /NewCondition/i.test(condition) ? "new" : null,
+        photoUrl: typeof image === "string" ? image : (image?.url ?? image?.contentUrl ?? null),
+      }
+    },
+
+    /** Mercari item ID in any link to it: the item page, or a sold item's transaction page. */
+    mercariId(url) {
+      return String(url ?? "").match(/\/(?:us\/)?(?:item|transaction)s?\/(m\d+)/)?.[1] ?? null
+    },
+
+    /**
+     * A sold Mercari listing read from its public page, in the shape the app records as an
+     * untracked sale (lib/sales/untracked.ts MarketplaceSale), or null if it isn't sold.
+     * The sold date is read from the item's own data when the page has one (best guess at
+     * the field name until checked on the real site); otherwise the app uses today.
+     */
+    mercariSoldItem(url, html) {
+      const id = FL.listingId("mercari", url)
+      const page = String(html ?? "")
+      if (!id || FL.saleStatus("mercari", url, page).state !== "sold") return null
+      const p = FL.productData(page)
+      if (!p?.name) return null
+      const image = [p.image].flat()[0]
+      const own = page.indexOf(`"id":"${id}"`)
+      const near = own < 0 ? "" : page.slice(own, own + 20000)
+      const stamp = near.match(/"(?:updated|soldAt|soldDate|updatedAt)":"?(\d{10}|\d{4}-\d\d-\d\dT[^"]+)/)?.[1]
+      const when = !stamp ? null : /^\d{10}$/.test(stamp) ? new Date(Number(stamp) * 1000) : new Date(stamp)
+      return {
+        marketplace: "mercari",
+        externalId: id,
+        url: `https://www.mercari.com/us/item/${id}/`,
+        title: String(p.name).trim().slice(0, 200),
+        priceCents: FL.offerPrice(page),
+        soldAt: when && !isNaN(when.getTime()) ? when.toISOString() : null,
         photoUrl: typeof image === "string" ? image : (image?.url ?? image?.contentUrl ?? null),
       }
     },

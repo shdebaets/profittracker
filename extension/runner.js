@@ -193,22 +193,28 @@
   // The tab has to stay in front: background tabs don't render, so the list stops growing.
 
   let importing = false
-  async function collectListings() {
+  async function collectListings(job) {
+    const sold = job.kind === "sales"
+    const pattern = sold ? (site.soldPattern ?? site.itemPattern) : site.itemPattern
     if (importing) return
     importing = true
     if (/\/(login|signin|signup)/i.test(location.pathname)) {
       return send({ type: "CANCEL", reason: `Log in to ${site.name} in this Chrome window, then import again.` })
     }
-    D.panel({ title: "Importing your listings…", lines: ["Leave this tab open while it scrolls through your listings.", "It closes by itself and goes back to FlipLedger."] })
+    D.panel({
+      title: sold ? "Reading your sales…" : "Importing your listings…",
+      lines: [`Leave this tab open while it scrolls through your ${sold ? "sold items" : "listings"}.`, "It closes by itself and goes back to FlipLedger."],
+    })
     const links = () => {
       const urls = new Set()
       for (const a of document.querySelectorAll("a[href]")) {
-        const m = a.href.match(site.itemPattern)
+        const m = a.href.match(pattern)
         if (m) urls.add(a.href.slice(0, m.index + m[0].length))
       }
       return urls
     }
-    await D.waitFor(() => links().size, 15000)
+    // An empty sold list has no links at all, so don't wait as long.
+    await D.waitFor(() => links().size, sold ? 8000 : 15000)
     let last = -1
     for (let round = 0; round < 40 && links().size !== last; round++) {
       last = links().size
@@ -233,7 +239,7 @@
     const onCreate = site.isCreatePage(location.pathname)
     const { job, photos } = (await send({ type: "GET_JOB", withPhotos: onCreate })) ?? {}
     if (!job) return
-    if (job.kind === "import") return collectListings()
+    if (job.kind === "import" || job.kind === "sales") return collectListings(job)
     if (job.kind === "list") {
       if (onCreate) return fillListing(job, (photos ?? []).slice(0, site.photoLimit))
       // The site lands on the new listing (or your listings) after publishing.

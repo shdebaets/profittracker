@@ -69,6 +69,14 @@ describe("summarize", () => {
     expect(s.net).toBe(4000)
     expect(s.inventoryValue).toBe(3900)
   })
+
+  it("flags sales with no cost entered and doesn't call one the best sale", () => {
+    const s = summarize([...items, { ...base, id: "e", cost_cents: 0, cost_unknown: true, sale_price_cents: 90000 }], "all", now)
+    expect(s.unknownCostSales).toBe(1)
+    expect(s.salesCount).toBe(3)
+    expect(s.best?.item.id).toBe("b")
+    expect(summarize(items, "all", now).unknownCostSales).toBe(0)
+  })
 })
 
 describe("distributeHaul", () => {

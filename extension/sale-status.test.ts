@@ -89,3 +89,36 @@ describe("mercariItem (extension import)", () => {
     expect(mercariItem("https://www.mercari.com/us/", page("on_sale"))).toBeNull()
   })
 })
+
+describe("mercariSoldItem (extension sales import)", () => {
+  type Sale = Record<string, unknown> | null
+  let FL: { mercariSoldItem: (url: string, html: string) => Sale; mercariId: (url: string) => string | null }
+  beforeAll(() => {
+    FL = (globalThis as unknown as { FL: typeof FL }).FL
+  })
+  const page = (status: string, extra = "") =>
+    `<html>${ld("42", "InStock").replace('"@type":"Product"', '"@type":"Product","name":"Jacket","image":"https://u-mercari-images.mercdn.net/photos/m12215929581_1.jpg"')}` +
+    `<script>{"item":{"id":"m12215929581","buyer":{"id":"9"},"status":"${status}","isWebVisible":true${extra}}}</script></html>`
+
+  it("reads a sold item, with its sold date when the page has one", () => {
+    expect(FL.mercariSoldItem(MERC_URL, page("trading", ',"updated":1762000000'))).toEqual({
+      marketplace: "mercari", externalId: "m12215929581", url: "https://www.mercari.com/us/item/m12215929581/",
+      title: "Jacket", priceCents: 4200, soldAt: new Date(1762000000 * 1000).toISOString(),
+      photoUrl: "https://u-mercari-images.mercdn.net/photos/m12215929581_1.jpg",
+    })
+    expect(FL.mercariSoldItem(MERC_URL, page("sold_out"))?.soldAt).toBeNull()
+    expect(FL.mercariSoldItem(MERC_URL, page("trading", ',"updated":"not a date"'))?.soldAt).toBeNull()
+  })
+
+  it("skips items that didn't sell, and blocked pages", () => {
+    expect(FL.mercariSoldItem(MERC_URL, page("on_sale"))).toBeNull()
+    expect(FL.mercariSoldItem(MERC_URL, page("inactive"))).toBeNull()
+    expect(FL.mercariSoldItem(MERC_URL, "<html><title>Just a moment...</title></html>")).toBeNull()
+  })
+
+  it("finds the item ID in item and transaction links", () => {
+    expect(FL.mercariId("https://www.mercari.com/us/item/m123456789/")).toBe("m123456789")
+    expect(FL.mercariId("https://www.mercari.com/transaction/m123456789/")).toBe("m123456789")
+    expect(FL.mercariId("https://www.mercari.com/mypage/")).toBeNull()
+  })
+})

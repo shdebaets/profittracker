@@ -1,6 +1,7 @@
 "use client"
 
-import { Award, Box, Plus, Sparkles, TrendingUp } from "lucide-react"
+import { Award, Box, CircleDollarSign, Plus, Sparkles, TrendingUp } from "lucide-react"
+import Link from "next/link"
 import { useState } from "react"
 import { PageTitle } from "@/components/app-header"
 import { DelistAlerts } from "@/components/crosslist/delist-alerts"
@@ -46,6 +47,19 @@ export function Dashboard({ items, expenses, subs }: { items: Item[]; expenses: 
         onChange={setRange}
         options={(Object.keys(RANGE_LABELS) as Range[]).map((r) => ({ value: r, label: SHORT_RANGE[r] }))}
       />
+
+      {s.unknownCostSales > 0 && (
+        <Link
+          href="/inventory?filter=cost"
+          className="flex items-center gap-3 rounded-2xl border border-brand/40 bg-brand-soft px-4 py-3 text-sm"
+        >
+          <CircleDollarSign className="size-5 shrink-0 text-brand" />
+          <span className="min-w-0 flex-1">
+            <b>{s.unknownCostSales} sale{s.unknownCostSales === 1 ? "" : "s"}</b> {s.unknownCostSales === 1 ? "has" : "have"} no cost yet, so the profit below counts {s.unknownCostSales === 1 ? "it" : "them"} as free.
+          </span>
+          <span className="shrink-0 rounded-xl bg-brand px-3 py-2 font-bold text-ink">Add cost</span>
+        </Link>
+      )}
 
       <section className="rounded-3xl border border-profit/30 bg-gradient-to-br from-profit-soft to-card p-5 shadow-sm">
         <div className="flex items-center justify-between gap-2">

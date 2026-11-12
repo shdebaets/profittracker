@@ -6,6 +6,8 @@ import { UserError } from "@/lib/errors"
 import { planImport, type ImportCandidate, type ImportPlan } from "@/lib/import/plan"
 import { fetchPoshmarkCloset, POSHMARK_PHOTO_HOST, PoshmarkClosetError, poshmarkUsername } from "@/lib/import/poshmark"
 import { PHOTO_BUCKET } from "@/lib/photos"
+import { marketplaceSoldItem, planUntrackedSales, type MarketplaceSale, type SalesPlan } from "@/lib/sales/untracked"
+import { createAdminClient } from "@/lib/supabase/admin"
 import { requireCrosslister, requireUser } from "@/lib/supabase/server"
 import { fail } from "./result"
 
@@ -173,6 +175,95 @@ export async function importListings(input: ImportCandidate[]): Promise<Result<{
 
     revalidatePath("/", "layout")
     return { ok: true, data: { created: p.create.length, linked: p.link.length, skipped: p.skip.length } }
+  } catch (e) {
+    return fail(e) as { ok: false; error: string }
+  }
+}
+
+// ---- Sales of items FlipLedger didn't know about (Mercari, read by the extension) ----
+
+export type SalesPreview = { sales: MarketplaceSale[]; create: number; skip: number }
+
+const saleSchema = z
+  .object({
+    marketplace: z.literal("mercari"),
+    externalId: z.string().max(40),
+    url: z.string().max(400),
+    title: z.string().trim().min(1).max(200),
+    priceCents: z.number().int().min(0).max(100_000_000).nullable(),
+    soldAt: z.string().max(40).nullable(),
+    photoUrl: z.string().max(1000).nullable(),
+  })
+  .refine((c) => LISTING_URL[c.marketplace].exec(c.url)?.[1] === c.externalId, "Not a listing link")
+  .refine((c) => c.soldAt === null || !Number.isNaN(Date.parse(c.soldAt)), "Not a date")
+  .transform((c) => ({ ...c, photoUrl: c.photoUrl && photoHostAllowed(c.photoUrl) ? c.photoUrl : null }))
+const salesSchema = z.array(saleSchema).max(MAX_IMPORT)
+
+async function planSales(supabase: SupabaseClient, sales: MarketplaceSale[]): Promise<SalesPlan> {
+  const ids = sales.map((s) => s.externalId)
+  const [listings, recorded] = await Promise.all([
+    supabase.from("marketplace_listings").select("marketplace, external_url").eq("marketplace", "mercari"),
+    ids.length
+      ? supabase.from("marketplace_sales").select("external_line_id").eq("marketplace", "mercari").in("external_line_id", ids)
+      : Promise.resolve({ data: [], error: null }),
+  ])
+  if (listings.error) throw listings.error
+  if (recorded.error) throw recorded.error
+  return planUntrackedSales(sales, { listings: listings.data, recorded: (recorded.data ?? []).map((r) => r.external_line_id) })
+}
+
+/** Say what recording sales found by the extension would do. Nothing is saved yet. */
+export async function previewSales(input: MarketplaceSale[]): Promise<Result<SalesPreview>> {
+  try {
+    const sales = salesSchema.parse(input)
+    const { supabase } = await requireCrosslister()
+    const p = await planSales(supabase, sales)
+    return { ok: true, data: { sales, create: p.create.length, skip: p.skip.length } }
+  } catch (e) {
+    return fail(e) as { ok: false; error: string }
+  }
+}
+
+/**
+ * Record sales of items FlipLedger didn't know about as sold items with an unknown cost.
+ * Each sale is claimed in marketplace_sales first (external_line_id = Mercari's item ID),
+ * so recording the same sales twice, or from two tabs, only adds them once.
+ */
+export async function recordSales(input: MarketplaceSale[]): Promise<Result<{ created: number; skipped: number }>> {
+  try {
+    const sales = salesSchema.parse(input)
+    const { supabase, userId } = await requireCrosslister()
+    // marketplace_sales has no insert policy; the admin client writes it, always for this user.
+    const admin = createAdminClient()
+    const p = await planSales(supabase, sales)
+    let created = 0
+    for (const s of p.create) {
+      const { error: claimErr } = await admin
+        .from("marketplace_sales")
+        .insert({ marketplace: s.marketplace, external_line_id: s.externalId, user_id: userId, item_id: null })
+      if (claimErr) continue // recorded meanwhile
+      try {
+        const photo = await copyPhoto(supabase, userId, s.photoUrl)
+        const { data: item, error } = await supabase
+          .from("items")
+          .insert({ ...marketplaceSoldItem(s, userId), photo_paths: photo ? [photo] : [] })
+          .select("id")
+          .single()
+        if (error) throw error
+        await admin
+          .from("marketplace_sales")
+          .update({ item_id: item.id })
+          .eq("marketplace", s.marketplace)
+          .eq("external_line_id", s.externalId)
+          .eq("user_id", userId)
+        created++
+      } catch (e) {
+        await admin.from("marketplace_sales").delete().eq("marketplace", s.marketplace).eq("external_line_id", s.externalId).eq("user_id", userId)
+        throw e
+      }
+    }
+    revalidatePath("/", "layout")
+    return { ok: true, data: { created, skipped: sales.length - created } }
   } catch (e) {
     return fail(e) as { ok: false; error: string }
   }
