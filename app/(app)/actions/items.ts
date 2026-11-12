@@ -148,10 +148,29 @@ export async function markSold(
     const qty = z.number().int().min(1).parse(input.quantity)
     const soldOn = marketplaceId.nullable().optional().parse(input.soldOn)
     const sale = saleColumns(saleFields.parse(input))
+    // No marketplace picked: sold in person, so there's nothing to ship.
+    if (!soldOn) sale.shipped_at = sale.sold_at
     const { supabase } = await requireUser()
     const outcome = await recordSale(supabaseStore(supabase), adapters, { itemId: id, qty, sale, soldOn })
     revalidatePath("/", "layout")
     return { ok: true, outcome }
+  } catch (e) {
+    return fail(e)
+  }
+}
+
+/** Mark a sold item shipped (or undo it). */
+export async function markShipped(id: string, shipped: boolean): Promise<ActionResult> {
+  try {
+    const itemId = z.string().uuid().parse(id)
+    const { supabase } = await requireUser()
+    const { error } = await supabase
+      .from("items")
+      .update({ shipped_at: shipped ? new Date().toISOString() : null })
+      .eq("id", itemId)
+      .eq("status", "sold")
+    if (error) throw error
+    return done()
   } catch (e) {
     return fail(e)
   }

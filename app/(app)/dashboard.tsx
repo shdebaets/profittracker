@@ -1,6 +1,6 @@
 "use client"
 
-import { Award, Box, CircleDollarSign, Plus, Sparkles, TrendingUp } from "lucide-react"
+import { Award, Box, ChevronRight, CircleDollarSign, Plus, Sparkles, TrendingUp, Truck } from "lucide-react"
 import Link from "next/link"
 import { useState } from "react"
 import { PageTitle } from "@/components/app-header"
@@ -10,6 +10,7 @@ import { Segmented } from "@/components/fields"
 import { StatCard } from "@/components/stat-card"
 import { formatDateAt, RANGE_LABELS, type Range } from "@/lib/dates"
 import { formatCents, formatPct, formatSignedCents } from "@/lib/money"
+import { isToShip } from "@/lib/orders"
 import { expenseTotals, subscriptionCost } from "@/lib/overhead"
 import { summarize } from "@/lib/profit"
 import type { Expense, Item, Subscription } from "@/lib/types"
@@ -22,6 +23,7 @@ export function Dashboard({ items, expenses, subs }: { items: Item[]; expenses: 
   const { openEntry, openItem } = useEntry()
   useSyncItems(items)
   const s = summarize(items, range)
+  const toShip = items.filter(isToShip).length
   const overhead = expenseTotals(expenses, range).total + subscriptionCost(subs, range)
   const afterOverhead = s.net - overhead
   // Revenue splits into cost of goods, fees + label costs, and profit.
@@ -41,6 +43,16 @@ export function Dashboard({ items, expenses, subs }: { items: Item[]; expenses: 
       </PageTitle>
 
       <DelistAlerts items={items} />
+
+      {toShip > 0 && (
+        <Link href="/orders" className="flex items-center gap-3 rounded-3xl border border-brand/40 bg-brand-soft p-4 shadow-sm">
+          <Truck className="size-5 shrink-0 text-brand" />
+          <span className="flex-1 font-bold">
+            {toShip} order{toShip === 1 ? "" : "s"} to ship
+          </span>
+          <ChevronRight className="size-5 text-muted-foreground" />
+        </Link>
+      )}
 
       <Segmented
         value={range}

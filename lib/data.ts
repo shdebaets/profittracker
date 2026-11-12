@@ -1,4 +1,5 @@
 import "server-only"
+import type { Order } from "@/lib/orders"
 import { signPaths } from "@/lib/photos"
 import { requireUser } from "@/lib/supabase/server"
 import type { Expense, Item, MarketplaceConnection, Settings, Subscription } from "@/lib/types"
@@ -15,6 +16,21 @@ export async function getItems(): Promise<Item[]> {
   const rows = data as Omit<Item, "photo_urls">[]
   const urls = await signPaths(supabase, rows.flatMap((r) => r.photo_paths ?? []))
   return rows.map((r) => ({ ...r, photo_urls: (r.photo_paths ?? []).map((p) => urls.get(p) ?? "") }))
+}
+
+/** Sold items with what each marketplace said about the sale, newest first. Signs only the cover photo. */
+export async function getOrders(): Promise<Order[]> {
+  const { supabase } = await requireUser()
+  const { data, error } = await supabase
+    .from("items")
+    .select("*, listings:marketplace_listings(*), sales:marketplace_sales(marketplace, external_order_id, buyer, ship_by, order_status)")
+    .eq("status", "sold")
+    .order("sold_at", { ascending: false })
+    .limit(500)
+  if (error) throw error
+  const rows = data as Omit<Order, "photo_urls">[]
+  const urls = await signPaths(supabase, rows.flatMap((r) => r.photo_paths?.slice(0, 1) ?? []))
+  return rows.map((r) => ({ ...r, photo_urls: (r.photo_paths ?? []).slice(0, 1).map((p) => urls.get(p) ?? "") }))
 }
 
 export async function getItem(id: string): Promise<Item | null> {

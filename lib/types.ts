@@ -33,6 +33,12 @@ export type Item = {
   brand: string | null
   size: string | null
   list_price_cents: number | null
+  /** Free-text category path, e.g. "Women > Shoes > Sneakers". */
+  category: string | null
+  /** The marketplace it sold on (null: in person, or unknown for old sales). */
+  sold_on: MarketplaceId | null
+  /** When the seller shipped it (or handed it over). Null on a sold item = still to ship. */
+  shipped_at: string | null
   /** Cross-listings for this item (filled in by getItems). */
   listings: Listing[]
   created_at: string

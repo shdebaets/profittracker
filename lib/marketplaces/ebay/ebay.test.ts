@@ -34,6 +34,21 @@ describe("ordersToSales", () => {
     expect(lines[2]).toMatchObject({ sku: null, title: "Levi's 501 Jeans", listingId: "1234567890", salePriceCents: 3000, feeCents: 300 })
   })
 
+  it("carries the buyer, ship-by date and fulfillment status, but no address", () => {
+    const shipBy = "2026-10-19T06:59:59.000Z"
+    const [a, b] = ordersToSales([
+      {
+        ...order,
+        buyer: { username: "sneakerfan22" },
+        orderFulfillmentStatus: "NOT_STARTED",
+        lineItems: [{ ...order.lineItems[0], lineItemFulfillmentInstructions: { shipByDate: shipBy } }, order.lineItems[1]],
+      },
+    ])
+    expect(a).toMatchObject({ buyer: "sneakerfan22", shipBy, fulfillment: "NOT_STARTED" })
+    expect(b).toMatchObject({ buyer: "sneakerfan22", shipBy: null })
+    expect(ordersToSales([order])[0]).toMatchObject({ buyer: null, shipBy: null, fulfillment: null })
+  })
+
   it("skips unpaid and cancelled orders", () => {
     expect(ordersToSales([{ ...order, orderPaymentStatus: "PENDING" }])).toEqual([])
     expect(ordersToSales([{ ...order, cancelStatus: { cancelState: "CANCELED" } }])).toEqual([])

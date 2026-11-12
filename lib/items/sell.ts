@@ -1,6 +1,7 @@
 import "server-only"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { UserError } from "@/lib/errors"
+import type { MarketplaceId } from "@/lib/marketplaces/registry"
 import type { Platform } from "@/lib/types"
 
 export type SaleColumns = {
@@ -11,6 +12,10 @@ export type SaleColumns = {
   fee_fixed_cents: number
   platform: Platform
   sold_at: string
+  /** The marketplace it sold on; null for in-person or unknown. */
+  sold_on?: MarketplaceId | null
+  /** Set for sales that need no shipping (handed over in person). */
+  shipped_at?: string | null
 }
 
 /**
@@ -56,6 +61,7 @@ export async function sellItem(
       condition: item.condition,
       brand: item.brand,
       size: item.size,
+      category: item.category,
       haul_id: item.haul_id,
       cost_cents: item.cost_cents,
       cost_unknown: item.cost_unknown,

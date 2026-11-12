@@ -135,6 +135,17 @@ export async function fetchOrders(token: string, since: Date): Promise<EbayOrder
   return orders
 }
 
+/** Specific orders by ID (eBay takes up to 50 per call). */
+export async function fetchOrdersByIds(token: string, ids: string[]): Promise<EbayOrder[]> {
+  const orders: EbayOrder[] = []
+  for (let i = 0; i < ids.length; i += 50) {
+    const batch = ids.slice(i, i + 50).map(encodeURIComponent).join(",")
+    const page: { orders?: EbayOrder[] } = await ebayFetch(token, `/sell/fulfillment/v1/order?orderIds=${batch}`)
+    orders.push(...(page.orders ?? []))
+  }
+  return orders
+}
+
 export type CategorySuggestion = { id: string; name: string; path: string }
 
 export async function suggestCategories(userId: string, q: string): Promise<CategorySuggestion[]> {
