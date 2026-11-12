@@ -20,7 +20,7 @@ import { checkPoshmarkListings } from "@/lib/marketplaces/assisted-sync"
 import { marketplace, type MarketplaceId } from "@/lib/marketplaces/registry"
 import { photoLink } from "@/lib/photo-links"
 import { createAdminClient } from "@/lib/supabase/admin"
-import { requireUser } from "@/lib/supabase/server"
+import { requireCrosslister, requireUser } from "@/lib/supabase/server"
 import type { Listing } from "@/lib/types"
 import { reportError, UserError } from "@/lib/errors"
 import { fail, type ActionResult } from "./result"
@@ -47,7 +47,7 @@ export type ListingDetails = z.input<typeof detailsSchema>
 export async function saveListingDetails(itemId: string, input: ListingDetails): Promise<ActionResult> {
   try {
     const d = detailsSchema.parse(input)
-    const { supabase } = await requireUser()
+    const { supabase } = await requireCrosslister()
     const { error } = await supabase
       .from("items")
       .update({
@@ -74,7 +74,7 @@ export async function markAssistedListed(
   try {
     const m = assistedId.parse(input.marketplace)
     const url = z.union([z.literal(""), z.url().max(1000)]).optional().parse(input.url?.trim())
-    const { supabase } = await requireUser()
+    const { supabase } = await requireCrosslister()
     const { error } = await supabase.from("marketplace_listings").upsert(
       {
         item_id: itemId,
@@ -101,12 +101,17 @@ export async function markAssistedListed(
  */
 export async function endListing(listingId: string, opts: { manual?: boolean } = {}): Promise<ActionResult> {
   try {
+    // Marking a listing ended stays open to everyone so a lapsed member can clear delist alerts;
+    // ending it through a marketplace API needs the Cross-Lister.
     const { supabase } = await requireUser()
     const { data: l, error } = await supabase.from("marketplace_listings").select("*").eq("id", listingId).single()
     if (error) throw error
     const listing = l as Listing
     const adapter = marketplace(listing.marketplace).mode === "api" ? adapters[listing.marketplace] : undefined
-    if (adapter && !opts.manual) await adapter.end(listing)
+    if (adapter && !opts.manual) {
+      await requireCrosslister()
+      await adapter.end(listing)
+    }
     const { error: upErr } = await supabase
       .from("marketplace_listings")
       .update({ status: "delisted", delisted_at: new Date().toISOString(), last_error: null })
@@ -121,7 +126,7 @@ export async function endListing(listingId: string, opts: { manual?: boolean } =
 /** Remove a listing record entirely (e.g. marked listed by mistake). Live API listings are ended first. */
 export async function forgetListing(listingId: string): Promise<ActionResult> {
   try {
-    const { supabase } = await requireUser()
+    const { supabase } = await requireCrosslister()
     const { data: l, error } = await supabase.from("marketplace_listings").select("*").eq("id", listingId).single()
     if (error) throw error
     const listing = l as Listing
@@ -140,7 +145,7 @@ export async function forgetListing(listingId: string): Promise<ActionResult> {
 /** Take an unsold item down everywhere (e.g. kept it, or selling it in person). */
 export async function delistEverywhere(itemId: string): Promise<ActionResult> {
   try {
-    const { supabase } = await requireUser()
+    const { supabase } = await requireCrosslister()
     const out = await takeDown(supabaseStore(supabase), adapters, itemId)
     if (out.failed.length) throw new UserError(`Couldn't end the ${marketplace(out.failed[0].marketplace).label} listing. ${out.failed[0].error}`)
     return done()
@@ -156,7 +161,7 @@ export type WatchedListing = { listingId: string; marketplace: string; url: stri
 /** Live or to-be-delisted listings whose public page the extension should check. */
 export async function extensionWatchList(): Promise<Result<WatchedListing[]>> {
   try {
-    const { supabase } = await requireUser()
+    const { supabase } = await requireCrosslister()
     const { data, error } = await supabase
       .from("marketplace_listings")
       .select("id, marketplace, external_url")
@@ -175,7 +180,7 @@ export type DelistJob = { listingId: string; itemId: string; marketplace: Market
 /** Listings waiting to come down that the extension can take down by itself. */
 export async function extensionDelistQueue(): Promise<Result<DelistJob[]>> {
   try {
-    const { supabase } = await requireUser()
+    const { supabase } = await requireCrosslister()
     const { data, error } = await supabase
       .from("marketplace_listings")
       .select("id, item_id, marketplace, external_url, items(title)")
@@ -212,7 +217,7 @@ const saleChecksSchema = z
 export async function applyExtensionSaleChecks(input: unknown): Promise<Result<SaleCheckOutcome>> {
   try {
     const checks = saleChecksSchema.parse(input)
-    const { supabase } = await requireUser()
+    const { supabase } = await requireCrosslister()
     const out = await applySaleChecks(saleCheckStore(supabase, createAdminClient()), adapters, checks)
     if (out.sales.length || out.delisted) revalidatePath("/", "layout")
     return { ok: true, data: out }
@@ -226,7 +231,7 @@ export async function applyExtensionSaleChecks(input: unknown): Promise<Result<S
 export async function ebayCategories(q: string): Promise<Result<CategorySuggestion[]>> {
   try {
     const query = z.string().trim().min(2).max(200).parse(q)
-    const { userId } = await requireUser()
+    const { userId } = await requireCrosslister()
     return { ok: true, data: await suggestCategories(userId, query) }
   } catch (e) {
     return fail(e) as { ok: false; error: string }
@@ -239,7 +244,7 @@ export async function ebayCategoryDetails(
 ): Promise<Result<{ aspects: Aspect[]; conditions: ConditionOption[]; conditionRequired: boolean }>> {
   try {
     const id = z.string().regex(/^\d+$/).parse(categoryId)
-    const { userId } = await requireUser()
+    const { userId } = await requireCrosslister()
     const [aspects, cond] = await Promise.all([categoryAspects(userId, id), categoryConditions(userId, id)])
     return { ok: true, data: { aspects, conditions: cond.options, conditionRequired: cond.required } }
   } catch (e) {
@@ -283,7 +288,7 @@ export async function publishEbay(
   try {
     const p = publishSchema.parse(input)
     const adRate = p.adRate == null ? null : adRateSchema.parse(p.adRate)
-    const { supabase, userId } = await requireUser()
+    const { supabase, userId } = await requireCrosslister()
     const { data: item, error } = await supabase.from("items").select("*").eq("id", itemId).single()
     if (error) throw error
     if (item.status !== "inventory") throw new UserError("Only unsold items can be listed.")
@@ -345,7 +350,7 @@ export async function promoteEbayListing(listingId: string, rate: number): Promi
   try {
     const id = z.uuid().parse(listingId)
     const adRate = adRateSchema.parse(rate)
-    const { supabase, userId } = await requireUser()
+    const { supabase, userId } = await requireCrosslister()
     const { data: l, error } = await supabase
       .from("marketplace_listings")
       .select("id, external_id, marketplace, status")
@@ -367,7 +372,7 @@ export async function promoteEbayListing(listingId: string, rate: number): Promi
  */
 export async function syncSales(ifOlderThanMs = 0): Promise<Result<{ sales: number; poshmark: SaleCheckOutcome }>> {
   try {
-    const { supabase, userId } = await requireUser()
+    const { supabase, userId } = await requireCrosslister()
     const admin = createAdminClient()
 
     let poshmark: SaleCheckOutcome = { sales: [], delisted: 0 }
@@ -404,7 +409,7 @@ const ebaySettingsSchema = z.object({
 export async function saveEbaySettings(input: z.input<typeof ebaySettingsSchema>): Promise<ActionResult> {
   try {
     const s = ebaySettingsSchema.parse(input)
-    const { userId } = await requireUser()
+    const { userId } = await requireCrosslister()
     const admin = createAdminClient()
     const auth = await getUserToken(userId, admin)
     if (!auth) throw new UserError("eBay isn't connected. Connect it in Settings → Marketplaces.")
@@ -421,7 +426,7 @@ export async function saveEbaySettings(input: z.input<typeof ebaySettingsSchema>
 
 export async function refreshEbayPolicies(): Promise<ActionResult> {
   try {
-    const { userId } = await requireUser()
+    const { userId } = await requireCrosslister()
     const admin = createAdminClient()
     const auth = await getUserToken(userId, admin)
     if (!auth) throw new UserError("eBay isn't connected. Connect it in Settings → Marketplaces.")
@@ -445,7 +450,7 @@ const policyChoicesSchema = z.object({
 export async function createEbayPolicies(input: z.input<typeof policyChoicesSchema>): Promise<ActionResult> {
   try {
     const choices = policyChoicesSchema.parse(input)
-    const { userId } = await requireUser()
+    const { userId } = await requireCrosslister()
     const admin = createAdminClient()
     const auth = await getUserToken(userId, admin)
     if (!auth) throw new UserError("eBay isn't connected. Connect it in Settings → Marketplaces.")
@@ -458,7 +463,7 @@ export async function createEbayPolicies(input: z.input<typeof policyChoicesSche
 
 export async function disconnectEbay(): Promise<ActionResult> {
   try {
-    const { userId } = await requireUser()
+    const { userId } = await requireCrosslister()
     const { error } = await createAdminClient()
       .from("marketplace_accounts")
       .delete()
@@ -484,7 +489,7 @@ export type EbayStatus = {
 }
 
 export async function getEbayStatus(): Promise<EbayStatus> {
-  const { supabase } = await requireUser()
+  const { supabase } = await requireCrosslister()
   const cfg = ebayConfig()
   const { data } = await supabase
     .from("marketplace_connections")

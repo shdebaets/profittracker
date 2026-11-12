@@ -3,7 +3,8 @@ import { createServerClient } from "@supabase/ssr"
 import { cookies } from "next/headers"
 import { redirect } from "next/navigation"
 import { cache } from "react"
-import { hasPaidAccess } from "@/lib/whop/access"
+import { UserError } from "@/lib/errors"
+import { hasCrosslistAccess } from "@/lib/whop/access"
 import { SUPABASE_KEY, SUPABASE_URL } from "./env"
 
 export async function createClient() {
@@ -22,11 +23,8 @@ export async function createClient() {
   })
 }
 
-/**
- * Verified signed-in user (per request), WITHOUT the paid-access check. Redirects to /login when
- * signed out. Only for pages a non-paying user must reach (/subscribe); everything else uses requireUser.
- */
-export const getSessionUser = cache(async () => {
+/** Verified current user (per request). Redirects to /login when signed out. */
+export const requireUser = cache(async () => {
   const supabase = await createClient()
   const { data } = await supabase.auth.getClaims()
   const claims = data?.claims
@@ -34,13 +32,20 @@ export const getSessionUser = cache(async () => {
   return { supabase, userId: claims.sub, email: (claims.email as string | undefined) ?? "" }
 })
 
+/** Whether the current user has the Cross-Lister (lib/whop/access.ts). Cached per request. */
+export const canCrosslist = cache(async () => {
+  const { userId, email } = await requireUser()
+  return hasCrosslistAccess(userId, email)
+})
+
+export const CROSSLIST_LOCKED = "Cross-listing needs the FlipLedger Cross-Lister. Get it in Settings → Cross-Lister."
+
 /**
- * Verified signed-in user with paid access (per request). Redirects to /login when signed out
- * and to /subscribe without a Whop membership (lib/whop/access.ts). Every page, server action and
- * data read goes through this, so it is the paywall.
+ * requireUser plus the Cross-Lister. Every cross-listing server action and route goes through this;
+ * it throws a UserError (shown as-is by fail()) when the user doesn't have it.
  */
-export const requireUser = cache(async () => {
-  const user = await getSessionUser()
-  if (!(await hasPaidAccess(user.userId, user.email))) redirect("/subscribe")
+export const requireCrosslister = cache(async () => {
+  const user = await requireUser()
+  if (!(await canCrosslist())) throw new UserError(CROSSLIST_LOCKED)
   return user
 })

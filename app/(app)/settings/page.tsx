@@ -1,16 +1,17 @@
 import { Cloud } from "lucide-react"
+import Link from "next/link"
 import { PageTitle } from "@/components/app-header"
 import { getConnections, getSettings } from "@/lib/data"
 import { ebayConfig } from "@/lib/marketplaces/ebay/client"
 import { createAdminClient } from "@/lib/supabase/admin"
-import { requireUser } from "@/lib/supabase/server"
-import { MANAGE_BILLING_URL } from "@/lib/whop/config"
+import { canCrosslist, requireUser } from "@/lib/supabase/server"
+import { CrosslistUpsell } from "@/components/crosslist/crosslist-upsell"
 import { MarketplacesSettings } from "./marketplaces"
 import { SettingsForm } from "./settings-form"
 
 export default async function SettingsPage({ searchParams }: PageProps<"/settings">) {
-  const [{ email, userId }, settings, connections, params] = await Promise.all([
-    requireUser(), getSettings(), getConnections(), searchParams,
+  const [{ email, userId }, settings, connections, params, crosslist] = await Promise.all([
+    requireUser(), getSettings(), getConnections(), searchParams, canCrosslist(),
   ])
   // whop_links is service-role only; scoped to this user.
   const { data: whop } = await createAdminClient()
@@ -29,25 +30,24 @@ export default async function SettingsPage({ searchParams }: PageProps<"/setting
         </span>
         <span className="ml-auto size-2 shrink-0 rounded-full bg-profit" />
       </p>
-      {whop && (
-        <a
-          href={MANAGE_BILLING_URL}
-          target="_blank"
-          rel="noreferrer"
-          className="rounded-3xl border bg-card p-5 text-sm"
-        >
-          <span className="font-semibold">Membership</span>
-          <span className="mt-1 block text-muted-foreground">Update your payment method or cancel on Whop →</span>
-        </a>
-      )}
+      <Link href="/crosslister" className="rounded-3xl border bg-card p-5 text-sm">
+        <span className="font-semibold">Cross-Lister</span>
+        <span className="mt-1 block text-muted-foreground">
+          {crosslist ? "Active. Manage it or your billing →" : "List everywhere from FlipLedger. See what's included →"}
+        </span>
+      </Link>
       <SettingsForm settings={settings} />
-      <MarketplacesSettings
-        ebay={connections.find((c) => c.marketplace === "ebay") ?? null}
-        configured={cfg.configured}
-        sandbox={cfg.sandbox}
-        policiesUrl={cfg.businessPoliciesUrl}
-        connectStatus={typeof params.ebay === "string" ? params.ebay : undefined}
-      />
+      {crosslist ? (
+        <MarketplacesSettings
+          ebay={connections.find((c) => c.marketplace === "ebay") ?? null}
+          configured={cfg.configured}
+          sandbox={cfg.sandbox}
+          policiesUrl={cfg.businessPoliciesUrl}
+          connectStatus={typeof params.ebay === "string" ? params.ebay : undefined}
+        />
+      ) : (
+        <CrosslistUpsell />
+      )}
       <div className="rounded-3xl border bg-card p-5 text-sm text-muted-foreground">
         <p className="font-semibold text-foreground">Install on Your Phone</p>
         <p className="mt-1">

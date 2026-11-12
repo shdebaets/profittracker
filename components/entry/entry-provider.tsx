@@ -6,6 +6,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { loadItem } from "@/app/(app)/actions/items"
 import { BottomSheet } from "@/components/bottom-sheet"
 import { CrosslistPanel } from "@/components/crosslist/crosslist-panel"
+import { CrosslistUpsell } from "@/components/crosslist/crosslist-upsell"
 import type { Item } from "@/lib/types"
 import { cn } from "@/lib/utils"
 import { EntryForm, type EntryMode, type Prefill } from "./entry-form"
@@ -54,7 +55,14 @@ export function useSyncItems(items: Item[]) {
   useEffect(() => syncItems(items), [items, syncItems])
 }
 
-export function EntryProvider({ defaultReturnDays, children }: { defaultReturnDays: number; children: React.ReactNode }) {
+export function EntryProvider({
+  defaultReturnDays, crosslist, children,
+}: {
+  defaultReturnDays: number
+  /** Has the Cross-Lister; without it the Cross-list sheet shows an upsell. */
+  crosslist: boolean
+  children: React.ReactNode
+}) {
   const [state, setState] = useState<SheetState>({ kind: "none" })
   // Keep the last content mounted while the sheet animates closed.
   const [shown, setShown] = useState<Exclude<SheetState, { kind: "none" }> | null>(null)
@@ -177,11 +185,13 @@ export function EntryProvider({ defaultReturnDays, children }: { defaultReturnDa
     body = <EntryForm key={formKey} variant="sell" item={s.item} defaultReturnDays={defaultReturnDays} onDone={close} />
   } else if (s?.kind === "crosslist") {
     header = { title: "Cross-list", description: s.item.title || `Item #${s.item.seq}`, icon: <Share2 className="size-5 text-brand" />, iconClass: "bg-brand-soft" }
-    body = (
+    body = crosslist ? (
       <CrosslistPanel
         key={formKey} item={s.item} active={state.kind === "crosslist"}
         onBack={() => show({ kind: "item", item: s.item })}
       />
+    ) : (
+      <CrosslistUpsell />
     )
   } else if (s?.kind === "edit") {
     header = { title: "Edit Entry", description: `#${s.item.seq}`, icon: <Pencil className="size-5 text-muted-foreground" />, iconClass: "bg-muted" }

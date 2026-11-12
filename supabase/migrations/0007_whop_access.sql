@@ -1,6 +1,6 @@
--- Whop sign-in and paid access. One row per FlipLedger user who signed in with Whop.
+-- Whop sign-in and Cross-Lister access. One row per FlipLedger user who signed in with Whop.
 -- RLS on with no policies: only the service role reads or writes it, so nobody can
--- grant themselves access by setting has_access.
+-- grant themselves the Cross-Lister by setting has_access.
 create table public.whop_links (
   user_id uuid primary key references auth.users on delete cascade,
   whop_user_id text not null unique,

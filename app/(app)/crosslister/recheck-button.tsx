@@ -11,9 +11,9 @@ export function RecheckButton() {
       <Button type="submit" variant="outline" className="h-12 rounded-2xl" disabled={pending}>
         {pending ? "Checking…" : "I already bought it"}
       </Button>
-      {state.checked && !pending && (
+      {state.checked && !state.unlocked && !pending && (
         <p className="text-center text-sm text-muted-foreground">
-          Whop doesn&apos;t show a FlipLedger membership on this account yet. If you just paid, wait a minute and try again.
+          Whop doesn&apos;t show the Cross-Lister on this account yet. If you just paid, wait a minute and try again.
         </p>
       )}
     </form>

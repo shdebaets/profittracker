@@ -6,7 +6,7 @@ import { UserError } from "@/lib/errors"
 import { planImport, type ImportCandidate, type ImportPlan } from "@/lib/import/plan"
 import { fetchPoshmarkCloset, POSHMARK_PHOTO_HOST, PoshmarkClosetError, poshmarkUsername } from "@/lib/import/poshmark"
 import { PHOTO_BUCKET } from "@/lib/photos"
-import { requireUser } from "@/lib/supabase/server"
+import { requireCrosslister, requireUser } from "@/lib/supabase/server"
 import { fail } from "./result"
 
 type Result<T> = { ok: true; data: T } | { ok: false; error: string }
@@ -68,7 +68,7 @@ export async function findPoshmarkListings(closet: string): Promise<Result<Impor
   try {
     const username = poshmarkUsername(closet)
     if (!username) throw new UserError("Enter your Poshmark username, or paste your closet link.")
-    const { supabase } = await requireUser()
+    const { supabase } = await requireCrosslister()
     let candidates: ImportCandidate[]
     try {
       candidates = await fetchPoshmarkCloset(username)
@@ -94,7 +94,7 @@ export async function previewImport(input: ImportCandidate[]): Promise<Result<Im
   try {
     const candidates = candidatesSchema.parse(input)
     if (!candidates.length) throw new UserError("No live listings found.")
-    const { supabase } = await requireUser()
+    const { supabase } = await requireCrosslister()
     return { ok: true, data: preview(candidates, await plan(supabase, candidates)) }
   } catch (e) {
     return fail(e) as { ok: false; error: string }
@@ -126,7 +126,7 @@ async function copyPhoto(supabase: SupabaseClient, userId: string, url: string |
 export async function importListings(input: ImportCandidate[]): Promise<Result<{ created: number; linked: number; skipped: number }>> {
   try {
     const candidates = candidatesSchema.parse(input)
-    const { supabase, userId } = await requireUser()
+    const { supabase, userId } = await requireCrosslister()
     const p = await plan(supabase, candidates)
     const now = new Date().toISOString()
 

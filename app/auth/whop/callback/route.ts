@@ -1,7 +1,7 @@
 import { cookies } from "next/headers"
 import { NextResponse, type NextRequest } from "next/server"
 import { reportError } from "@/lib/errors"
-import { hasPaidAccess } from "@/lib/whop/access"
+import { hasCrosslistAccess } from "@/lib/whop/access"
 import { whopConfig } from "@/lib/whop/config"
 import { CALLBACK_PATH, WHOP_COOKIE, decodePkce, exchangeCode, getUserInfo } from "@/lib/whop/oauth"
 import { WhopSignInError, signInWithWhopUser } from "@/lib/whop/signin"
@@ -26,8 +26,9 @@ export async function GET(request: NextRequest) {
     const token = await exchangeCode(clientId, redirectUri, code, pkce.verifier)
     const info = await getUserInfo(token)
     const { userId, email } = await signInWithWhopUser(info)
-    // First sign-in: no cached answer yet, so ask Whop now.
-    return go((await hasPaidAccess(userId, email, true)) ? "/" : "/subscribe")
+    // Refresh the Cross-Lister answer now so a fresh purchase shows up right away.
+    await hasCrosslistAccess(userId, email, true)
+    return go("/")
   } catch (e) {
     reportError(e, "whop sign-in")
     return go(`/login?error=${e instanceof WhopSignInError ? e.code : "whop"}`)
