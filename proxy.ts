@@ -1,11 +1,15 @@
 import { createServerClient } from "@supabase/ssr"
 import { NextResponse, type NextRequest } from "next/server"
 import { SUPABASE_KEY, SUPABASE_URL } from "@/lib/supabase/env"
+import { canonicalRedirect } from "@/lib/canonical-host"
 
 // Machine endpoints authenticate themselves (CRON_SECRET / eBay signature / signed photo links).
 const PUBLIC_PATHS = ["/login", "/privacy", "/extension", "/auth", "/api/cron", "/api/marketplaces/ebay/account-deletion", "/api/p"]
 
 export async function proxy(request: NextRequest) {
+  const canonical = canonicalRedirect(request.nextUrl, request.headers.get("host"), process.env.CANONICAL_HOST, process.env.VERCEL_ENV)
+  if (canonical) return NextResponse.redirect(canonical, 308)
+
   let response = NextResponse.next({ request })
 
   const supabase = createServerClient(SUPABASE_URL, SUPABASE_KEY, {

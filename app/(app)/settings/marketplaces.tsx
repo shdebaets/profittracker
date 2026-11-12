@@ -7,10 +7,12 @@ import { toast } from "sonner"
 import { createEbayPolicies, disconnectEbay, refreshEbayPolicies, saveEbaySettings, syncSales } from "@/app/(app)/actions/crosslist"
 import { checkExtensionSales } from "@/components/crosslist/auto-sync"
 import { ImportListings } from "@/components/crosslist/import-listings"
-import { FieldLabel, MoneyInput, NativeSelect, Segmented, TextInput } from "@/components/fields"
+import { FieldLabel, MoneyInput, NativeSelect, Segmented, TextInput, Toggle } from "@/components/fields"
 import { relativeTime } from "@/lib/dates"
 import { autoDelistEnabled, autoPublishEnabled, setAutoDelist, setAutoPublish, useExtension } from "@/lib/extension"
-import { missingPolicies, setupGaps } from "@/lib/marketplaces/ebay/mapping"
+import {
+  AD_RATE_DEFAULT, AD_RATE_MAX, AD_RATE_MIN, canPromote, missingPolicies, normalizeAdRate, setupGaps,
+} from "@/lib/marketplaces/ebay/mapping"
 import { toCents } from "@/lib/money"
 import { EXTENSION_STORE_URL, MARKETPLACES } from "@/lib/marketplaces/registry"
 import type { EbayPolicy, MarketplaceConnection } from "@/lib/types"
@@ -289,6 +291,74 @@ function EbaySetup({ ebay, policiesUrl }: { ebay: MarketplaceConnection; policie
           Disconnect eBay
         </button>
       </div>
+      <PromoteDefault ebay={ebay} />
+    </div>
+  )
+}
+
+/** Default Promoted Listings setting for new eBay listings, or a reconnect prompt for old connections. */
+function PromoteDefault({ ebay }: { ebay: MarketplaceConnection }) {
+  const saved = ebay.settings?.promote ?? { enabled: false, rate: AD_RATE_DEFAULT }
+  const [on, setOn] = useState(saved.enabled)
+  const [rate, setRate] = useState(String(saved.rate))
+  const [pending, start] = useTransition()
+  const allowed = canPromote(ebay.scopes)
+
+  const save = (enabled: boolean, rateText: string) =>
+    start(async () => {
+      const r = normalizeAdRate(Number(rateText.replace(",", ".")))
+      if (r == null) return void toast.error(`Enter an ad rate from ${AD_RATE_MIN}% to ${AD_RATE_MAX}%`)
+      const res = await saveEbaySettings({ promote: { enabled, rate: r } })
+      if (res.ok) toast.success(enabled ? `New eBay listings will be promoted at ${r}%` : "New eBay listings won't be promoted")
+      else toast.error(res.error ?? GENERIC_ERROR)
+    })
+
+  return (
+    <div className="flex flex-col gap-3 rounded-2xl border p-3">
+      <div className="flex items-center gap-3">
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-semibold">Promote new eBay listings</p>
+          <p className="text-xs text-muted-foreground">
+            Adds each new listing to Promoted Listings (pay per sale) at your ad rate. You can switch it off for any listing, and profit counts the ad fee.
+          </p>
+        </div>
+        {allowed && (
+          <Toggle
+            checked={on} label="Promote new eBay listings"
+            onChange={(v) => {
+              setOn(v)
+              save(v, rate)
+            }}
+          />
+        )}
+      </div>
+      {!allowed ? (
+        <>
+          <p className="text-xs">Reconnect eBay once so FlipLedger can manage your ads. Your settings stay as they are.</p>
+          <a href="/api/marketplaces/ebay/connect" className="flex h-11 items-center justify-center gap-1.5 rounded-xl bg-blue-600 font-bold text-white">
+            <Link2 className="size-4" /> Reconnect eBay
+          </a>
+        </>
+      ) : (
+        on && (
+          <div className="flex items-center gap-2">
+            <label htmlFor="default-ad-rate" className="text-sm font-semibold">Ad rate</label>
+            <div className="relative w-24">
+              <TextInput
+                id="default-ad-rate" inputMode="decimal" value={rate} onChange={(e) => setRate(e.target.value)}
+                className="h-10 pr-7 text-right"
+              />
+              <span className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-sm text-muted-foreground">%</span>
+            </div>
+            <button
+              type="button" disabled={pending} onClick={() => save(true, rate)}
+              className="flex h-10 flex-1 items-center justify-center gap-2 rounded-xl border text-sm font-semibold disabled:opacity-60"
+            >
+              {pending && <Loader2 className="size-4 animate-spin" />} Save rate
+            </button>
+          </div>
+        )
+      )}
     </div>
   )
 }

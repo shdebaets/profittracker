@@ -3,7 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js"
 import { recordSale } from "@/lib/crosslist/engine"
 import { adapters, supabaseStore } from "@/lib/crosslist/store"
 import { fetchOrders } from "./adapter"
-import { ordersToSales } from "./mapping"
+import { adFeeCents, ordersToSales } from "./mapping"
 import { getUserToken } from "./oauth"
 
 const OVERLAP_MS = 15 * 60_000
@@ -37,6 +37,14 @@ export async function syncEbaySales(admin: SupabaseClient, userId: string) {
 
     if (item.status !== "inventory") continue // user already marked it sold by hand
     try {
+      // eBay's order fee doesn't include Promoted Listings, so add our estimate for promoted listings.
+      const { data: listing } = await admin
+        .from("marketplace_listings")
+        .select("ad_rate")
+        .eq("item_id", item.id)
+        .eq("marketplace", "ebay")
+        .maybeSingle()
+      const adFee = adFeeCents(listing?.ad_rate == null ? null : Number(listing.ad_rate), line)
       await recordSale(supabaseStore(admin), adapters, {
         itemId: item.id,
         qty: line.quantity,
@@ -46,7 +54,7 @@ export async function syncEbaySales(admin: SupabaseClient, userId: string) {
           buyer_shipping_cents: line.buyerShippingCents,
           label_cost_cents: 0,
           fee_pct: 0,
-          fee_fixed_cents: line.feeCents,
+          fee_fixed_cents: line.feeCents + adFee,
           platform: "ebay",
           sold_at: new Date(line.soldAt).toISOString(),
         },

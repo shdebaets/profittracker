@@ -149,6 +149,37 @@ export type EbayOrder = {
   }[]
 }
 
+// ---- Promoted Listings (cost per sale) ----
+
+export const EBAY_MARKETING_SCOPE = "https://api.ebay.com/oauth/api_scope/sell.marketing"
+
+/** Sellers who connected before promoting existed must reconnect to grant sell.marketing. */
+export const canPromote = (scopes: string[] | null | undefined) => !!scopes?.includes(EBAY_MARKETING_SCOPE)
+
+export const AD_RATE_MIN = 2
+export const AD_RATE_MAX = 100
+export const AD_RATE_DEFAULT = 2
+
+/** eBay takes 2.0–100.0 with at most one decimal place. Returns null when out of range. */
+export function normalizeAdRate(rate: number): number | null {
+  if (!Number.isFinite(rate)) return null
+  const r = Math.round(rate * 10) / 10
+  return r >= AD_RATE_MIN && r <= AD_RATE_MAX ? r : null
+}
+
+/** The bidPercentage string eBay expects, e.g. 2 → "2.0". */
+export const formatAdRate = (rate: number) => rate.toFixed(1)
+
+/**
+ * Estimated Promoted Listings fee for a sale: the ad rate times what the buyer paid
+ * (item and shipping). eBay only charges it when the sale came through the ad, and
+ * also counts sales tax, so this is an estimate.
+ */
+export function adFeeCents(rate: number | null | undefined, line: Pick<EbaySaleLine, "salePriceCents" | "quantity" | "buyerShippingCents">) {
+  if (!rate) return 0
+  return Math.round((rate / 100) * (line.salePriceCents * line.quantity + line.buyerShippingCents))
+}
+
 export type EbaySaleLine = {
   orderId: string
   lineItemId: string
