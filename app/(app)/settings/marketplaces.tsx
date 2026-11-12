@@ -8,6 +8,7 @@ import { createEbayPolicies, disconnectEbay, refreshEbayPolicies, saveEbaySettin
 import { checkExtensionSales } from "@/components/crosslist/auto-sync"
 import { ImportListings } from "@/components/crosslist/import-listings"
 import { ImportSales } from "@/components/crosslist/import-sales"
+import { PoshAssistant } from "@/components/crosslist/posh-assistant"
 import { FieldLabel, MoneyInput, NativeSelect, Segmented, TextInput, Toggle } from "@/components/fields"
 import { relativeTime } from "@/lib/dates"
 import { autoDelistEnabled, autoPublishEnabled, setAutoDelist, setAutoPublish, useExtension } from "@/lib/extension"
@@ -124,6 +125,7 @@ export function MarketplacesSettings({
 
       <ImportListings />
       <ImportSales />
+      <PoshAssistant />
 
       <div>
         <p className="mb-2 text-sm font-semibold">Copy kit</p>

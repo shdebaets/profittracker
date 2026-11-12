@@ -144,8 +144,104 @@
     },
   }
 
+  // Poshmark Assistant limits. The caps are hard ceilings: the seller can set lower ones, never higher.
+  const POSH = {
+    MAX_SHARES: 300,
+    MAX_OFFERS: 50,
+    /** Poshmark wants an Offer to Likers at least 10% under the listing price. */
+    MIN_DISCOUNT: 10,
+    MIN_DELAY_MS: 3000,
+    MAX_DELAY_MS: 8000,
+
+    /** A random wait between two actions, 3 to 8 seconds. `rand` is Math.random (swappable for tests). */
+    delayMs(rand = Math.random) {
+      return Math.round(POSH.MIN_DELAY_MS + rand() * (POSH.MAX_DELAY_MS - POSH.MIN_DELAY_MS))
+    },
+
+    /** The seller's local calendar day, "2026-11-12": caps reset at the seller's midnight. */
+    dayKey(date = new Date()) {
+      const pad = (n) => String(n).padStart(2, "0")
+      return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
+    },
+
+    /** Today's counts from what's stored. Anything from another day (or garbage) starts at zero. */
+    counts(stored, day) {
+      if (!stored || stored.day !== day) return { day, shares: 0, offers: 0, offered: [] }
+      return {
+        day,
+        shares: Math.max(0, Number(stored.shares) || 0),
+        offers: Math.max(0, Number(stored.offers) || 0),
+        offered: Array.isArray(stored.offered) ? stored.offered.filter((id) => typeof id === "string") : [],
+      }
+    },
+
+    /** The daily cap in force: the seller's own, but never above the hard ceiling (and at least 0). */
+    cap(kind, wanted) {
+      const max = kind === "offers" ? POSH.MAX_OFFERS : POSH.MAX_SHARES
+      const n = Math.floor(Number(wanted))
+      return Number.isFinite(n) && n >= 0 ? Math.min(n, max) : max
+    },
+
+    /** How many more `kind` ("shares" or "offers") are allowed today. */
+    remaining(counts, kind, wanted) {
+      return Math.max(0, POSH.cap(kind, wanted) - (counts[kind] ?? 0))
+    },
+
+    /** Counts after one more `kind`; an offer also remembers its listing so a rerun skips it today. */
+    bump(counts, kind, listingId) {
+      const next = { ...counts, [kind]: (counts[kind] ?? 0) + 1 }
+      if (kind === "offers" && listingId) next.offered = [...counts.offered, listingId]
+      return next
+    },
+
+    /**
+     * The Offer to Likers price in cents, in whole dollars (Poshmark's prices are), or null to skip:
+     * `percent` off the listing price, rounded down, raised to the floor if it lands under it, and
+     * skipped when that leaves less than Poshmark's minimum discount (or the inputs make no sense).
+     */
+    offerCents(priceCents, percent, floorCents) {
+      const price = Number(priceCents)
+      const pct = Number(percent)
+      const floor = Math.max(0, Number(floorCents) || 0)
+      if (!Number.isFinite(price) || price <= 0 || !Number.isFinite(pct) || pct <= 0 || pct >= 100) return null
+      const target = Math.floor((price * (100 - pct)) / 100 / 100) * 100
+      const offer = Math.max(target, Math.ceil(floor / 100) * 100)
+      const ceiling = Math.floor((price * (100 - POSH.MIN_DISCOUNT)) / 100 / 100) * 100
+      return offer > 0 && offer <= ceiling ? offer : null
+    },
+
+    /**
+     * Why the assistant must stop on this page, or null if it may carry on. `text` is what the page
+     * is saying (dialogs, alerts, toasts, or the whole page when it's short), `captcha` whether a
+     * captcha widget is on it, and `expect` what the page should be: "closet" (the seller's own
+     * closet) or "listing". Anything else stops it.
+     */
+    stopReason({ pathname, text, captcha, username, expect }) {
+      const t = String(text ?? "").toLowerCase()
+      const path = String(pathname ?? "")
+      if (captcha || /captcha|are you a robot|verify (that )?you(?:'re| are) (a )?human|security check/.test(t)) return "Poshmark showed a captcha"
+      if (/slow down|too many|try again later|temporarily (blocked|restricted|unavailable)|rate limit|unusual activity/.test(t)) {
+        return "Poshmark asked to slow down"
+      }
+      if (/^\/(login|signup|sign-?in)/i.test(path) || /\blog ?in to (continue|poshmark)\b/.test(t)) return "You're not logged in to Poshmark in this Chrome"
+      if (expect === "closet") {
+        const own = `/closet/${String(username ?? "").toLowerCase()}`
+        if (!username || path.toLowerCase().replace(/\/$/, "") !== own) return "It ended up on a page that isn't your closet"
+      } else if (expect === "listing") {
+        if (!/^\/listing\/[^/?#]*-[0-9a-f]{24}/.test(path)) return "It ended up on a page that isn't one of your listings"
+      }
+      return null
+    },
+
+    /** A Poshmark username as typed ("@name", a closet link, spaces) → "name", or "" if it isn't one. */
+    username(input) {
+      const s = String(input ?? "").trim().replace(/^https?:\/\/(www\.)?poshmark\.com\/closet\//i, "").replace(/^@/, "").replace(/[/?#].*$/, "")
+      return /^[A-Za-z0-9_.-]{1,40}$/.test(s) ? s : ""
+    },
+  }
+
   const FL = {
-    VERSION: "0.7.0",
+    VERSION: "0.8.0",
     /** Marketplaces this extension can drive. */
     MARKETPLACES: ["facebook", "poshmark", "mercari"],
     APP_SOURCE: "flipledger-app",
@@ -405,6 +501,9 @@
         photoUrl: typeof image === "string" ? image : (image?.url ?? image?.contentUrl ?? null),
       }
     },
+
+    // ---------- Poshmark Assistant (posh-assistant.js): the pure parts, unit-tested ----------
+    posh: POSH,
   }
   globalThis.FL = FL
 })()

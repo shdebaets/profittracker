@@ -5,6 +5,9 @@
 // Mercari listings (IMPORT: a background tab collects the links, then each page is read).
 // IMPORT_SALES does the same on the seller's Mercari sold lists, to record sales of
 // items FlipLedger didn't know about. It only reads pages; it never clicks anything.
+// SHARE_CLOSET / SHARE_PARTY / OFFER_LIKERS (the opt-in Poshmark Assistant) open the seller's
+// closet in a tab that posh-assistant.js works in; `then` chains the next of them in the same tab.
+// They only run while that tab is open: nothing here schedules them.
 importScripts("shared.js")
 
 const SITES = {
@@ -18,6 +21,9 @@ const SITES = {
   },
 }
 const SALE_CHECK_HOSTS = { poshmark: "poshmark.com", mercari: "www.mercari.com" }
+const POSH_KINDS = { SHARE_CLOSET: "share_closet", SHARE_PARTY: "share_party", OFFER_LIKERS: "offer_likers" }
+const isPosh = (job) => Object.values(POSH_KINDS).includes(job?.kind)
+const closetUrl = (username) => `https://poshmark.com/closet/${username}?availability=available`
 
 const key = (tabId) => `job:${tabId}`
 
@@ -48,7 +54,36 @@ function tellApp(job, payload) {
   })
 }
 
+/** A Poshmark Assistant job: the seller's settings plus the counts the tab reports back. */
+function poshJob(type, msg, appTabId) {
+  return {
+    kind: POSH_KINDS[type],
+    jobId: msg.jobId,
+    marketplace: "poshmark",
+    appTabId,
+    username: FL.posh.username(msg.username),
+    options: { percent: Number(msg.options?.percent) || 0, floorCents: Number(msg.options?.floorCents) || 0 },
+    caps: { shares: FL.posh.cap("shares", msg.caps?.shares), offers: FL.posh.cap("offers", msg.caps?.offers) },
+    then: (Array.isArray(msg.then) ? msg.then : []).filter((t) => POSH_KINDS[t] && t !== type).slice(0, 2),
+    shared: 0,
+    offered: 0,
+    skipped: 0,
+  }
+}
+
+async function startPosh(msg, sender) {
+  if (msg.marketplace !== "poshmark") throw new Error("The assistant only works on Poshmark")
+  const job = poshJob(msg.type, msg, sender.tab?.id ?? null)
+  if (!job.username) throw new Error("Add your Poshmark username in Settings first")
+  const running = Object.values(await chrome.storage.session.get(null)).some(isPosh)
+  if (running) throw new Error("The Poshmark Assistant is already running in another tab")
+  // In front: Chrome slows timers in background tabs to about once a minute after a while.
+  const tab = await chrome.tabs.create({ url: closetUrl(job.username), active: true })
+  await saveJob(tab.id, job)
+}
+
 async function startJob(msg, sender) {
+  if (POSH_KINDS[msg.type]) return startPosh(msg, sender)
   const site = SITES[msg.marketplace]
   if (!site) throw new Error(`${msg.marketplace} isn't supported by this extension yet`)
   const kind = { LIST: "list", DELIST: "delist", IMPORT: "import", IMPORT_SALES: "sales" }[msg.type]
@@ -205,6 +240,22 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       tellApp(job, { type: "SOLD_ITEMS", sales: urls.length ? await readMercariSales(urls) : [] })
       return { ok: true }
     }
+    if (msg?.type === "PROGRESS" && isPosh(job)) {
+      tellApp(job, { type: "POSH_PROGRESS", kind: job.kind, text: msg.text, summary: msg.summary })
+      return { ok: true }
+    }
+    if (msg?.type === "DONE" && isPosh(job)) {
+      const [next, ...rest] = job.then
+      tellApp(job, { type: "POSH_DONE", kind: job.kind, summary: msg.summary, last: !next })
+      if (!next) {
+        await dropJob(tabId)
+        return { ok: true }
+      }
+      // The next job in the same tab, starting again from the closet.
+      await saveJob(tabId, { ...poshJob(next, job, job.appTabId), then: rest })
+      await chrome.tabs.update(tabId, { url: closetUrl(job.username) })
+      return { ok: true }
+    }
     if (msg?.type === "DONE" && job.kind === "import") {
       await dropJob(tabId)
       chrome.tabs.remove(tabId).catch(() => {})
@@ -221,7 +272,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       return { ok: true }
     }
     if (msg?.type === "CANCEL") {
-      tellApp(job, { type: "ERROR", error: msg.reason || "Cancelled" })
+      tellApp(job, { type: "ERROR", error: msg.reason || "Cancelled", ...(isPosh(job) && { kind: job.kind, summary: msg.summary }) })
       await dropJob(tabId)
       if (job.auto || job.kind === "import" || job.kind === "sales") chrome.tabs.remove(tabId).catch(() => {})
       return { ok: true }
@@ -231,6 +282,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   return true // async response
 })
 
-chrome.tabs.onRemoved.addListener((tabId) => {
+chrome.tabs.onRemoved.addListener(async (tabId) => {
+  const job = await loadJob(tabId)
+  if (isPosh(job)) tellApp(job, { type: "ERROR", error: "The Poshmark tab was closed, so the Poshmark Assistant stopped.", kind: job.kind })
   dropJob(tabId)
 })

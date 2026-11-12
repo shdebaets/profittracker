@@ -2,7 +2,7 @@
 
 Facebook Marketplace, Poshmark and Mercari have no API for posting listings on someone's behalf. This extension does it in the seller's own logged-in browser, the same way Vendoo, List Perfectly and Crosslist do. Desktop Chrome only.
 
-Poshmark's and Mercari's terms ban automation. Sellers using these tools accept that risk; accounts there have been flagged for share/follow bots and high-volume automation, not for filling in a form the seller then submits. This extension never shares, follows or relists. It only submits or removes a listing by itself when the seller turns on auto-publish or auto-delist (both below, both off by default).
+Poshmark's and Mercari's terms ban automation. Sellers using these tools accept that risk; accounts there have been flagged for share/follow bots and high-volume automation, not for filling in a form the seller then submits. It only submits or removes a listing by itself when the seller turns on auto-publish or auto-delist (both below, both off by default). The one exception to "no bots" is the opt-in Poshmark Assistant (below), which the client asked for knowingly; it never follows, follows back or relists.
 
 ## What it does
 
@@ -19,6 +19,12 @@ Poshmark's and Mercari's terms ban automation. Sellers using these tools accept 
 - **Spot sales (Mercari, plus Poshmark as a backup):** while FlipLedger is open (on load, when the tab comes back into focus, at most every 5 minutes), the extension fetches each live listing's public page and reads that listing's own status. A sold listing becomes a sale in FlipLedger, which puts every other listing of that item on the delist list (and ends eBay automatically). Normally no cookies are sent, because sold status is public; if Mercari's Cloudflare check answers, it retries once with the seller's own clearance. FlipLedger's server checks Poshmark itself, so Poshmark doesn't depend on this. Servers can't read Mercari, so Mercari does.
 - **Delist:** the "Delist these" banner (or the marketplace row) has a ✨ button. It opens the listing and highlights the next button to click (Facebook: **Mark as sold**; Poshmark: **Edit Listing** → **Delete Listing**; Mercari: **Edit** → **Delete** / **Deactivate**). It marks the listing ended in FlipLedger once the page shows it's gone. For Poshmark and Mercari, the next sale check also confirms a takedown on its own.
 - **Delist automatically (off by default):** a seller can turn this on per computer in Settings. Listings waiting to come down then open in background tabs and get removed: Facebook **Mark as sold**, Poshmark **Delete Listing**, Mercari **Deactivate**. It only clicks on a page carrying that listing's ID, and only when the listing has a saved link. Anything unexpected closes the tab and leaves the listing on the delist list.
+- **Poshmark Assistant (each part off by default):** Settings → Poshmark Assistant → **Run now** opens the seller's closet (`/closet/<username>?availability=available`) in a new tab, in front, and `posh-assistant.js` runs the jobs turned on, one after another:
+  - **Share my closet:** every available listing, bottom to top so the closet keeps its order: the tile's share button, then **To My Followers** in the menu.
+  - **Share to the current party:** the same, but clicks the party option, which Poshmark only shows for listings that match the live party. No party option for the first 10 listings means no party is on, so it stops there.
+  - **Offer to likers:** reads the closet's listings, then opens each one and uses **Offer to Likers** at the seller's percentage off, never under their floor (`FL.posh.offerCents`; whole dollars, skipped when that's under Poshmark's 10% minimum). Listings without the button (no likes) are skipped. One offer per listing per day.
+
+  Safety: a random 3–8 s wait between actions, daily caps of 300 shares and 50 offers (lower if the seller sets lower) counted in `chrome.storage.local`, and an immediate stop, with the tab left open and the reason sent to FlipLedger, on a captcha, a "slow down"/"too many" message, a login page, a closet without Edit Profile (not the seller's) or a listing without Edit Listing, or any page it didn't expect. It only runs while that tab is open (closing it stops it), and the panel has a **Stop** button. Selectors are best guesses until tried on a real account.
 - It never sees your marketplace passwords.
 
 ## Install
@@ -42,6 +48,7 @@ To try local changes, load it unpacked (remove the store version first, or both 
 | `background.js` | service worker | Opens marketplace tabs, holds each job, sends results back, runs sale checks |
 | `dom.js` | marketplace sites | Finds fields by label/placeholder, fills them, draws the FlipLedger panel |
 | `runner.js` | marketplace sites | The list / record / delist flow, driven by the site's config |
+| `posh-assistant.js` | poshmark.com | The opt-in Poshmark Assistant (share closet, share to party, Offer to Likers); its pure rules are `FL.posh` in `shared.js`, tested in `posh-assistant.test.ts` |
 | `site-facebook.js`, `site-poshmark.js`, `site-mercari.js` | that site | What's specific to each site: field names, URLs, delist buttons |
 
 To add a site: write a `site-*.js` config, add a `content_scripts` entry and host permission in `manifest.json`, add it to `SITES` in `background.js` and `MARKETPLACES` in `shared.js`, and set `extension: true` on it in the app's `lib/marketplaces/registry.ts`.
