@@ -43,3 +43,6 @@ next-env.d.ts
 
 # Chrome Web Store zips (npm run pack:extension)
 /dist
+
+# onnxruntime-web wasm, copied in by scripts/copy-ort-wasm.mjs
+/public/models/ort

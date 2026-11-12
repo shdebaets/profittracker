@@ -1,6 +1,7 @@
 import { UserError } from "./errors"
 
 export const MAX_PHOTO_EDGE = 1600
+export const PHOTO_QUALITY = 0.82
 
 /** Scale (w, h) down so the long edge is at most `max`; never upscales. */
 export function fitWithin(w: number, h: number, max = MAX_PHOTO_EDGE): { width: number; height: number } {
@@ -12,7 +13,7 @@ export function fitWithin(w: number, h: number, max = MAX_PHOTO_EDGE): { width: 
  * Resize a picked photo to a ~300 KB JPEG in the browser. createImageBitmap
  * decodes iPhone HEIC (Safari) and honours EXIF orientation.
  */
-export async function compressImage(file: File, quality = 0.82): Promise<Blob> {
+export async function compressImage(file: File, quality = PHOTO_QUALITY): Promise<Blob> {
   const bitmap = await createImageBitmap(file, { imageOrientation: "from-image" }).catch(() => {
     throw new UserError(`"${file.name}" couldn't be read. Try a JPG or PNG, or take the photo again.`)
   })
@@ -24,6 +25,11 @@ export async function compressImage(file: File, quality = 0.82): Promise<Blob> {
   if (!ctx) throw new UserError("Your browser couldn't process this photo. Try a different one.")
   ctx.drawImage(bitmap, 0, 0, width, height)
   bitmap.close()
+  return canvasToJpeg(canvas, quality)
+}
+
+/** Encode a canvas as the JPEG every stored photo uses. */
+export async function canvasToJpeg(canvas: HTMLCanvasElement, quality = PHOTO_QUALITY): Promise<Blob> {
   const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", quality))
   if (!blob) throw new UserError("Your browser couldn't process this photo. Try a different one.")
   return blob

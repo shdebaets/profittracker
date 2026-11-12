@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // onnxruntime-web runtime copied in by scripts/copy-ort-wasm.mjs
+    "public/models/ort/**",
   ]),
 ]);
 

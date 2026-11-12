@@ -1,6 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "buildCommand": "node scripts/migrate.mjs && next build",
+  "buildCommand": "node scripts/copy-ort-wasm.mjs && node scripts/migrate.mjs && next build",
   "crons": [
     {
       "path": "/api/cron/sync-sales",
