@@ -13,6 +13,12 @@ export function LoginForm() {
   const [mode, setMode] = useState<Mode>("signin")
   const [state, formAction, pending] = useActionState<LoginState, FormData>(authenticate, {})
   const [dismissedSent, setDismissedSent] = useState<string | null>(null)
+  // The server can send the form back to Sign in (e.g. the email already has an account).
+  const [seenState, setSeenState] = useState(state)
+  if (seenState !== state) {
+    setSeenState(state)
+    if (state.mode) setMode(state.mode)
+  }
 
   if (state.sentTo && dismissedSent !== state.sentTo) {
     return (
