@@ -7,9 +7,9 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-  --font-heading: var(--font-geist-sans);
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains-mono), ui-monospace, monospace;
+  --font-heading: var(--font-space-grotesk), var(--font-inter), sans-serif;
   --color-brand: var(--brand);
   --color-brand-soft: var(--brand-soft);
   --color-profit: var(--profit);
@@ -55,78 +55,86 @@
 }
 
 :root {
-  --background: oklch(0.975 0.002 90);
-  --foreground: oklch(0.2 0.01 60);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.2 0.01 60);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.2 0.01 60);
-  --primary: oklch(0.76 0.16 65);
-  --primary-foreground: oklch(0.2 0.02 60);
-  --secondary: oklch(0.95 0.004 90);
-  --secondary-foreground: oklch(0.25 0.01 60);
-  --muted: oklch(0.95 0.004 90);
-  --muted-foreground: oklch(0.54 0.01 70);
-  --accent: oklch(0.95 0.004 90);
-  --accent-foreground: oklch(0.25 0.01 60);
-  --destructive: oklch(0.577 0.215 27);
-  --border: oklch(0.925 0.004 90);
-  --input: oklch(0.91 0.004 90);
-  --ring: oklch(0.76 0.16 65);
-  --brand: oklch(0.76 0.16 65);
-  --brand-soft: oklch(0.97 0.04 85);
-  --profit: oklch(0.58 0.14 155);
-  --profit-soft: oklch(0.96 0.04 160);
-  --loss: oklch(0.577 0.215 27);
-  --ink: oklch(0.2 0.01 60);
-  --chart-1: oklch(0.76 0.16 65);
-  --chart-2: oklch(0.58 0.14 155);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
+  /* Colors from the FlipLedger design (app screens are light, like its phone mockups). */
+  --background: #f6f5f2;
+  --foreground: #16171b;
+  --card: #ffffff;
+  --card-foreground: #16171b;
+  --popover: #ffffff;
+  --popover-foreground: #16171b;
+  --primary: #f5982a;
+  --primary-foreground: #16171b;
+  --secondary: #efeeea;
+  --secondary-foreground: #16171b;
+  --muted: #efeeea;
+  --muted-foreground: #62656d;
+  --accent: #efeeea;
+  --accent-foreground: #16171b;
+  --destructive: #dc2626;
+  --border: #ecebe7;
+  --input: #e2e1dc;
+  --ring: #f5982a;
+  --brand: #f5982a;
+  --brand-soft: #fef3e2;
+  --profit: #0e8f55;
+  --profit-soft: #e7fbef;
+  --loss: #dc2626;
+  --ink: #16171b;
+  --chart-1: #f5982a;
+  --chart-2: #2da56a;
+  --chart-3: #2563eb;
+  --chart-4: #d97706;
+  --chart-5: #6b6e76;
   --radius: 1rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  --sidebar: #ffffff;
+  --sidebar-foreground: #16171b;
+  --sidebar-primary: #16171b;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #efeeea;
+  --sidebar-accent-foreground: #16171b;
+  --sidebar-border: #ecebe7;
+  --sidebar-ring: #f5982a;
 }
 
+/* The design's dark look (its landing page). Used on the sign-in screen. */
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  --background: #07080a;
+  --foreground: #e9eaee;
+  --card: #16171b;
+  --card-foreground: #e9eaee;
+  --popover: #16171b;
+  --popover-foreground: #e9eaee;
+  --primary: #f5982a;
+  --primary-foreground: #16171b;
+  --secondary: #1c1d22;
+  --secondary-foreground: #e9eaee;
+  --muted: #0a0b0d;
+  --muted-foreground: #a6a9b2;
+  --accent: #1c1d22;
+  --accent-foreground: #e9eaee;
+  --destructive: #f87171;
+  --border: #2a2c32;
+  --input: #2a2c32;
+  --ring: #f5982a;
+  --brand: #f5982a;
+  --brand-soft: rgb(245 152 42 / 15%);
+  --profit: #2bd67b;
+  --profit-soft: rgb(43 214 123 / 10%);
+  --loss: #f87171;
+  --ink: #16171b;
+  --chart-1: #f5982a;
+  --chart-2: #2bd67b;
+  --chart-3: #60a5fa;
+  --chart-4: #ffb65c;
+  --chart-5: #8a8d96;
+  --sidebar: #16171b;
+  --sidebar-foreground: #e9eaee;
+  --sidebar-primary: #f5982a;
+  --sidebar-primary-foreground: #16171b;
+  --sidebar-accent: #1c1d22;
+  --sidebar-accent-foreground: #e9eaee;
+  --sidebar-border: #2a2c32;
+  --sidebar-ring: #f5982a;
 }
 
 @layer base {
@@ -138,6 +146,10 @@
   }
   html {
     @apply font-sans;
+  }
+  h1, h2, h3 {
+    font-family: var(--font-heading);
+    letter-spacing: -0.02em;
   }
 }
 @layer base {
