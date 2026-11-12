@@ -17,6 +17,7 @@ Update CLAUDE.md in the same PR whenever you change something durable: architect
   - `route.ts` files may only export HTTP handlers and route config; put helpers in `lib/`.
 - **Supabase:** Postgres with row-level security (RLS) on every table, no ORM, `@supabase/ssr`. Plus Storage (private `item-photos` bucket) and Auth (email/password and magic link).
 - **UI:** Tailwind v4, shadcn plus `@base-ui/react`, lucide icons, sonner toasts. Mobile-first: test at 375px.
+- **Look:** from the client's Claude Design canvas. Fonts in `app/layout.tsx`: Inter (text), Space Grotesk (`h1`–`h3`, `font-heading`), JetBrains Mono (`font-mono`, for money). Colors are hex tokens in `app/globals.css`: the app is light (`:root`), the sign-in page uses the design's dark landing look (`.dark`). Brand orange `#f5982a`, profit green `#0e8f55`.
 - **zod 4** for every server-action input. **vitest** for unit tests.
 
 ## Commands

@@ -70,7 +70,7 @@ export function LoginForm() {
           />
         </div>
       )}
-      <Button type="submit" disabled={pending} className="h-12 rounded-xl text-base font-semibold">
+      <Button type="submit" disabled={pending} className="h-12 rounded-full text-base font-semibold">
         {pending ? "Working…" : mode === "signin" ? "Sign in" : mode === "signup" ? "Create account" : "Send sign-in link"}
       </Button>
     </form>
