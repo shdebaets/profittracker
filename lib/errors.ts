@@ -89,7 +89,7 @@ function fromSupabaseAuth(code: string, message: string): string | null {
       return "Confirm your email first. Check your inbox for the link we sent."
     case "user_already_exists":
     case "email_exists":
-      return "An account with this email already exists. Sign in instead."
+      return "You already have an account with this email. Sign in with it instead."
     case "weak_password":
       return "Choose a stronger password (at least 6 characters)."
     case "email_address_invalid":

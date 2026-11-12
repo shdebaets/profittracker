@@ -33,7 +33,7 @@ export function Dashboard({ items, expenses, subs }: { items: Item[]; expenses: 
       <PageTitle title="Performance Overview" subtitle="Resell revenue, profits & inventory">
         <button
           onClick={() => openEntry("sold")}
-          className="flex shrink-0 items-center gap-1.5 rounded-2xl bg-profit px-4 py-3 font-bold text-white shadow-md shadow-profit/25"
+          className="flex shrink-0 items-center gap-1.5 rounded-full bg-profit px-4 py-3 font-semibold text-white shadow-md shadow-profit/25"
         >
           <Plus className="size-5" /> New Entry
         </button>
