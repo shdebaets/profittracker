@@ -57,6 +57,7 @@ Local QA logins live in `.env.example` (`qa-a@flipledger.test`, `qa-b@flipledger
   - Uploaded by direct PUT to signed upload URLs.
   - Stored at `item-photos/{user_id}/{uuid}.jpg`.
   - `photo_paths` is copied on partial sales, so delete files only with `removeUnreferencedPhotos`.
+  - **Remove background** (wand on each photo tile, `lib/background.ts`): runs fully in the browser with `onnxruntime-web` (wasm, one thread) and **U²-Netp** (`public/models/u2netp.onnx`, 4.6 MB, Apache-2.0, salient-object model from rembg's ONNX export). We picked it over MODNet (also Apache-2.0) because MODNet only cuts out people. imgly (AGPL) and RMBG (non-commercial) are ruled out by their licences. The model loads on the first tap only. The cutout goes on white and is encoded like any other photo (`canvasToJpeg`, 1600px), then uploaded as a *new* path that swaps in at the same index. Undo swaps the original back. The entry form keeps replaced originals in its `unsaved` set until save, then discards whichever ones the item doesn't use; saved originals are removed by `updateItem`. The runtime's `.wasm`/`.mjs` are copied to `public/models/ort/<version>/` (gitignored) by `scripts/copy-ort-wasm.mjs`, which runs on `postinstall`, `npm run dev` and the Vercel build command. Turbopack can't serve them from the package.
 - **Errors:** `lib/errors.ts`.
   - Throw `UserError` for messages written for people.
   - Everything else is translated by `friendlyError()`: eBay, Supabase database/auth/storage, network, zod.

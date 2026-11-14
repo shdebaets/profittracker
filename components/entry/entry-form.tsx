@@ -88,6 +88,11 @@ export function EntryForm(props: Props) {
   const [returnDeadline, setReturnDeadline] = useState(init.returnDeadline)
   const [purchasedAt, setPurchasedAt] = useState(init.purchasedAt)
   const [photos, setPhotos] = useState<Photo[]>(init.photos)
+  // The current list, for background removal finishing after other edits.
+  const photosRef = useRef(photos)
+  useEffect(() => {
+    photosRef.current = photos
+  }, [photos])
   // Photos uploaded in this form but not saved yet; discarded if the sheet closes without saving.
   const unsaved = useRef(new Set<string>())
   // Photos still uploading. Saving warns first, since they won't be part of the item.
@@ -191,6 +196,9 @@ export function EntryForm(props: Props) {
         toast.error(res.error)
         return
       }
+      // Uploads the item doesn't use (e.g. the original behind a removed background).
+      const unused = [...unsaved.current].filter((path) => !photos.some((p) => p.path === path))
+      if (unused.length) void discardPhotos(unused)
       unsaved.current.clear()
       closed.current = true
       toast.success(
@@ -268,6 +276,21 @@ export function EntryForm(props: Props) {
                 }
                 added.forEach((p) => unsaved.current.add(p.path))
                 setPhotos((ps) => [...ps, ...added])
+              }}
+              onReplace={(from, to, fresh) => {
+                const at = photosRef.current.findIndex((p) => p.path === from.path)
+                if (closed.current || at < 0) {
+                  if (fresh) void discardPhotos([to.path])
+                  return false
+                }
+                if (fresh) unsaved.current.add(to.path)
+                // Undo: the cutout was never saved, so it can go. The original is kept until save
+                // or close (it may be undone back to); saved originals are cleaned up by updateItem.
+                if (!fresh && unsaved.current.delete(from.path)) void discardPhotos([from.path])
+                const next = photosRef.current.map((p, i) => (i === at ? to : p))
+                photosRef.current = next
+                setPhotos(next)
+                return true
               }}
               onUploadingChange={setUploading}
             />
