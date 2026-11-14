@@ -12,7 +12,7 @@ import { FieldLabel, MoneyInput, NativeSelect, TextInput } from "@/components/fi
 import { StatCard } from "@/components/stat-card"
 import { dollars, exportCsv } from "@/lib/csv"
 import { dateInputToIso, formatDate, formatDateAt, toDateInput } from "@/lib/dates"
-import { endTrip, gpsSupported, resumeTrip, startTrip, tripMiles, useGpsTrip } from "@/lib/gps-trip"
+import { coordLabel, endTrip, gpsSupported, resumeTrip, startTrip, tripMiles, useGpsTrip } from "@/lib/gps-trip"
 import { formatCents, toCents } from "@/lib/money"
 import { expenseTotals } from "@/lib/overhead"
 import { mileageDeduction } from "@/lib/profit"
@@ -282,6 +282,8 @@ function Mileage({ trips, rateCents }: { trips: Expense[]; rateCents: number }) 
   const [manual, setManual] = useState(false)
   const [miles, setMiles] = useState("")
   const [date, setDate] = useState(toDateInput(new Date()))
+  const [from, setFrom] = useState("")
+  const [to, setTo] = useState("")
   const { pending, run } = useRun()
   const { trip, error } = useGpsTrip()
   const elapsed = useElapsed(trip?.startedAt)
@@ -304,7 +306,15 @@ function Mileage({ trips, rateCents }: { trips: Expense[]; rateCents: number }) 
     const m = Math.round(tripMiles(ended) * 10) / 10
     if (m < 0.1) return void toast("Trip discarded: less than 0.1 mi recorded")
     run(
-      () => logMileage({ purpose, miles: m, rateCents, spentAt: new Date(ended.startedAt).toISOString() }),
+      () =>
+        logMileage({
+          purpose,
+          miles: m,
+          rateCents,
+          spentAt: new Date(ended.startedAt).toISOString(),
+          startLocation: coordLabel(ended.start),
+          endLocation: coordLabel(ended.end),
+        }),
       `Trip saved: ${m} mi = ${formatCents(mileageDeduction(m, rateCents))}`,
     )
   }
@@ -408,13 +418,35 @@ function Mileage({ trips, rateCents }: { trips: Expense[]; rateCents: number }) 
                     <TextInput id="trip-date" type="date" className="px-3 text-[15px]" value={date} onChange={(e) => setDate(e.target.value)} />
                   </div>
                 </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="min-w-0">
+                    <FieldLabel htmlFor="trip-from">From (optional)</FieldLabel>
+                    <TextInput id="trip-from" placeholder="Home" value={from} onChange={(e) => setFrom(e.target.value)} />
+                  </div>
+                  <div className="min-w-0">
+                    <FieldLabel htmlFor="trip-to">To (optional)</FieldLabel>
+                    <TextInput id="trip-to" placeholder="Goodwill, Main St" value={to} onChange={(e) => setTo(e.target.value)} />
+                  </div>
+                </div>
                 <button
                   disabled={pending || milesNum <= 0}
                   onClick={() =>
                     run(
-                      () => logMileage({ purpose, miles: milesNum, rateCents, spentAt: dateInputToIso(date) }),
+                      () =>
+                        logMileage({
+                          purpose,
+                          miles: milesNum,
+                          rateCents,
+                          spentAt: dateInputToIso(date),
+                          startLocation: from,
+                          endLocation: to,
+                        }),
                       "Trip logged",
-                      () => setMiles(""),
+                      () => {
+                        setMiles("")
+                        setFrom("")
+                        setTo("")
+                      },
                     )
                   }
                   className="flex h-12 items-center justify-center gap-2 rounded-2xl bg-ink font-bold text-white disabled:opacity-40"

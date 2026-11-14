@@ -132,8 +132,8 @@ describe("overhead", () => {
   it("expense totals split mileage", () => {
     const t = expenseTotals(
       [
-        { id: "1", kind: "expense", title: "box", category: "Packaging", amount_cents: 472, spent_at: "2026-09-22T12:00:00", miles: null, rate_cents: null },
-        { id: "2", kind: "mileage", title: "m", category: "Travel", amount_cents: 347, spent_at: "2026-09-22T12:00:00", miles: 4.6, rate_cents: 76 },
+        { id: "1", kind: "expense", title: "box", category: "Packaging", amount_cents: 472, spent_at: "2026-09-22T12:00:00", miles: null, rate_cents: null, start_location: null, end_location: null },
+        { id: "2", kind: "mileage", title: "m", category: "Travel", amount_cents: 347, spent_at: "2026-09-22T12:00:00", miles: 4.6, rate_cents: 76, start_location: null, end_location: null },
       ],
       "all", now,
     )
