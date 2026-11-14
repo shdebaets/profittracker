@@ -90,6 +90,23 @@ export function CompView({ tracked, initialQuery }: { tracked: Tracked[]; initia
   const profit = s?.estimate != null && costCents > 0 ? buyProfit(costCents, s.estimate) : null
   const canCollect = !!ext.info && extensionCanCollectComps()
 
+  // With the extension on this computer, read eBay's sold listings by itself when there are none
+  // or they're over 12 hours old (CompAmp's auto-pull). Once per product per visit.
+  const autoPulled = useRef(new Set<string>())
+  useEffect(() => {
+    if (!result || !canCollect || collecting || autoPulled.current.has(result.query)) return
+    const stale = !result.soldCollectedAt || Date.now() - Date.parse(result.soldCollectedAt) > 12 * 3_600_000
+    if (!stale) return
+    const q = result.query
+    const t = setTimeout(() => {
+      if (autoPulled.current.has(q)) return
+      autoPulled.current.add(q)
+      void pullSold(q)
+    }, 0)
+    return () => clearTimeout(t)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [result, canCollect])
+
   return (
     <>
       {scanning ? (
@@ -222,7 +239,11 @@ export function CompView({ tracked, initialQuery }: { tracked: Tracked[]; initia
 
           <p className="text-xs text-muted-foreground">
             {result.soldCollectedAt ? `Sold prices read ${relativeTime(result.soldCollectedAt)}.` : "No sold prices for this yet."}{" "}
-            {canCollect ? "" : "Sold prices are read on a computer with the FlipLedger extension; on your phone you see what's been read so far."}
+            {canCollect
+              ? collecting
+                ? "Reading eBay's sold listings now…"
+                : ""
+              : "Sold prices come from the FlipLedger Chrome extension: open this page in Chrome on a computer with the extension and they load by themselves. Phones then see them too."}
           </p>
           <div className="grid grid-cols-2 gap-2">
             {canCollect && (
