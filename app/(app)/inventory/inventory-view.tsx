@@ -1,10 +1,10 @@
 "use client"
 
-import { Boxes, CircleDollarSign, Clock, Cloud, Download, Layers, Package, RotateCcw, Search, Share2, ShoppingBag, Sparkles } from "lucide-react"
+import { Boxes, CheckSquare, CircleDollarSign, Clock, Cloud, Download, Layers, Package, RefreshCw, RotateCcw, Search, Share2, ShoppingBag, Sparkles } from "lucide-react"
 import Link from "next/link"
 import { OverpricedCheck } from "@/components/overpriced-check"
-import { RepriceBar } from "@/components/reprice-bar"
-import { daysSitting } from "@/lib/stale"
+import { RepricePanel, type RepriceItem } from "@/components/reprice-panel"
+import { askingPrice, daysSitting } from "@/lib/stale"
 import { useState } from "react"
 import { PageTitle } from "@/components/app-header"
 import { DelistAlerts } from "@/components/crosslist/delist-alerts"
@@ -28,8 +28,12 @@ const TIME: { value: Range; label: string }[] = [
 const itemDate = (i: Item) => (i.status === "sold" ? i.sold_at : i.purchased_at)
 const isReturnEligible = (i: Item) =>
   i.status === "inventory" && !!i.return_deadline && daysUntil(i.return_deadline) >= 0
-export type Chip = "all" | "returns" | "unlisted" | "cost" | "stale"
+export type Chip = "all" | "returns" | "unlisted" | "cost" | "stale" | "sync"
 const isUnlisted = (i: Item) => i.status === "inventory" && !i.listings.some((l) => l.status === "active")
+/** A live listing still waiting for a change (edit once, update everywhere), or one that failed. */
+const needsUpdate = (i: Item) =>
+  i.status === "inventory" && i.listings.some((l) => l.status === "active" && (l.sync_status === "pending" || l.sync_status === "failed"))
+const repriceRow = (i: Item): RepriceItem => ({ id: i.id, title: i.title || `Item #${i.seq}`, priceCents: askingPrice(i) })
 
 export function InventoryView({
   items, email, focusSearch = false, initialChip = "all", staleDays = 60,
@@ -39,6 +43,9 @@ export function InventoryView({
   const [time, setTime] = useState<Range>("all")
   const [query, setQuery] = useState("")
   const [chip, setChip] = useState<Chip>(initialChip)
+  // Multi-select for bulk reprice. Only unsold items can be picked.
+  const [selecting, setSelecting] = useState(false)
+  const [selected, setSelected] = useState<Set<string>>(new Set())
   const isStale = (i: Item) => i.status === "inventory" && daysSitting(i) >= staleDays
   useSyncItems(items)
 
@@ -53,6 +60,7 @@ export function InventoryView({
   const unlistedCount = byTab.filter(isUnlisted).length
   const noCostCount = byTab.filter((i) => i.cost_unknown).length
   const staleCount = byTab.filter(isStale).length
+  const syncCount = byTab.filter(needsUpdate).length
 
   const q = query.trim().toLowerCase()
   const visible = byTab.filter((i) => {
@@ -61,6 +69,7 @@ export function InventoryView({
     if (chip === "unlisted" && !isUnlisted(i)) return false
     if (chip === "cost" && !i.cost_unknown) return false
     if (chip === "stale" && !isStale(i)) return false
+    if (chip === "sync" && !needsUpdate(i)) return false
     if (!q) return true
     return (
       (i.title ?? "").toLowerCase().includes(q) ||
@@ -70,6 +79,20 @@ export function InventoryView({
       (i.cost_cents / 100).toFixed(2).includes(q)
     )
   })
+
+  const selectable = visible.filter((i) => i.status === "inventory")
+  const picked = items.filter((i) => selected.has(i.id) && i.status === "inventory")
+  const toggle = (id: string) =>
+    setSelected((s) => {
+      const n = new Set(s)
+      if (n.has(id)) n.delete(id)
+      else n.add(id)
+      return n
+    })
+  const stopSelecting = () => {
+    setSelecting(false)
+    setSelected(new Set())
+  }
 
   function onExport() {
     exportCsv(
@@ -254,21 +277,69 @@ export function InventoryView({
             <Clock className="size-4" /> {staleDays}+ Days ({staleCount})
           </button>
         )}
+        {tab !== "sales" && (syncCount > 0 || chip === "sync") && (
+          <button
+            onClick={() => setChip("sync")}
+            className={cn(
+              "flex shrink-0 items-center gap-1.5 rounded-full px-4 py-2 text-sm font-semibold",
+              chip === "sync" ? "bg-brand text-ink" : "border border-brand/40 bg-card text-brand",
+            )}
+          >
+            <RefreshCw className="size-4" /> Needs Update ({syncCount})
+          </button>
+        )}
       </div>
+
+      {tab !== "sales" && (
+        <div className="flex items-center gap-2">
+          {selecting ? (
+            <>
+              <span className="flex-1 text-sm font-semibold">{picked.length} selected</span>
+              <button
+                onClick={() => setSelected(picked.length === selectable.length ? new Set() : new Set(selectable.map((i) => i.id)))}
+                className="rounded-xl border bg-card px-3 py-2 text-sm font-semibold"
+              >
+                {picked.length === selectable.length && selectable.length > 0 ? "Clear" : `Select all (${selectable.length})`}
+              </button>
+              <button onClick={stopSelecting} className="rounded-xl bg-ink px-3 py-2 text-sm font-semibold text-white">Done</button>
+            </>
+          ) : (
+            <button
+              onClick={() => setSelecting(true)}
+              className="ml-auto flex items-center gap-1.5 rounded-xl border bg-card px-3 py-2 text-sm font-semibold"
+            >
+              <CheckSquare className="size-4 text-brand" /> Select to reprice
+            </button>
+          )}
+        </div>
+      )}
 
       {tab !== "sales" && <OverpricedCheck />}
 
-      {chip === "stale" && visible.length > 0 && (
-        <RepriceBar
-          itemIds={visible.map((i) => i.id)}
-          label={`These ${visible.length} item${visible.length === 1 ? " has" : "s have"} sat ${staleDays}+ days. Drop the price?`}
+      {selecting && picked.length > 0 ? (
+        <RepricePanel
+          className="sticky top-2 z-10 shadow-lg"
+          items={picked.map(repriceRow)}
+          label={`Reprice ${picked.length} selected item${picked.length === 1 ? "" : "s"}`}
+          onDone={stopSelecting}
         />
+      ) : (
+        !selecting && chip === "stale" && visible.length > 0 && (
+          <RepricePanel
+            items={visible.map(repriceRow)}
+            label={`These ${visible.length} item${visible.length === 1 ? " has" : "s have"} sat ${staleDays}+ days. Drop the price?`}
+          />
+        )
       )}
 
       <div className="flex flex-col gap-3">
-        {visible.map((i) => (
-          <ItemCard key={i.id} item={i} onOpen={() => openItem(i)} />
-        ))}
+        {visible.map((i) =>
+          selecting && i.status === "inventory" ? (
+            <ItemCard key={i.id} item={i} selected={selected.has(i.id)} onOpen={() => toggle(i.id)} />
+          ) : (
+            <ItemCard key={i.id} item={i} onOpen={() => openItem(i)} />
+          ),
+        )}
         {!visible.length && (
           <div className="rounded-3xl border border-dashed bg-card/50 p-8 text-center text-muted-foreground">
             {items.length ? "Nothing matches these filters." : "No items yet. Tap + to add your first one."}

@@ -4,33 +4,23 @@ import { Loader2, TriangleAlert } from "lucide-react"
 import { useState, useTransition } from "react"
 import { toast } from "sonner"
 import { findOverpriced } from "@/app/(app)/actions/comps"
-import { repriceItems } from "@/app/(app)/actions/edit"
+import { RepricePanel } from "@/components/reprice-panel"
 import type { Overpriced } from "@/lib/comps/overpriced"
 import { formatCents } from "@/lib/money"
 
-/** "These 8 items are priced 25%+ above recent sold prices", with one-tap reprice everywhere. */
+/** "These 8 items are priced 25%+ above recent sold prices", repriced through the shared RepricePanel. */
 export function OverpricedCheck() {
   const [items, setItems] = useState<Overpriced[] | null>(null)
   const [pending, start] = useTransition()
+  // Results the seller unticked, so the panel leaves them alone.
+  const [left, setLeft] = useState<Set<string>>(new Set())
 
   const check = () =>
     start(async () => {
       const res = await findOverpriced()
       if (!res.ok) return void toast.error(res.error)
       setItems(res.items)
-      if (!res.checked) toast.message("No sold prices on file for your items yet. Comp them on a computer with the extension first.")
-    })
-
-  const setPrice = (list: Overpriced[]) =>
-    start(async () => {
-      let done = 0
-      for (const o of list) {
-        const res = await repriceItems({ itemIds: [o.itemId], mode: "set", value: o.soldMedianCents })
-        if (res.ok) done++
-        else toast.error(res.error)
-      }
-      toast.success(`${done} repriced to the sold median everywhere`)
-      setItems((cur) => cur?.filter((x) => !list.includes(x)) ?? null)
+      if (!res.checked) toast.message("No sold prices on file for your items yet. FlipLedger looks up your listed items overnight, or comp one now on the Comp tab.")
     })
 
   if (!items) {
@@ -42,27 +32,40 @@ export function OverpricedCheck() {
   }
   if (!items.length) return <p className="rounded-2xl bg-profit-soft px-4 py-3 text-sm">Nothing priced 25%+ above recent sold prices.</p>
 
+  const chosen = items.filter((o) => !left.has(o.itemId))
   return (
-    <div className="flex flex-col gap-3 rounded-3xl border border-brand/40 bg-brand-soft p-4">
+    <div className="flex flex-col gap-2">
       <p className="text-sm font-semibold">
         {items.length} item{items.length === 1 ? " is" : "s are"} priced 25%+ above recent sold prices.
       </p>
       {items.map((o) => (
-        <div key={o.itemId} className="flex items-center gap-2 rounded-2xl bg-card p-3 text-sm">
+        <label key={o.itemId} className="flex items-center gap-3 rounded-2xl border bg-card p-3 text-sm">
+          <input
+            type="checkbox" checked={!left.has(o.itemId)} className="size-5 shrink-0 accent-brand"
+            onChange={(e) => setLeft((s) => {
+              const n = new Set(s)
+              if (e.target.checked) n.delete(o.itemId)
+              else n.add(o.itemId)
+              return n
+            })}
+          />
           <span className="min-w-0 flex-1">
             <span className="block truncate font-semibold">{o.title}</span>
             <span className="font-mono text-xs text-muted-foreground">
               {formatCents(o.priceCents)} vs sold {formatCents(o.soldMedianCents)} (+{Math.round(o.overBy * 100)}%)
             </span>
           </span>
-          <button disabled={pending} onClick={() => setPrice([o])} className="shrink-0 rounded-xl bg-ink px-3 py-2 font-semibold text-white disabled:opacity-60">
-            Set {formatCents(o.soldMedianCents)}
-          </button>
-        </div>
+        </label>
       ))}
-      <button disabled={pending} onClick={() => setPrice(items)} className="h-11 rounded-2xl bg-brand font-bold text-ink disabled:opacity-60">
-        {pending ? "Updating…" : "Reprice all to sold median"}
-      </button>
+      {chosen.length > 0 && (
+        <RepricePanel
+          label={`Reprice ${chosen.length === items.length ? "them" : `${chosen.length} of them`} to what they sell for?`}
+          items={chosen.map((o) => ({ id: o.itemId, title: o.title, priceCents: o.priceCents }))}
+          suggested={Object.fromEntries(chosen.map((o) => [o.itemId, o.soldMedianCents]))}
+          defaultMode="suggested"
+          onDone={(ids) => setItems((cur) => cur?.filter((x) => !ids.includes(x.itemId)) ?? null)}
+        />
+      )}
     </div>
   )
 }

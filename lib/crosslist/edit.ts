@@ -19,21 +19,22 @@ export function hasChanges(c: ListingChanges) {
   return Object.values(c).some((v) => v !== undefined)
 }
 
-export type SyncOutcome = { marketplace: string; status: "synced" | "pending" | "failed"; error?: string }
+export type SyncOutcome = { listingId: string; marketplace: string; status: "synced" | "pending" | "failed"; error?: string }
 
-/** Push changes to the item's live listings. `supabase` is the user's client (RLS). */
+/**
+ * Push changes to the item's live listings. `supabase` is the user's client (RLS).
+ * `listingId` limits it to that one listing (Retry), so the item's other listings aren't touched.
+ */
 export async function propagateToListings(
   supabase: SupabaseClient,
   itemId: string,
   changes: ListingChanges,
-  opts: { canUseApi: boolean },
+  opts: { canUseApi: boolean; listingId?: string },
 ): Promise<SyncOutcome[]> {
   if (!hasChanges(changes)) return []
-  const { data, error } = await supabase
-    .from("marketplace_listings")
-    .select("*")
-    .eq("item_id", itemId)
-    .eq("status", "active")
+  let q = supabase.from("marketplace_listings").select("*").eq("item_id", itemId).eq("status", "active")
+  if (opts.listingId) q = q.eq("id", opts.listingId)
+  const { data, error } = await q
   if (error) throw error
   const out: SyncOutcome[] = []
   for (const l of (data ?? []) as Listing[]) {
@@ -43,16 +44,16 @@ export async function propagateToListings(
       try {
         await reviseEbayListing(l, pending)
         await supabase.from("marketplace_listings").update({ ...price, sync_status: "synced", sync_error: null, pending_changes: null }).eq("id", l.id)
-        out.push({ marketplace: l.marketplace, status: "synced" })
+        out.push({ listingId: l.id, marketplace: l.marketplace, status: "synced" })
       } catch (e) {
         const msg = friendlyError(e)
         console.error("[edit everywhere] eBay revise failed", e)
         await supabase.from("marketplace_listings").update({ sync_status: "failed", sync_error: msg, pending_changes: pending }).eq("id", l.id)
-        out.push({ marketplace: l.marketplace, status: "failed", error: msg })
+        out.push({ listingId: l.id, marketplace: l.marketplace, status: "failed", error: msg })
       }
     } else {
       await supabase.from("marketplace_listings").update({ ...price, sync_status: "pending", sync_error: null, pending_changes: pending }).eq("id", l.id)
-      out.push({ marketplace: l.marketplace, status: "pending" })
+      out.push({ listingId: l.id, marketplace: l.marketplace, status: "pending" })
     }
   }
   return out

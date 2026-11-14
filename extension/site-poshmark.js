@@ -49,7 +49,9 @@
       open: /^edit listing$/i,
       isEditPage: (path) => path.startsWith("/edit-listing"),
       saveHint: 'click "Update" at the bottom',
-      fields: { title: TITLE, description: ["Description", "Describe it!"], price: ["Listing Price"] },
+      // Quantity labels are best guesses (multi-quantity listings only); untested on the real site.
+      fields: { title: TITLE, description: ["Description", "Describe it!"], price: ["Listing Price"], quantity: ["Quantity", "Available Quantity", "Quantity Available"] },
+      photos: true,
     },
 
     // Smart Offers (assisted): the listing's "Offer to Likers" opens a form; the seller submits it.

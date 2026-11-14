@@ -18,7 +18,9 @@ export function ListingBadges({ listings, showEnded = false }: { listings: Listi
       {shown.map((l) => {
         const m = marketplace(l.marketplace)
         const live = l.status === "active"
-        const hint = STATUS_HINT[l.status]
+        // Live, but a price/title change hasn't reached the site yet (edit once, update everywhere).
+        const outOfSync = live && (l.sync_status === "pending" || l.sync_status === "failed")
+        const hint = outOfSync ? "needs update" : STATUS_HINT[l.status]
         return (
           <span
             key={l.id}
@@ -36,6 +38,7 @@ export function ListingBadges({ listings, showEnded = false }: { listings: Listi
           >
             {m.short}
             {(l.status === "delist_pending" || l.status === "error") && " !"}
+            {outOfSync && " ↻"}
           </span>
         )
       })}

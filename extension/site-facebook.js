@@ -44,7 +44,9 @@
       open: /^edit( listing)?$/i,
       isEditPage: (path) => path.startsWith("/marketplace/edit"),
       saveHint: 'click "Update"',
-      fields: { title: ["Title"], description: ["Description"], price: ["Price"] },
+      // Quantity shows only when the listing is "in stock" (multi-quantity); best guess, untested.
+      fields: { title: ["Title"], description: ["Description"], price: ["Price"], quantity: ["Quantity", "Number in stock"] },
+      photos: true,
     },
 
     delist: {

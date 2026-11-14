@@ -77,6 +77,9 @@ export function EntryForm(props: Props) {
     props.variant === "create" ? (props.initialMode ?? "sold") : props.variant === "sell" ? "sold" : (item!.status === "sold" ? "sold" : "inventory"),
   )
   const [title, setTitle] = useState(init.title)
+  // Editing stock: the listing description, so a change reaches every live listing too.
+  const editsDescription = props.variant === "edit" && props.item.status === "inventory"
+  const [description, setDescription] = useState(item?.description ?? "")
   const [link, setLink] = useState(init.link)
   const [showLink, setShowLink] = useState(!!init.link)
   const [store, setStore] = useState(init.store)
@@ -181,6 +184,7 @@ export function EntryForm(props: Props) {
           returnDeadline: returnable ? returnDeadline || null : null,
           purchasedAt: item && purchasedAt === init.purchasedAt ? item.purchased_at : dateInputToIso(purchasedAt),
           photoPaths: photos.map((p) => p.path),
+          description: editsDescription && mode === "inventory" ? description : undefined,
           // A new inventory item can carry the price it should sell for (Scan to Comp's "I bought it").
           ...(!isSale && props.variant === "create" && toCents(price) > 0 ? { listPriceCents: toCents(price) } : {}),
           sale: isSale
@@ -278,6 +282,19 @@ export function EntryForm(props: Props) {
               onUploadingChange={setUploading}
             />
           </div>
+          {editsDescription && mode === "inventory" && (
+            <div>
+              <FieldLabel htmlFor="description">Listing Description <span className="font-normal text-muted-foreground">(Optional)</span></FieldLabel>
+              <textarea
+                id="description" rows={3} value={description} onChange={(e) => setDescription(e.target.value)}
+                placeholder="Measurements, flaws, details buyers ask about"
+                className="w-full rounded-2xl border bg-muted/60 px-4 py-3 text-base outline-none focus:border-brand focus:bg-card focus:ring-2 focus:ring-brand/20"
+              />
+              {item!.listings.some((l) => l.status === "active") && (
+                <p className="mt-1 text-xs text-muted-foreground">Changes go to your live listings too.</p>
+              )}
+            </div>
+          )}
           <div>
             <FieldLabel htmlFor="cost">Purchase Cost (COG) {qty > 1 && <span className="font-normal text-muted-foreground">per unit</span>}</FieldLabel>
             <MoneyInput id="cost" big value={cost} onChange={setCost} />

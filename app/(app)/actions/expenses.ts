@@ -142,6 +142,7 @@ const settingsSchema = z.object({
   staleDays: z.union([z.literal(30), z.literal(45), z.literal(60), z.literal(90), z.literal(120)]),
   emailRecap: z.boolean(),
   emailTaxReminders: z.boolean(),
+  emailAlerts: z.boolean().default(true),
   pushRecap: z.boolean(),
   pushTaxReminders: z.boolean(),
 })
@@ -159,6 +160,7 @@ export async function saveSettings(input: z.input<typeof settingsSchema>): Promi
       stale_days: s.staleDays,
       email_recap: s.emailRecap,
       email_tax_reminders: s.emailTaxReminders,
+      email_alerts: s.emailAlerts,
       push_recap: s.pushRecap,
       push_tax_reminders: s.pushTaxReminders,
     })
