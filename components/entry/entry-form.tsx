@@ -45,6 +45,7 @@ function initialFromItem(item: Item) {
     qty: item.quantity,
     buyerShip: centsToInput(item.buyer_shipping_cents),
     labelCost: centsToInput(item.label_cost_cents),
+    salesTax: item.sales_tax_cents ? centsToInput(item.sales_tax_cents) : "",
     platform: (item.platform ?? "cash") as Platform,
     customPct: isCustom ? String(+(Number(item.fee_pct) * 100).toFixed(3)) : "",
     returnable: item.returnable,
@@ -67,6 +68,7 @@ export function EntryForm(props: Props) {
         qty: props.variant === "create" ? (props.prefill?.qty ?? 1) : 1,
         buyerShip: props.variant === "create" ? (props.prefill?.buyerShip ?? "") : "",
         labelCost: props.variant === "create" ? (props.prefill?.labelCost ?? "") : "",
+        salesTax: "",
         platform: (props.variant === "create" ? props.prefill?.platform : undefined) ?? ("cash" as Platform),
         customPct: props.variant === "create" ? (props.prefill?.customPct ?? "") : "",
         returnable: false, returnDeadline: "", purchasedAt: toDateInput(new Date()),
@@ -85,9 +87,10 @@ export function EntryForm(props: Props) {
   const [qty, setQty] = useState(props.variant === "sell" ? 1 : init.qty)
   const [buyerShip, setBuyerShip] = useState(init.buyerShip)
   const [labelCost, setLabelCost] = useState(init.labelCost)
+  const [salesTax, setSalesTax] = useState(init.salesTax)
   const [platform, setPlatform] = useState<Platform>(init.platform)
   const [customPct, setCustomPct] = useState(init.customPct)
-  const [showMore, setShowMore] = useState(!!(init.buyerShip || init.labelCost || init.platform !== "cash"))
+  const [showMore, setShowMore] = useState(!!(init.buyerShip || init.labelCost || init.salesTax || init.platform !== "cash"))
   const [returnable, setReturnable] = useState(init.returnable)
   const [returnDeadline, setReturnDeadline] = useState(init.returnDeadline)
   const [purchasedAt, setPurchasedAt] = useState(init.purchasedAt)
@@ -149,6 +152,7 @@ export function EntryForm(props: Props) {
       salePriceCents: toCents(price),
       buyerShippingCents: toCents(buyerShip),
       labelCostCents: toCents(labelCost),
+      salesTaxCents: toCents(salesTax),
       feePct,
       feeFixedCents: feeFixed,
       platform,
@@ -370,6 +374,11 @@ export function EntryForm(props: Props) {
                   <FieldLabel>Your label cost</FieldLabel>
                   <MoneyInput value={labelCost} onChange={setLabelCost} placeholder="0" />
                 </div>
+              </div>
+              <div>
+                <FieldLabel>Sales tax the marketplace collected <span className="font-normal text-muted-foreground">(Optional)</span></FieldLabel>
+                <MoneyInput value={salesTax} onChange={setSalesTax} placeholder="0" />
+                <p className="mt-1 text-xs text-muted-foreground">Not your income, but it shows up on your 1099-K. eBay sales fill this in for you.</p>
               </div>
             </>
           )}

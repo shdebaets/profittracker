@@ -3,7 +3,7 @@ import { signPaths } from "@/lib/photos"
 import type { Haul } from "@/lib/lots"
 import type { TaxPlatform } from "@/lib/tax"
 import { requireUser } from "@/lib/supabase/server"
-import type { Expense, Item, MarketplaceConnection, Settings, Subscription } from "@/lib/types"
+import type { CancelledSale, Expense, Item, MarketplaceConnection, Settings, Subscription } from "@/lib/types"
 
 import { DEFAULT_SETTINGS } from "@/lib/data-defaults"
 
@@ -72,6 +72,17 @@ export async function getTaxForms(year: number): Promise<Partial<Record<TaxPlatf
   const { data, error } = await supabase.from("tax_forms").select("platform, gross_cents").eq("tax_year", year)
   if (error) throw error
   return Object.fromEntries((data ?? []).map((r) => [r.platform, Number(r.gross_cents)]))
+}
+
+/** Cancelled sales the seller logged or eBay reported. Filtered to a tax year by the caller (local time). */
+export async function getCancelledSales(): Promise<CancelledSale[]> {
+  const { supabase } = await requireUser()
+  const { data, error } = await supabase
+    .from("cancelled_sales")
+    .select("id, platform, cancelled_at, gross_cents, title, external_id")
+    .order("cancelled_at", { ascending: false })
+  if (error) throw error
+  return (data ?? []).map((r) => ({ ...r, gross_cents: Number(r.gross_cents) })) as CancelledSale[]
 }
 
 export async function getHauls(): Promise<Haul[]> {

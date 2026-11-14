@@ -3,10 +3,10 @@
 import { useSyncExternalStore } from "react"
 import { formatCents } from "@/lib/money"
 import {
-  ISSUES_1099K, mileageLog, reconcile, scheduleC, TAX_DISCLAIMER, TAX_PLATFORM_LABELS, taxSavings, yearReport,
+  gapBreakdown, ISSUES_1099K, mileageLog, reconcile, scheduleC, TAX_DISCLAIMER, TAX_PLATFORM_LABELS, taxSavings, yearReport,
   type TaxPlatform,
 } from "@/lib/tax"
-import type { Expense, Item, Settings, Subscription } from "@/lib/types"
+import type { CancelledSale, Expense, Item, Settings, Subscription } from "@/lib/types"
 import { PrintButton } from "./print-button"
 
 type Props = {
@@ -17,17 +17,19 @@ type Props = {
   subs: Subscription[]
   settings: Settings
   forms: Partial<Record<TaxPlatform, number>>
+  cancelled: CancelledSale[]
 }
 
 const subscribe = () => () => {}
 
-export function ReportView({ year, email, items, expenses, subs, settings, forms }: Props) {
+export function ReportView({ year, email, items, expenses, subs, settings, forms, cancelled }: Props) {
   // Render only in the browser: year boundaries and the date depend on the seller's time zone.
   const mounted = useSyncExternalStore(subscribe, () => true, () => false)
   if (!mounted) return <main className="p-8 text-sm text-gray-600">Loading report…</main>
 
-  const report = yearReport(items, expenses, subs, year)
+  const report = yearReport(items, expenses, subs, year, new Date(), cancelled)
   const rows = reconcile(report, forms)
+  const steps = gapBreakdown(report, rows)
   const lines = scheduleC(report)
   const log = mileageLog(expenses, year)
   const { deductions, savings } = taxSavings(report, settings.tax_bracket)
@@ -66,11 +68,23 @@ export function ReportView({ year, email, items, expenses, subs, settings, forms
         </p>
       )}
 
+      <h2 className="mt-6 text-lg font-bold">From your 1099-K to what you made</h2>
+      <table className="mt-2 w-full border-collapse text-left">
+        <tbody>
+          {steps.map((s) => (
+            <tr key={s.label} className={s.kind === "minus" ? "border-b border-gray-200 text-gray-600" : "border-b border-gray-300 font-semibold"}>
+              <td className="py-1">{s.kind === "minus" ? (s.cents < 0 ? "+ " : "− ") : ""}{s.label}</td>
+              <td className="text-right font-mono">{formatCents(s.kind === "minus" ? Math.abs(s.cents) : s.cents)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
       <h2 className="mt-6 text-lg font-bold">1099-K Reconciliation</h2>
       <table className="mt-2 w-full border-collapse text-left">
         <thead>
           <tr className="border-b border-black">
-            {["Platform", "1099-K gross", "Logged gross", "Difference", "Fees", "Labels", "COGS", "Profit"].map((h) => (
+            {["Platform", "1099-K gross", "Logged gross", "Sales tax", "Cancelled", "Fees", "Labels", "COGS", "Profit"].map((h) => (
               <th key={h} className="py-1 pr-2 font-semibold">{h}</th>
             ))}
           </tr>
@@ -81,7 +95,8 @@ export function ReportView({ year, email, items, expenses, subs, settings, forms
               <td className="py-1 pr-2">{TAX_PLATFORM_LABELS[r.platform]}</td>
               <td className="pr-2 font-mono">{r.reportedEntered ? formatCents(r.reported) : "not entered"}</td>
               <td className="pr-2 font-mono">{formatCents(r.trackedGross)}</td>
-              <td className="pr-2 font-mono">{r.reportedEntered ? formatCents(r.unexplained) : ""}</td>
+              <td className="pr-2 font-mono">{formatCents(r.salesTax)}</td>
+              <td className="pr-2 font-mono">{formatCents(r.cancelled)}</td>
               <td className="pr-2 font-mono">{formatCents(r.fees)}</td>
               <td className="pr-2 font-mono">{formatCents(r.labels)}</td>
               <td className="pr-2 font-mono">{formatCents(r.cogs)}</td>
@@ -94,6 +109,7 @@ export function ReportView({ year, email, items, expenses, subs, settings, forms
               <td className="pr-2" />
               <td className="pr-2 font-mono">{formatCents(p.gross)}</td>
               <td className="pr-2" />
+              <td className="pr-2" />
               <td className="pr-2 font-mono">{formatCents(p.fees)}</td>
               <td className="pr-2 font-mono">{formatCents(p.labels)}</td>
               <td className="pr-2 font-mono">{formatCents(p.cogs)}</td>
@@ -103,8 +119,8 @@ export function ReportView({ year, email, items, expenses, subs, settings, forms
         </tbody>
       </table>
       <p className="mt-1 text-xs text-gray-600">
-        A positive difference is usually sales tax the marketplace collected (not income) or sales not logged in FlipLedger.
-        Poshmark can include cancelled sales.
+        Sales tax the marketplace collected and cancelled sales are on the 1099-K but aren&apos;t income.
+        Anything else left over is usually sales not logged in FlipLedger.
       </p>
 
       <h2 className="mt-6 text-lg font-bold">Schedule C (Form 1040)</h2>

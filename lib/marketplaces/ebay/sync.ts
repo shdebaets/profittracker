@@ -63,6 +63,7 @@ export async function syncEbaySales(admin: SupabaseClient, userId: string) {
           label_cost_cents: 0,
           fee_pct: 0,
           fee_fixed_cents: line.feeCents + adFee,
+          sales_tax_cents: line.salesTaxCents,
           platform: "ebay",
           sold_at: new Date(line.soldAt).toISOString(),
         },

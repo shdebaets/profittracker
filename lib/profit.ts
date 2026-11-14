@@ -10,11 +10,12 @@ export type FeePreset = {
 }
 
 export const FEE_PRESETS: FeePreset[] = [
-  { id: "cash", label: "0% Cash/Local", hint: "Cash in person, Craigslist, FB Marketplace", pct: 0, fixedCents: 0 },
+  { id: "cash", label: "0% Cash/Local", hint: "Cash in person, Craigslist, FB local pickup", pct: 0, fixedCents: 0 },
   { id: "card", label: "2.9% + $0.30 Card", hint: "Square, Stripe, PayPal G&S", pct: 0.029, fixedCents: 30 },
   { id: "mercari_depop", label: "10% Depop/Mercari", hint: "Flat 10% selling fee", pct: 0.1, fixedCents: 0 },
   { id: "ebay", label: "13.25% eBay Std", hint: "Standard eBay category final value fee", pct: 0.1325, fixedCents: 0 },
   { id: "poshmark_amz", label: "15% Poshmark/Amz", hint: "Higher tier platforms (15%+)", pct: 0.15, fixedCents: 0 },
+  { id: "facebook", label: "10% FB Shipped", hint: "Facebook Marketplace shipped sales", pct: 0.1, fixedCents: 0 },
   { id: "custom", label: "Custom Fee %", hint: "Manual rate entry", pct: 0, fixedCents: 0 },
 ]
 
@@ -30,6 +31,8 @@ export type SaleInput = {
   labelCostCents?: number
   feePct?: number
   feeFixedCents?: number
+  /** Refunded to the buyer after the sale. Revenue stays gross; profit drops. */
+  refundCents?: number
 }
 
 export type SaleBreakdown = {
@@ -47,7 +50,7 @@ export function calcSale(s: SaleInput): SaleBreakdown {
   const fees = revenue > 0 ? Math.round(revenue * (s.feePct ?? 0)) + (s.feeFixedCents ?? 0) : 0
   const cog = s.costCents * qty
   const shipping = s.labelCostCents ?? 0
-  const net = revenue - fees - shipping - cog
+  const net = revenue - fees - shipping - cog - (s.refundCents ?? 0)
   return { revenue, fees, cog, shipping, net, margin: revenue > 0 ? net / revenue : 0 }
 }
 
@@ -60,6 +63,7 @@ export function itemSale(i: Item): SaleBreakdown {
     labelCostCents: i.label_cost_cents,
     feePct: Number(i.fee_pct),
     feeFixedCents: i.fee_fixed_cents,
+    refundCents: i.refund_cents ?? 0,
   })
 }
 

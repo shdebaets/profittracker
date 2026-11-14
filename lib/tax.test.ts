@@ -1,15 +1,15 @@
 import { describe, expect, it } from "vitest"
 import {
-  estimatedTax, irsQuarters, taxReminderWindow, mileageLog, nextQuarter, periodReport, reconcile, salePlatform, scheduleC,
+  estimatedTax, gapBreakdown, irsQuarters, taxReminderWindow, mileageLog, nextQuarter, periodReport, reconcile, salePlatform, scheduleC,
   taxSavings, yearPeriod, yearReport,
 } from "./tax"
-import type { Expense, Item, Listing, Subscription } from "./types"
+import type { CancelledSale, Expense, Item, Listing, Subscription } from "./types"
 
 function item(p: Partial<Item>): Item {
   return {
     id: Math.random().toString(36), seq: 1, title: "Thing", status: "sold", quantity: 1, cost_cents: 0,
     cost_unknown: false, purchased_at: "2026-01-01T12:00:00Z", store: null, link_url: null, haul_id: null,
-    sale_price_cents: 0, buyer_shipping_cents: 0, label_cost_cents: 0, fee_pct: 0, fee_fixed_cents: 0,
+    sale_price_cents: 0, buyer_shipping_cents: 0, label_cost_cents: 0, fee_pct: 0, fee_fixed_cents: 0, sales_tax_cents: 0, refund_cents: 0,
     platform: "ebay", sold_at: "2026-03-10T12:00:00", returnable: false, return_deadline: null, photo_paths: [],
     photo_urls: [], description: null, condition: null, brand: null, size: null, list_price_cents: null,
     listings: [], created_at: "2026-01-01T12:00:00Z", ...p,
@@ -147,5 +147,55 @@ describe("taxReminderWindow", () => {
   })
   it("stays quiet outside the window", () => {
     for (const d of [8, 30, -1]) expect(taxReminderWindow(d)).toBeNull()
+  })
+})
+
+describe("1099-K gap: sales tax, refunds, cancelled sales", () => {
+  const cancel = (p: Partial<CancelledSale>): CancelledSale => ({
+    id: "c", platform: "poshmark", cancelled_at: "2026-05-01T12:00:00", gross_cents: 0, title: null, external_id: null, ...p,
+  })
+  const items = [
+    // Posh sale: $100 + $8 tax collected, $15 fee, cost $40, $10 refunded
+    item({ platform: "poshmark_amz", sale_price_cents: 10000, sales_tax_cents: 800, fee_pct: 0.15, cost_cents: 4000, refund_cents: 1000 }),
+    // Facebook shipped sale counts as Facebook, not local
+    item({ platform: "facebook", sale_price_cents: 5000, fee_pct: 0.1 }),
+    // Cash sale: income, no 1099-K
+    item({ platform: "cash", sale_price_cents: 2000 }),
+  ]
+  const cancelled = [cancel({ gross_cents: 3000 }), cancel({ gross_cents: 999, cancelled_at: "2025-12-31T12:00:00" })]
+  const r = yearReport(items, [expense({ amount_cents: 500 })], [], 2026, now, cancelled)
+
+  it("splits refunds out of profit and keeps sales tax and cancellations off income", () => {
+    expect(salePlatform(items[1])).toBe("facebook")
+    const posh = r.platforms.find((p) => p.platform === "poshmark")!
+    expect(posh).toMatchObject({ gross: 10000, salesTax: 800, refunds: 1000, cancelled: 3000, fees: 1500, cogs: 4000 })
+    expect(posh.net).toBe(10000 - 1500 - 4000 - 1000)
+  })
+
+  it("expects the 1099-K to include sales tax and cancelled sales", () => {
+    const rows = reconcile(r, { poshmark: 14000 })
+    const posh = rows.find((x) => x.platform === "poshmark")!
+    expect(posh.expected).toBe(10000 + 800 + 3000)
+    expect(posh.unexplained).toBe(200)
+    expect(rows.find((x) => x.platform === "facebook")!.reported).toBe(5000)
+  })
+
+  it("walks from the IRS number to net profit", () => {
+    const steps = gapBreakdown(r, reconcile(r, { poshmark: 14000 }))
+    const start = steps[0].cents
+    const subtotal = steps.find((s) => s.kind === "subtotal")!
+    const end = steps.at(-1)!
+    // Every minus step between start and subtotal accounts for the difference.
+    const i = steps.indexOf(subtotal)
+    expect(start - steps.slice(1, i).reduce((a, s) => a + s.cents, 0)).toBe(subtotal.cents)
+    expect(subtotal.cents - steps.slice(i + 1, -1).reduce((a, s) => a + s.cents, 0)).toBe(end.cents)
+    expect(end.cents).toBe(r.netProfit)
+    expect(start).toBe(14000 + 5000)
+  })
+
+  it("puts refunds on Schedule C line 2", () => {
+    const lines = scheduleC(r)
+    expect(lines.find((l) => l.line === "2")!.cents).toBe(1000)
+    expect(lines.find((l) => l.line === "7")!.cents).toBe(r.totals.gross - 1000 - r.totals.cogs)
   })
 })

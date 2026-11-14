@@ -8,6 +8,7 @@ const USER = "11111111-1111-4111-8111-111111111111"
 const line: EbaySaleLine = {
   orderId: "12-34",
   lineItemId: "10001",
+  salesTaxCents: 0,
   sku: null,
   title: "Levi's 501 Jeans",
   listingId: "1234567890",
@@ -42,6 +43,7 @@ describe("ebaySoldItem", () => {
       label_cost_cents: 0,
       fee_pct: 0,
       fee_fixed_cents: 760,
+      sales_tax_cents: 0,
       platform: "ebay",
       sold_at: line.soldAt,
     })

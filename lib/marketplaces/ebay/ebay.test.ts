@@ -14,7 +14,7 @@ describe("ordersToSales", () => {
     totalMarketplaceFee: { value: "9.00" },
     lineItems: [
       { lineItemId: "a", sku: "item-1", title: "Nike Hoodie", quantity: 2, lineItemCost: { value: "40.00" }, deliveryCost: { shippingCost: { value: "5.00" } } },
-      { lineItemId: "b", sku: "item-2", quantity: 1, lineItemCost: { value: "15.00" } },
+      { lineItemId: "b", sku: "item-2", quantity: 1, lineItemCost: { value: "15.00" }, ebayCollectAndRemitTaxes: [{ amount: { value: "1.20" } }, { amount: { value: "0.05" } }] },
       // Listed straight on eBay (no SKU).
       { lineItemId: "c", title: "  Levi's  501 Jeans ", legacyItemId: "1234567890", quantity: 1, lineItemCost: { value: "30.00" } },
     ],
@@ -25,7 +25,8 @@ describe("ordersToSales", () => {
     expect(a).toMatchObject({ sku: "item-1", title: "Nike Hoodie", quantity: 2, salePriceCents: 2000, buyerShippingCents: 500, soldAt: order.creationDate })
     // total value 45 + 15 + 30 = 90; fee 900¢ → a: 450, b: 150
     expect(a.feeCents).toBe(450)
-    expect(b).toMatchObject({ sku: "item-2", title: "", salePriceCents: 1500, feeCents: 150 })
+    expect(b).toMatchObject({ sku: "item-2", title: "", salePriceCents: 1500, feeCents: 150, salesTaxCents: 125 })
+    expect(a.salesTaxCents).toBe(0)
   })
 
   it("keeps lines listed outside FlipLedger, with their title and eBay item number", () => {

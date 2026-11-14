@@ -22,6 +22,7 @@ export type SoldItemRow = {
   label_cost_cents: number
   fee_pct: number
   fee_fixed_cents: number
+  sales_tax_cents?: number
   platform: Platform
   sold_at: string
 }
@@ -52,6 +53,7 @@ export function ebaySoldItem(line: EbaySaleLine, userId: string): SoldItemRow {
     label_cost_cents: 0,
     fee_pct: 0,
     fee_fixed_cents: line.feeCents,
+    sales_tax_cents: line.salesTaxCents,
     platform: "ebay",
     sold_at: soldAt,
   }

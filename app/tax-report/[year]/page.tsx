@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation"
-import { getExpenses, getItems, getSettings, getSubscriptions, getTaxForms } from "@/lib/data"
+import { getCancelledSales, getExpenses, getItems, getSettings, getSubscriptions, getTaxForms } from "@/lib/data"
 import { requireUser } from "@/lib/supabase/server"
 import { ReportView } from "./report-view"
 
@@ -8,8 +8,8 @@ import { ReportView } from "./report-view"
 export default async function TaxReportPage({ params }: PageProps<"/tax-report/[year]">) {
   const year = Number((await params).year)
   if (!Number.isInteger(year) || year < 2000 || year > new Date().getFullYear() + 1) notFound()
-  const [{ email }, items, expenses, subs, settings, forms] = await Promise.all([
-    requireUser(), getItems(), getExpenses(), getSubscriptions(), getSettings(), getTaxForms(year),
+  const [{ email }, items, expenses, subs, settings, forms, cancelled] = await Promise.all([
+    requireUser(), getItems(), getExpenses(), getSubscriptions(), getSettings(), getTaxForms(year), getCancelledSales(),
   ])
-  return <ReportView year={year} email={email ?? ""} items={items} expenses={expenses} subs={subs} settings={settings} forms={forms} />
+  return <ReportView year={year} email={email ?? ""} items={items} expenses={expenses} subs={subs} settings={settings} forms={forms} cancelled={cancelled} />
 }

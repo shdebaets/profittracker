@@ -7,7 +7,7 @@ function item(p: Partial<Item>): Item {
   return {
     id: Math.random().toString(36), seq: 1, title: "Game", status: "inventory", quantity: 1, cost_cents: 400,
     cost_unknown: false, purchased_at: "2026-08-01T12:00:00Z", store: null, link_url: null, haul_id: "h1",
-    sale_price_cents: null, buyer_shipping_cents: 0, label_cost_cents: 0, fee_pct: 0, fee_fixed_cents: 0,
+    sale_price_cents: null, buyer_shipping_cents: 0, label_cost_cents: 0, fee_pct: 0, fee_fixed_cents: 0, sales_tax_cents: 0, refund_cents: 0,
     platform: null, sold_at: null, returnable: false, return_deadline: null, photo_paths: [], photo_urls: [],
     description: null, condition: null, brand: null, size: null, list_price_cents: null, listings: [],
     created_at: "2026-08-01T12:00:00Z", ...p,

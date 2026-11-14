@@ -23,7 +23,7 @@ export async function loadItem(id: string): Promise<Item | null> {
 }
 
 const cents = z.number().int().min(0).max(100_000_000)
-const platform = z.enum(["cash", "card", "mercari_depop", "ebay", "poshmark_amz", "custom"])
+const platform = z.enum(["cash", "card", "mercari_depop", "ebay", "poshmark_amz", "facebook", "custom"])
 const marketplaceId = z.enum(["ebay", "mercari", "facebook", "depop", "vinted", "poshmark", "etsy"])
 
 const saleFields = z.object({
@@ -32,6 +32,7 @@ const saleFields = z.object({
   labelCostCents: cents.default(0),
   feePct: z.number().min(0).max(1),
   feeFixedCents: cents.default(0),
+  salesTaxCents: cents.default(0),
   platform,
   soldAt: z.string().optional(),
 })
@@ -60,6 +61,7 @@ function saleColumns(s: z.output<typeof saleFields>): SaleColumns {
     label_cost_cents: s.labelCostCents,
     fee_pct: s.feePct,
     fee_fixed_cents: s.feeFixedCents,
+    sales_tax_cents: s.salesTaxCents,
     platform: s.platform,
     sold_at: s.soldAt ? new Date(s.soldAt).toISOString() : new Date().toISOString(),
   }
