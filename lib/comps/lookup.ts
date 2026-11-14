@@ -164,7 +164,10 @@ async function recordAndReadHistory(key: string, stats: CompStats, sold: SoldCom
   const list = snaps ?? []
   const last = list.at(-1)
   if (stats.activeCount > 0 && (!last || now.getTime() - Date.parse(last.taken_at) > LIVE_TTL_MS)) {
-    const row = { query_key: key, taken_at: now.toISOString(), live_count: stats.activeCount, lowest_cents: stats.activeLowest, median_cents: stats.activeMedian }
+    const row = {
+      query_key: key, taken_at: now.toISOString(), live_count: stats.activeCount, lowest_cents: stats.activeLowest, median_cents: stats.activeMedian,
+      sold_median_cents: stats.soldMedian30 ?? stats.soldMedian90, sold30: stats.sold30,
+    }
     const { error } = await admin.from("comp_snapshots").insert(row)
     if (!error) list.push(row)
   }
