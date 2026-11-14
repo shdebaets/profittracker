@@ -42,7 +42,7 @@ const liveSearch = (input: { gtin?: string; q?: string }) =>
 export async function lookupComps(
   supabase: SupabaseClient,
   input: string,
-  opts: { now?: Date; userId?: string | null; product?: string | null } = {},
+  opts: { now?: Date; userId?: string | null; product?: string | null; skipPaidSold?: boolean } = {},
 ): Promise<CompLookup | CompPick> {
   const now = opts.now ?? new Date()
   const raw = input.trim()
@@ -74,7 +74,7 @@ export async function lookupComps(
   const query = searchPhrase(product)
 
   // Sold prices from the data provider when nobody has read this product in 12 hours (no-op without a key).
-  await refreshSoldFromApi(query)
+  if (!opts.skipPaidSold) await refreshSoldFromApi(query)
   const read = await lastSoldRead(query).catch(() => null)
   const since = new Date(now.getTime() - 90 * 86_400_000).toISOString().slice(0, 10)
   const { data } = await supabase

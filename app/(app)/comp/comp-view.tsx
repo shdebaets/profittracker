@@ -3,13 +3,14 @@
 import { BarChart3, Bookmark, Loader2, PackagePlus, RefreshCw, ScanBarcode, Search, Trash2 } from "lucide-react"
 import { useCallback, useEffect, useRef, useState, useTransition } from "react"
 import { toast } from "sonner"
-import { compLookup, refreshTracked, saveSoldComps, trackProduct, untrackProduct } from "@/app/(app)/actions/comps"
+import { compLookup, refreshTracked, trackProduct, untrackProduct } from "@/app/(app)/actions/comps"
 import { useEntry } from "@/components/entry/entry-provider"
 import { MoneyInput } from "@/components/fields"
 import type { CompLookup, CompPick } from "@/lib/comps/lookup"
 import { buyProfit, type CompStats } from "@/lib/comps/stats"
 import { relativeTime } from "@/lib/dates"
-import { collectSoldWithExtension, extensionCanCollectComps, useExtension } from "@/lib/extension"
+import { useExtension } from "@/lib/extension"
+import { pullSoldHere, soldIsStale, soldSource } from "@/lib/sold-browser"
 import { centsToInput, formatCents, toCents } from "@/lib/money"
 import { cn } from "@/lib/utils"
 import { Scanner } from "./scanner"
@@ -39,10 +40,12 @@ export function CompView({ tracked, initialQuery }: { tracked: Tracked[]; initia
   const ext = useExtension()
   const { openEntry } = useEntry()
 
-  const lookup = useCallback((q: string, product?: string | null) => {
+  // Desktop with the extension, or the phone app: this device reads eBay's sold prices itself.
+  const source = soldSource(!!ext.info)
+  const lookup = useCallback((q: string, product?: string | null, paidFallback = false) => {
     if (q.trim().length < 2) return
     start(async () => {
-      const res = await compLookup(q, product)
+      const res = await compLookup(q, product, !!source && !paidFallback)
       if (!res.ok) return void toast.error(res.error)
       if ("pick" in res) {
         setResult(null)
@@ -52,14 +55,19 @@ export function CompView({ tracked, initialQuery }: { tracked: Tracked[]; initia
         setResult(res.lookup)
       }
     })
-  }, [])
+  }, [source])
 
   // Opened with ?q= (header search, the calculator's "Full comp"): run it right away.
   const ranInitial = useRef(false)
   useEffect(() => {
     if (ranInitial.current || initialQuery.trim().length < 2) return
-    ranInitial.current = true
-    lookup(initialQuery)
+    // Give the extension a moment to say it's here, so a desktop with it doesn't use the paid data.
+    const t = setTimeout(() => {
+      if (ranInitial.current) return
+      ranInitial.current = true
+      lookup(initialQuery)
+    }, 500)
+    return () => clearTimeout(t)
   }, [initialQuery, lookup])
 
   const onCode = useCallback(
@@ -72,14 +80,18 @@ export function CompView({ tracked, initialQuery }: { tracked: Tracked[]; initia
   )
 
   async function pullSold(q: string) {
+    if (!source) return
     setCollecting(true)
     try {
-      const res = await collectSoldWithExtension(q)
-      if (!res.ok) return void toast.error(res.error)
-      const saved = await saveSoldComps(q, res.rows)
-      if (!saved.ok) return void toast.error(saved.error)
-      toast.success(`Read ${res.rows.length} sold listing${res.rows.length === 1 ? "" : "s"} from eBay`)
-      lookup(result?.gtin ?? q, result?.gtin ? null : result?.product)
+      const res = await pullSoldHere(source, q)
+      const again = (paid: boolean) => lookup(result?.gtin ?? q, result?.gtin ? null : result?.product, paid)
+      // eBay blocked the read (signed out, captcha): fall back to the server's data for this one.
+      if (!res.ok) {
+        toast.error(res.error)
+        return again(true)
+      }
+      toast.success(`Read ${res.count} sold listing${res.count === 1 ? "" : "s"} from eBay`)
+      again(false)
     } finally {
       setCollecting(false)
     }
@@ -88,15 +100,14 @@ export function CompView({ tracked, initialQuery }: { tracked: Tracked[]; initia
   const s = result?.stats
   const costCents = toCents(cost)
   const profit = s?.estimate != null && costCents > 0 ? buyProfit(costCents, s.estimate) : null
-  const canCollect = !!ext.info && extensionCanCollectComps()
+  const canCollect = !!source
 
   // With the extension on this computer, read eBay's sold listings by itself when there are none
   // or they're over 12 hours old (CompAmp's auto-pull). Once per product per visit.
   const autoPulled = useRef(new Set<string>())
   useEffect(() => {
     if (!result || !canCollect || collecting || autoPulled.current.has(result.query)) return
-    const stale = !result.soldCollectedAt || Date.now() - Date.parse(result.soldCollectedAt) > 12 * 3_600_000
-    if (!stale) return
+    if (!soldIsStale(result.soldCollectedAt)) return
     const q = result.query
     const t = setTimeout(() => {
       if (autoPulled.current.has(q)) return
@@ -245,7 +256,7 @@ export function CompView({ tracked, initialQuery }: { tracked: Tracked[]; initia
                 : ""
               : result.soldCollectedAt
                 ? ""
-                : "eBay had no recent sales we could read for this one. The FlipLedger Chrome extension can read more on a computer."}
+                : "eBay had no recent sales we could read for this one. The FlipLedger Chrome extension or phone app can read more."}
           </p>
           {result.recentSales.length > 0 && (
             <details className="rounded-2xl bg-muted/60 p-3 text-xs">

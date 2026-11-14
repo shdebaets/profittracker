@@ -5,6 +5,7 @@ import { z } from "zod"
 import { judgeTitles } from "@/lib/comps/judge"
 import { isPick, lookupComps, searchPhrase, type CompLookup, type CompPick } from "@/lib/comps/lookup"
 import { overpricedItems, type Overpriced } from "@/lib/comps/overpriced"
+import { soldKey } from "@/lib/comps/sold-api"
 import { median, queryKey } from "@/lib/comps/stats"
 import type { Item } from "@/lib/types"
 import { createAdminClient } from "@/lib/supabase/admin"
@@ -18,12 +19,17 @@ export type LookupResult = { ok: true; lookup: CompLookup } | { ok: true; pick: 
  * Scan to Comp: a barcode or keywords → live listings plus any sold history we have.
  * Loose keywords that match several products return `pick`; call again with the chosen `product`.
  */
-export async function compLookup(input: string, product?: string | null): Promise<LookupResult> {
+export async function compLookup(
+  input: string,
+  product?: string | null,
+  /** This device reads eBay sold prices itself (extension or phone app), so skip the paid provider. */
+  readsSoldHere = false,
+): Promise<LookupResult> {
   try {
     const q = z.string().trim().min(2, "Scan a barcode or type what it is").max(120).parse(input)
     const p = z.string().trim().max(120).nullable().optional().parse(product)
     const { supabase, userId } = await requireUser()
-    const r = await lookupComps(supabase, q, { userId, product: p })
+    const r = await lookupComps(supabase, q, { userId, product: p, skipPaidSold: z.boolean().parse(readsSoldHere) })
     return isPick(r) ? { ok: true, pick: r } : { ok: true, lookup: r }
   } catch (e) {
     return fail(e) as { ok: false; error: string }
@@ -41,10 +47,14 @@ const soldRow = z.object({
 })
 
 /** Sold listings the extension read from eBay's public sold search for `query`. Shared market data. */
-export async function saveSoldComps(query: string, rows: unknown): Promise<ActionResult & { saved?: number }> {
+export async function saveSoldComps(query: string, rows: unknown, total?: number | null): Promise<ActionResult & { saved?: number }> {
   try {
     await requireUser()
-    const key = queryKey(z.string().min(2).max(120).parse(query))
+    const q = z.string().min(2).max(120).parse(query)
+    const key = queryKey(q)
+    const ebayTotal = z.number().int().min(0).max(10_000_000).nullable().optional().parse(total) ?? null
+    // One timestamp for the rows and the read marker, so stats can use this read on its own.
+    const readAt = new Date().toISOString()
     const parsed = z.array(z.unknown()).max(5000).parse(rows).flatMap((r) => {
       const p = soldRow.safeParse(r)
       return p.success ? [p.data] : []
@@ -63,11 +73,16 @@ export async function saveSoldComps(query: string, rows: unknown): Promise<Actio
           sold_on: r.sold_on,
           best_offer: r.best_offer,
           condition: r.condition ?? null,
-          collected_at: new Date().toISOString(),
+          collected_at: readAt,
         })),
         { onConflict: "query_key,external_id" },
       )
     if (error) throw error
+    // Same marker the paid provider uses: the search counts as read for 12 hours (so the server
+    // doesn't pay for it), with eBay's own sold count. requests: 0 keeps it off the daily cap.
+    await createAdminClient()
+      .from("comp_cache")
+      .upsert({ key: soldKey(q), payload: { requests: 0, results: parsed.length, total: ebayTotal, source: "browser" }, fetched_at: readAt })
     return { ok: true, saved: parsed.length }
   } catch (e) {
     return fail(e)

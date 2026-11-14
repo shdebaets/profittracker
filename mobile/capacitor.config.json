@@ -1,0 +1,11 @@
+{
+  "appId": "com.emoneydeals.flipledger",
+  "appName": "FlipLedger",
+  "webDir": "www",
+  "server": {
+    "url": "https://profit.emoneydeals.com",
+    "allowNavigation": ["profit.emoneydeals.com", "whop.com", "*.whop.com"]
+  },
+  "ios": { "contentInset": "always" },
+  "plugins": {}
+}
