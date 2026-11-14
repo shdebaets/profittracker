@@ -107,6 +107,12 @@ Local QA logins live in `.env.example` (`qa-a@flipledger.test`, `qa-b@flipledger
 - Budget guard: client asked for under $500/month. Small model, 4 photos, 900 max tokens, and a per-user cap of `AI_DAILY_LIMIT` (default 60) calls per 24 hours, counted in `ai_usage` (service role only; also the place to check spend).
 - Background removal isn't built (needs a separate paid service).
 
+### Smart Offers (eBay only)
+
+- Rules in `smart_offer_rules` (Settings, Cross-Lister + eBay connected): start discount, max discount, floor = cost × (1 + margin), minimum listing age, how often. `offerPrice` (`lib/offers.ts`, tested) deepens the discount 1 point per week past the minimum age, never below the floor, and skips anything under 5% / $1 off.
+- `runSmartOffers` (`lib/marketplaces/ebay/offers.ts`) runs from the daily `sync-sales` cron after each account's sale sync: Negotiation API `find_eligible_items` → for listings FlipLedger knows (so cost is known) `send_offer_to_interested_buyers`, 2-day offers, no counter-offers. Each offer is logged in `smart_offers`; after 3 days it's marked `sold` (item sold within 3 days at or under offer + $1) or `expired`.
+- Poshmark and Mercari offers are deliberately not automated: no API, and their terms ban bots.
+
 ### Cross-listing
 
 - **Registry:** `lib/marketplaces/registry.ts` lists each marketplace's mode (`api` / `assisted`), sell URL, fee preset and photo limit.

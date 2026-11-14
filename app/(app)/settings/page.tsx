@@ -8,6 +8,7 @@ import { canCrosslist, requireUser } from "@/lib/supabase/server"
 import { CrosslistUpsell } from "@/components/crosslist/crosslist-upsell"
 import { MarketplacesSettings } from "./marketplaces"
 import { SettingsForm } from "./settings-form"
+import { SmartOffers, type OfferLog, type OfferRuleRow } from "./smart-offers"
 
 export default async function SettingsPage({ searchParams }: PageProps<"/settings">) {
   const [{ email, userId }, settings, connections, params, crosslist] = await Promise.all([
@@ -20,6 +21,14 @@ export default async function SettingsPage({ searchParams }: PageProps<"/setting
     .eq("user_id", userId)
     .maybeSingle<{ whop_username: string | null }>()
   const cfg = ebayConfig()
+  const ebayConnected = connections.some((c) => c.marketplace === "ebay")
+  const supabase = (await requireUser()).supabase
+  const [{ data: offerRule }, { data: offerLog }] = crosslist && ebayConnected
+    ? await Promise.all([
+        supabase.from("smart_offer_rules").select("*").maybeSingle<OfferRuleRow>(),
+        supabase.from("smart_offers").select("*").order("sent_at", { ascending: false }).limit(50),
+      ])
+    : [{ data: null }, { data: null }]
   return (
     <>
       <PageTitle title="Settings" subtitle="Account, tax rates & preferences" />
@@ -48,6 +57,7 @@ export default async function SettingsPage({ searchParams }: PageProps<"/setting
       ) : (
         <CrosslistUpsell />
       )}
+      {crosslist && ebayConnected && <SmartOffers rule={offerRule} log={(offerLog ?? []) as OfferLog[]} />}
       <div className="rounded-3xl border bg-card p-5 text-sm text-muted-foreground">
         <p className="font-semibold text-foreground">Install on Your Phone</p>
         <p className="mt-1">
