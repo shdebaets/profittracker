@@ -5,6 +5,7 @@ import Link from "next/link"
 import { useState, useTransition } from "react"
 import { toast } from "sonner"
 import { deleteItem, markReturned, setItemCost } from "@/app/(app)/actions/items"
+import { RefundForm } from "@/components/entry/refund-form"
 import { MoneyInput } from "@/components/fields"
 import { daysUntil, formatDate, formatDateTime } from "@/lib/dates"
 import { formatCents, formatPct, toCents } from "@/lib/money"
@@ -56,6 +57,8 @@ export function ItemDetail({
       ["Fees", formatCents(sale.fees)],
       ["Label / shipping", formatCents(sale.shipping)],
     )
+    if (item.sales_tax_cents) rows.push(["Sales tax (marketplace collected)", formatCents(item.sales_tax_cents)])
+    if (item.refund_cents) rows.push(["Refunded to buyer", formatCents(item.refund_cents)])
   }
 
   return (
@@ -116,6 +119,7 @@ export function ItemDetail({
           </div>
         ))}
       </dl>
+      {sale && <RefundForm item={item} onDone={onDone} />}
       {item.haul_id && (
         <Link
           href={`/lots?lot=${item.haul_id}#lot-${item.haul_id}`}

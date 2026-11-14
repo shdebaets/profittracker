@@ -71,11 +71,14 @@ Local QA logins live in `.env.example` (`qa-a@flipledger.test`, `qa-b@flipledger
 - `lib/tax.ts` (pure, tested) and the `/taxes` page. Every figure is an estimate; always show `TAX_DISCLAIMER`.
 - **Tax bracket:** `settings.tax_bracket` (fraction, default 0.22) and `tax_bracket_set` (false until the seller picks one). While it's false, the `(app)` layout shows the first-run `TaxBracketOnboarding` sheet ("Skip" saves 22% and marks it set; swiping it away hides it for the browser session) and `TaxSavingsCard` keeps a picker too.
 - **Tax savings** (dashboard and `/taxes`) = (COGS + mileage + expenses + subscriptions) × bracket for the calendar year.
-- **Platform of a sale** (`salePlatform`): its sold cross-listing's marketplace, else the fee preset (`mercari_depop` counts as Mercari, `cash` as local).
-- **1099-K Reconciler:** we don't get real 1099-K numbers or sales tax from marketplaces, so the seller types each form's gross into `tax_forms` (per year and platform). The difference from logged gross is shown as "sales tax or sales not logged here".
+- **Platform of a sale** (`salePlatform`): its sold cross-listing's marketplace, else the fee preset (`mercari_depop` counts as Mercari, `facebook` as Facebook, `cash` as local).
+- **1099-K Reconciler:** marketplaces don't send us 1099-K numbers, so the seller types each form's gross into `tax_forms` (per year and platform). Expected 1099-K gross = logged gross + `items.sales_tax_cents` + `cancelled_sales`; anything left over is "on the 1099-K but not logged here". `gapBreakdown` walks the whole year from the IRS number to net profit (sales tax, cancelled, refunds, fees, labels, COGS, mileage, expenses, subscriptions).
+  - **Sales tax** (`items.sales_tax_cents`): eBay sync fills it from `lineItems[].ebayCollectAndRemitTaxes`; other sales take an optional field in the sale form. It's never income or revenue.
+  - **Refunds** (`items.refund_cents`, item detail → "Refunded the buyer?"): lowers that sale's net in `calcSale` (revenue stays gross) and fills Schedule C line 2. Not synced from eBay: `getOrders` only returns orders created since the last sync.
+  - **Cancelled sales** (`cancelled_sales`): logged by hand on `/taxes` because Poshmark can still count them on the 1099-K. eBay cancellations aren't recorded (they don't count there).
 - **Schedule C:** expense categories map to lines in `SCHEDULE_C_EXPENSE_LINES`; meals are halved; labels and subscriptions go to 27a.
 - **Quarterly estimates** use IRS periods (Jan–Mar, Apr–May, Jun–Aug, Sep–Dec; Q4 due Jan 15) and `estimatedTax` = 15.3% SE tax on 92.35% of net + bracket × (net − half SE).
-- **PDF:** `/tax-report/[year]` is a plain printable page outside the `(app)` layout; the browser's "Save as PDF" makes the file.
+- **PDF:** "PDF report" on `/taxes` builds a real PDF in the browser with `pdf-lib` (`lib/tax-pdf.ts`, so tax years follow the seller's time zone) and shares or downloads it (`shareOrDownload` in `lib/csv.ts`; the installed iOS app can't download). Standard fonts only draw WinAnsi, so text goes through `pdfText`. `/tax-report/[year]` stays as a printable view.
 - **Mileage log:** `expenses.start_location`/`end_location`. GPS trips save their first and last fix as "lat, lon"; manual trips take typed places.
 
 ### Lots, stale inventory, edit everywhere

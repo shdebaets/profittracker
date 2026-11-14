@@ -1,7 +1,7 @@
 import type { ItemCondition, MarketplaceId } from "./marketplaces/registry"
 
 export type ItemStatus = "inventory" | "sold" | "returned"
-export type Platform = "cash" | "card" | "mercari_depop" | "ebay" | "poshmark_amz" | "custom"
+export type Platform = "cash" | "card" | "mercari_depop" | "ebay" | "poshmark_amz" | "facebook" | "custom"
 
 export type Item = {
   id: string
@@ -21,6 +21,10 @@ export type Item = {
   label_cost_cents: number
   fee_pct: number
   fee_fixed_cents: number
+  /** Sales tax the marketplace collected from the buyer: on the 1099-K, not income. */
+  sales_tax_cents: number
+  /** Refunded to the buyer after the sale (Schedule C returns and allowances). */
+  refund_cents: number
   platform: Platform | null
   sold_at: string | null
   returnable: boolean
@@ -148,3 +152,13 @@ export const DRIVE_PURPOSES = [
   "Supply Run",
   "Other Business Trip",
 ] as const
+
+/** A sale that was cancelled but may still be counted on a marketplace's 1099-K. */
+export type CancelledSale = {
+  id: string
+  platform: "ebay" | "mercari" | "poshmark" | "facebook" | "depop" | "local" | "other"
+  cancelled_at: string
+  gross_cents: number
+  title: string | null
+  external_id: string | null
+}

@@ -148,6 +148,8 @@ export type EbayOrder = {
     quantity: number
     lineItemCost?: { value: string }
     deliveryCost?: { shippingCost?: { value: string } }
+    /** Sales tax eBay collected and remitted for this line (on the 1099-K, not the seller's income). */
+    ebayCollectAndRemitTaxes?: { amount?: { value: string } }[]
   }[]
 }
 
@@ -194,6 +196,7 @@ export type EbaySaleLine = {
   salePriceCents: number // per unit
   buyerShippingCents: number
   feeCents: number // this line's share of eBay's actual fees
+  salesTaxCents: number
   soldAt: string
 }
 
@@ -222,6 +225,7 @@ export function ordersToSales(orders: EbayOrder[]): EbaySaleLine[] {
         salePriceCents: Math.round(cents(l.lineItemCost) / qty),
         buyerShippingCents: cents(l.deliveryCost?.shippingCost),
         feeCents: total > 0 ? Math.round((fee * value(l)) / total) : 0,
+        salesTaxCents: (l.ebayCollectAndRemitTaxes ?? []).reduce((a, t) => a + cents(t.amount), 0),
         soldAt: o.creationDate,
       })
     }

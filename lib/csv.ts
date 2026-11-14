@@ -9,10 +9,13 @@ export function toCsv(rows: Record<string, unknown>[]): string {
   return [headers.join(","), ...rows.map((r) => headers.map((h) => cell(r[h])).join(","))].join("\n")
 }
 
-/** Share on mobile when supported, otherwise download. */
 export async function exportCsv(filename: string, rows: Record<string, unknown>[]) {
-  const blob = new Blob([toCsv(rows)], { type: "text/csv" })
-  const file = new File([blob], filename, { type: "text/csv" })
+  await shareOrDownload(new Blob([toCsv(rows)], { type: "text/csv" }), filename)
+}
+
+/** Share on mobile when supported (the installed iOS app can't download), otherwise download. */
+export async function shareOrDownload(blob: Blob, filename: string) {
+  const file = new File([blob], filename, { type: blob.type })
   if (navigator.canShare?.({ files: [file] })) {
     try {
       await navigator.share({ files: [file], title: filename })

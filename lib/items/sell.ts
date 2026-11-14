@@ -11,6 +11,8 @@ export type SaleColumns = {
   fee_fixed_cents: number
   platform: Platform
   sold_at: string
+  /** Only set when known (eBay reports it); a split row otherwise starts at 0. */
+  sales_tax_cents?: number
 }
 
 /**
