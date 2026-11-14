@@ -32,7 +32,9 @@ export type CompStats = {
   daysOfSupply: number | null
   /** Best price estimate and where it came from. */
   estimate: number | null
-  estimateSource: "sold30" | "sold90" | "active" | null
+  estimateSource: "recent" | "sold30" | "sold90" | "active" | null
+  /** sold30 worked out from the selling pace, because the sales read don't reach back 30 days. */
+  sold30Estimated: boolean
   /** The same estimate for new and for used/open-box units alone, when there's enough of each. */
   newEstimate: number | null
   usedEstimate: number | null
@@ -52,16 +54,32 @@ export function compStats(active: ActiveComp[], sold: SoldComp[], now = new Date
   const bins = active.filter((a) => a.buyItNow).map((a) => a.priceCents + (a.shippingCents ?? 0))
   // Best-offer sales show the list price, not what it sold for, so they're left out of prices.
   const priced = (days: number) => sold.filter((s) => daysAgo(s.soldOn, now) <= days && !s.bestOffer).map((s) => s.priceCents + (s.shippingCents ?? 0))
-  const sold30 = sold.filter((s) => daysAgo(s.soldOn, now) <= 30).length
-  const sold90 = sold.filter((s) => daysAgo(s.soldOn, now) <= 90).length
+  // How far back the sales we have go. If they don't cover 30 days (a busy product: the newest few
+  // hundred sales can be a couple of days), the 30-day count comes from the pace instead.
+  const ages = sold.map((x) => daysAgo(x.soldOn, now)).filter((d) => d >= 0)
+  const span = ages.length ? Math.max(...ages) : 0
+  const counted30 = sold.filter((x) => daysAgo(x.soldOn, now) <= 30).length
+  const sold30Estimated = ages.length >= 20 && span < 25
+  const sold30 = sold30Estimated ? Math.round((counted30 / Math.max(span, 1)) * 30) : counted30
+  const sold90 = Math.max(sold.filter((x) => daysAgo(x.soldOn, now) <= 90).length, sold30Estimated ? sold30 : 0)
   const soldMedian30 = median(priced(30))
   const soldMedian90 = median(priced(90))
   const activeMedian = median(bins)
-  const estimate = soldMedian30 ?? soldMedian90 ?? activeMedian
+  // Busy products move fast (launch hype, restocks): use the newest 20 sales once there are 8+ in a week.
+  // Prices more than 1.5x their median are dropped first: on eBay those are mostly best-offer sales
+  // showing the asking price, which the data can't tell apart.
+  const newest = sold
+    .filter((x) => !x.bestOffer && daysAgo(x.soldOn, now) <= 7)
+    .sort((a, b) => b.soldOn.localeCompare(a.soldOn))
+    .slice(0, 20)
+    .map((x) => x.priceCents + (x.shippingCents ?? 0))
+  const rough = median(newest)
+  const recentMedian = newest.length >= 8 && rough != null ? median(newest.filter((p) => p <= rough * 1.5)) : null
+  const estimate = recentMedian ?? soldMedian30 ?? soldMedian90 ?? activeMedian
   const liveCount = Math.max(active.length, liveTotal ?? 0)
   // Per condition: needs 3+ prices so one odd listing doesn't set it.
   const bucket = (wantNew: boolean) => {
-    const soldP = sold.filter((x) => daysAgo(x.soldOn, now) <= 90 && !x.bestOffer && isNewCondition(x.condition) === wantNew).map((x) => x.priceCents + (x.shippingCents ?? 0))
+    const soldP = sold.filter((x) => daysAgo(x.soldOn, now) <= (recentMedian != null ? 7 : 90) && !x.bestOffer && isNewCondition(x.condition) === wantNew).map((x) => x.priceCents + (x.shippingCents ?? 0))
     if (soldP.length >= 3) return median(soldP)
     const liveP = active.filter((a) => a.buyItNow && isNewCondition(a.condition) === wantNew).map((a) => a.priceCents + (a.shippingCents ?? 0))
     return liveP.length >= 3 ? median(liveP) : null
@@ -79,7 +97,8 @@ export function compStats(active: ActiveComp[], sold: SoldComp[], now = new Date
     sellThrough: sold30 + liveCount ? sold30 / (sold30 + liveCount) : null,
     daysOfSupply: sold30 ? Math.round(liveCount / (sold30 / 30)) : null,
     estimate,
-    estimateSource: soldMedian30 != null ? "sold30" : soldMedian90 != null ? "sold90" : activeMedian != null ? "active" : null,
+    sold30Estimated,
+    estimateSource: recentMedian != null ? "recent" : soldMedian30 != null ? "sold30" : soldMedian90 != null ? "sold90" : activeMedian != null ? "active" : null,
   }
 }
 

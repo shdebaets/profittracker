@@ -26,7 +26,7 @@ export type Tracked = {
   checked_at: string | null
 }
 
-const SOURCE_LABEL = { sold30: "30-day sold median", sold90: "90-day sold median", active: "live listings (no sold data yet)" } as const
+const SOURCE_LABEL = { recent: "last 20 sales (it's selling fast, so older prices are skipped)", sold30: "30-day sold median", sold90: "90-day sold median", active: "live listings (no sold data yet)" } as const
 
 export function CompView({ tracked, initialQuery }: { tracked: Tracked[]; initialQuery: string }) {
   const [query, setQuery] = useState(initialQuery)
@@ -227,7 +227,7 @@ export function CompView({ tracked, initialQuery }: { tracked: Tracked[]; initia
                 </p>
               )}
               <div className="grid grid-cols-3 gap-2 text-center font-mono text-xs">
-                <Stat label="sold 30d" value={String(s.sold30)} />
+                <Stat label={s.sold30Estimated ? "sold 30d (pace)" : "sold 30d"} value={s.sold30Estimated ? `~${s.sold30}` : String(s.sold30)} />
                 <Stat label="live now" value={String(s.activeCount)} />
                 <Stat label="sell-through" value={s.sellThrough == null ? "n/a" : `${Math.round(s.sellThrough * 100)}%`} />
                 <Stat label="lowest live" value={s.activeLowest == null ? "n/a" : formatCents(s.activeLowest)} />
