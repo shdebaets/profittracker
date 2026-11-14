@@ -4,7 +4,8 @@ import { reportError } from "@/lib/errors"
 import { hasCrosslistAccess } from "@/lib/whop/access"
 import { whopConfig } from "@/lib/whop/config"
 import { CALLBACK_PATH, WHOP_COOKIE, decodePkce, exchangeCode, getUserInfo } from "@/lib/whop/oauth"
-import { WhopSignInError, signInWithWhopUser } from "@/lib/whop/signin"
+import { createClient } from "@/lib/supabase/server"
+import { WhopSignInError, linkWhopToCurrentUser, signInWithWhopUser } from "@/lib/whop/signin"
 
 // Relative Location so the redirect works from any host.
 const go = (location: string) => new NextResponse(null, { status: 303, headers: { Location: location } })
@@ -25,10 +26,14 @@ export async function GET(request: NextRequest) {
     const redirectUri = new URL(CALLBACK_PATH, request.nextUrl.origin).toString()
     const token = await exchangeCode(clientId, redirectUri, code, pkce.verifier)
     const info = await getUserInfo(token)
-    const { userId, email } = await signInWithWhopUser(info)
+    // Already signed in (an older email-login account): link Whop to this account.
+    const { data } = await (await createClient()).auth.getClaims()
+    const current = data?.claims ? { userId: data.claims.sub, email: (data.claims.email as string | undefined) ?? "" } : null
+    const linked = current ? await linkWhopToCurrentUser(info, current) : null
+    const { userId, email } = linked ?? (await signInWithWhopUser(info))
     // Refresh the Cross-Lister answer now so a fresh purchase shows up right away.
     await hasCrosslistAccess(userId, email, true)
-    return go("/")
+    return go(linked ? "/crosslister" : "/")
   } catch (e) {
     reportError(e, "whop sign-in")
     return go(`/login?error=${e instanceof WhopSignInError ? e.code : "whop"}`)

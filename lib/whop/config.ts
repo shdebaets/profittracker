@@ -17,6 +17,11 @@ export function whopConfig() {
     productIds: list(process.env.WHOP_CROSSLIST_PRODUCT_IDS),
     /** Where "Get the Cross-Lister" sends people. */
     checkoutUrl: process.env.WHOP_CROSSLIST_CHECKOUT_URL?.trim() ?? "",
+    /** Yearly plan checkout and id: the "switch to yearly" save offer in the cancel flow. */
+    annualUrl: process.env.WHOP_CROSSLIST_ANNUAL_URL?.trim() ?? "",
+    annualPlanId: process.env.WHOP_CROSSLIST_ANNUAL_PLAN_ID?.trim() ?? "",
+    /** Promo code (as typed at checkout) offered as "stay at a lower price" in the cancel flow. Empty hides it. */
+    savePromoCode: process.env.WHOP_SAVE_PROMO_CODE?.trim() ?? "",
     /** Emails that always get cross-listing, lowercased. */
     freeEmails: list(process.env.FLIPLEDGER_FREE_EMAILS).map((e) => e.toLowerCase()),
     /** Email/password and magic-link login: on for local QA, or until Whop sign-in is configured. */
