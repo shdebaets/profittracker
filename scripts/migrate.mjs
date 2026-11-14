@@ -44,7 +44,7 @@ try {
   process.exit(1)
 }
 
-const res = spawnSync("npx", ["--no-install", "supabase", "db", "push", "--db-url", dbUrl, "--yes", ...passThrough], {
+const res = spawnSync("npx", ["--no-install", "supabase", "db", "push", "--db-url", dbUrl, "--include-all", "--yes", ...passThrough], {
   stdio: "inherit",
 })
 if (res.status !== 0) {
