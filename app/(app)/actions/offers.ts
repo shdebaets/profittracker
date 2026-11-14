@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache"
 import { z } from "zod"
 import { ASSISTED_OFFER_SITES, dueOffers, type DueOffer, type OfferCandidate } from "@/lib/offers-assisted"
-import type { OfferRule } from "@/lib/offers"
+import { lastSentByListing, type OfferRule } from "@/lib/offers"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { requireCrosslister } from "@/lib/supabase/server"
 import { fail, type ActionResult } from "./result"
@@ -58,8 +58,7 @@ export async function getAssistedOffers(): Promise<AssistedOffersResult> {
     ])
     if (error) throw error
     if (!rule?.enabled) return { ok: true, offers: [] }
-    const lastSent = new Map<string, string>()
-    for (const s of sent ?? []) if (!lastSent.has(s.listing_id)) lastSent.set(s.listing_id, s.sent_at)
+    const lastSent = lastSentByListing(sent ?? [])
     type Row = { id: string; item_id: string; marketplace: string; external_url: string | null; listed_at: string | null; price_cents: number | null; item: unknown }
     const candidates: OfferCandidate[] = ((listings ?? []) as Row[]).flatMap((l) => {
       const item = (Array.isArray(l.item) ? l.item[0] : l.item) as { title: string | null; cost_cents: number; cost_unknown: boolean; list_price_cents: number | null; status: string } | null
@@ -86,6 +85,14 @@ export async function logAssistedOffer(input: { listingId: string; offerCents: n
   try {
     const { listingId, offerCents } = z.object({ listingId: z.uuid(), offerCents: z.number().int().positive().max(10_000_000) }).parse(input)
     const { supabase, userId } = await requireCrosslister()
+    // The same report can reach more than one open tab: one offer per listing per 10 minutes.
+    const { data: recent } = await supabase
+      .from("smart_offers")
+      .select("id")
+      .eq("listing_id", listingId)
+      .gte("sent_at", new Date(Date.now() - 10 * 60_000).toISOString())
+      .limit(1)
+    if (recent?.length) return { ok: true }
     const { data: l, error } = await supabase
       .from("marketplace_listings")
       .select("id, item_id, marketplace, price_cents, item:items(title, list_price_cents)")

@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server"
 import { monthLabel, monthOf, prevMonth, type Month } from "@/lib/leaderboard"
-import { sellerMonth } from "@/lib/leaderboard-data"
+import { cardBadges, sellerMonth } from "@/lib/leaderboard-data"
 import { createClient } from "@/lib/supabase/server"
 import { winCard } from "@/lib/win-card"
 
@@ -13,6 +13,9 @@ export async function GET(request: NextRequest) {
   const match = raw.match(/^(\d{4})-(\d{2})$/)
   const m: Month = match ? { year: Number(match[1]), month: Number(match[2]) - 1 } : request.nextUrl.searchParams.get("last") ? prevMonth(monthOf(new Date())) : monthOf(new Date())
   const totals = await sellerMonth(supabase, data.claims.sub, m)
-  const { data: profile } = await supabase.from("leaderboard_profiles").select("display_name").maybeSingle()
-  return winCard({ name: profile?.display_name ?? "A FlipLedger seller", month: monthLabel(m), ...totals })
+  const [{ data: profile }, badges] = await Promise.all([
+    supabase.from("leaderboard_profiles").select("display_name").maybeSingle(),
+    cardBadges(supabase, m),
+  ])
+  return winCard({ name: profile?.display_name ?? "A FlipLedger seller", month: monthLabel(m), badges, ...totals })
 }

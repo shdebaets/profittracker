@@ -1,6 +1,6 @@
 // Smart Offers on Poshmark and Mercari: which live listings are due an offer, and at what price.
 // No API there, so the seller sends each one (the extension fills the form). Pure.
-import { offerPrice, type OfferRule } from "./offers"
+import { offerDue, offerPrice, type OfferRule } from "./offers"
 
 export const ASSISTED_OFFER_SITES = ["poshmark", "mercari"] as const
 export type AssistedOfferSite = (typeof ASSISTED_OFFER_SITES)[number]
@@ -25,8 +25,7 @@ export function dueOffers(listings: OfferCandidate[], lastSent: Map<string, stri
   const out: DueOffer[] = []
   for (const l of listings) {
     if (!(ASSISTED_OFFER_SITES as readonly string[]).includes(l.marketplace) || !l.listPriceCents || !l.listedAt) continue
-    const last = lastSent.get(l.listingId)
-    if (last && now.getTime() - Date.parse(last) < rule.every_days * DAY) continue
+    if (!offerDue(lastSent.get(l.listingId), rule.every_days, now)) continue
     const age = Math.floor((now.getTime() - Date.parse(l.listedAt)) / DAY)
     const offer = offerPrice(l.listPriceCents, l.costCents, age, rule)
     if (offer) out.push({ ...l, marketplace: l.marketplace as AssistedOfferSite, listPriceCents: l.listPriceCents, offerCents: offer.cents, pct: offer.pct })

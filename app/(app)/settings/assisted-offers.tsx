@@ -26,15 +26,11 @@ export function AssistedOffers({ enabled }: { enabled: boolean }) {
     })
   useEffect(load, [enabled])
 
-  // The extension reports back once the seller sent it on the site.
+  // The extension reports back once the seller sent it; ExtensionBridge logs it, this just drops it from the list.
   useEffect(
     () =>
-      onExtensionResult(async (r) => {
-        if (r.type !== "OFFERED") return
-        const res = await logAssistedOffer({ listingId: r.listingId, offerCents: r.offerCents })
-        if (!res.ok) return void toast.error(res.error)
-        toast.success(`Offer logged on ${marketplace(r.marketplace).short}`)
-        setOffers((o) => o?.filter((x) => x.listingId !== r.listingId) ?? null)
+      onExtensionResult((r) => {
+        if (r.type === "OFFERED") setOffers((o) => o?.filter((x) => x.listingId !== r.listingId) ?? null)
       }),
     [],
   )

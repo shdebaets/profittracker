@@ -2,7 +2,9 @@ import { ImageResponse } from "next/og"
 import { formatCents } from "./money"
 
 /** The shareable "win card" PNG: real numbers from FlipLedger. 1080×1080 for Discord and socials. */
-export function winCard(opts: { name: string; month: string; profit: number; itemsSold: number; miles: number }) {
+const PLACE_COLOR = ["", "#f5c542", "#cbd5e1", "#d4915a"]
+
+export function winCard(opts: { name: string; month: string; profit: number; itemsSold: number; miles: number; badges?: { place: number; label: string }[] }) {
   return new ImageResponse(
     (
       <div style={{ display: "flex", flexDirection: "column", width: "100%", height: "100%", background: "#141210", color: "white", padding: 80, fontFamily: "sans-serif" }}>
@@ -14,6 +16,15 @@ export function winCard(opts: { name: string; month: string; profit: number; ite
           <div style={{ fontSize: 150, fontWeight: 800, color: "#22c55e", lineHeight: 1.1 }}>{formatCents(opts.profit)}</div>
           <div style={{ display: "flex", fontSize: 56, fontWeight: 700 }}>{`profit in ${opts.month}`}</div>
         </div>
+        {opts.badges?.length ? (
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 16, marginBottom: 40 }}>
+            {opts.badges.map((b) => (
+              <div key={b.label} style={{ display: "flex", alignItems: "center", gap: 12, border: `3px solid ${PLACE_COLOR[b.place]}`, borderRadius: 999, padding: "10px 26px", fontSize: 32, fontWeight: 700, color: PLACE_COLOR[b.place] }}>
+                {b.label}
+              </div>
+            ))}
+          </div>
+        ) : null}
         <div style={{ display: "flex", gap: 60, fontSize: 40, color: "#d6d3d1" }}>
           <span>{`${opts.itemsSold} sold`}</span>
           <span>{`${opts.miles} mi logged`}</span>

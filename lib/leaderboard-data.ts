@@ -1,6 +1,6 @@
 import "server-only"
 import type { SupabaseClient } from "@supabase/supabase-js"
-import { monthRange, monthTotals, type Month, type MonthTotals } from "./leaderboard"
+import { badgeLabel, monthRange, monthTotals, type Badge, type Month, type MonthTotals } from "./leaderboard"
 
 export type BoardRow = { userId: string; name: string; totals: MonthTotals }
 
@@ -30,4 +30,17 @@ export async function sellerMonth(supabase: SupabaseClient, userId: string, m: M
 export async function boardRows(admin: SupabaseClient, m: Month): Promise<BoardRow[]> {
   const { data } = await admin.from("leaderboard_profiles").select("user_id, display_name").eq("opted_in", true).limit(500)
   return Promise.all((data ?? []).map(async (p) => ({ userId: p.user_id, name: p.display_name, totals: await sellerMonth(admin, p.user_id, m) })))
+}
+
+/** The signed-in seller's newest badges up to month `m`, for their win card. User client (RLS: own rows). */
+export async function cardBadges(supabase: SupabaseClient, m: Month) {
+  const { data } = await supabase
+    .from("leaderboard_badges")
+    .select("year, month, board, place")
+    .or(`year.lt.${m.year},and(year.eq.${m.year},month.lte.${m.month})`)
+    .order("year", { ascending: false })
+    .order("month", { ascending: false })
+    .order("place", { ascending: true })
+    .limit(3)
+  return ((data ?? []) as Badge[]).map((b) => ({ place: b.place, label: badgeLabel(b) }))
 }
