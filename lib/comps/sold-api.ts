@@ -113,7 +113,7 @@ export async function refreshSoldFromApi(query: string): Promise<number> {
   if (!process.env.SOLD_DATA_API_KEY?.trim()) return 0
   const admin = createAdminClient()
   // v2: reads several pages (v1 read one, which undercounted busy products).
-  const key = `sold2:${queryKey(query)}`
+  const key = `sold3:${queryKey(query)}`
   const { data: last } = await admin.from("comp_cache").select("fetched_at").eq("key", key).maybeSingle()
   if (last && Date.now() - Date.parse(last.fetched_at) < SOLD_TTL_MS) return 0
   const since = new Date(Date.now() - 86_400_000).toISOString()
@@ -139,15 +139,19 @@ export async function refreshSoldFromApi(query: string): Promise<number> {
       const oldest = got.map((r) => r.sold_on).sort()[0]
       if (res.items.length < 60 || !oldest || oldest < monthAgo) break
     }
-    await admin.from("comp_cache").upsert({ key, payload: { requests, results: rows.length, total }, fetched_at: new Date().toISOString() })
-    if (!rows.length) return 0
+    // Pages can overlap while new sales come in: one row per sale, or the upsert refuses the batch.
+    const unique = [...new Map(rows.map((r) => [r.external_id, r])).values()]
     const qk = queryKey(query)
-    const { error } = await admin.from("comp_sales").upsert(
-      rows.map((r) => ({ ...r, query_key: qk, collected_at: new Date().toISOString() })),
-      { onConflict: "query_key,external_id" },
-    )
-    if (error) throw error
-    return rows.length
+    if (unique.length) {
+      const { error } = await admin.from("comp_sales").upsert(
+        unique.map((r) => ({ ...r, query_key: qk, collected_at: new Date().toISOString() })),
+        { onConflict: "query_key,external_id" },
+      )
+      if (error) throw error
+    }
+    // Only mark it read once it's saved, so a failure is retried on the next lookup.
+    await admin.from("comp_cache").upsert({ key, payload: { requests, results: unique.length, total }, fetched_at: new Date().toISOString() })
+    return unique.length
   } catch (e) {
     console.error("[sold data]", e)
     return 0

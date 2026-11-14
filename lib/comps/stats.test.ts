@@ -58,4 +58,18 @@ describe("comps", () => {
     expect(p.fees).toBe(Math.round(3200 * 0.1325))
     expect(p.profit).toBe(3200 - p.fees - 600 - 800)
   })
+
+  it("uses the newest sales for a fast seller and works the 30-day count out from the pace", () => {
+    // The 30th Celebration UPC Night on 14 Nov 2026: launch-week sales ~$540+, this week ~$350-$400.
+    const today = new Date("2026-11-14T12:00:00Z")
+    const s = (day: string, dollars: number) => ({ priceCents: dollars * 100, shippingCents: 0, soldOn: day, bestOffer: false, condition: "New" })
+    const thisWeek = [352.9, 347.67, 358.19, 443.27, 402.91, 380, 348.35, 407.08, 386.36, 379.99, 372.89, 399.99, 384.19, 349.99, 379.95, 398.36, 567.81, 375, 647.43, 544.83]
+    const sales = [...thisWeek.map((p) => s("2026-11-13", p)), ...Array.from({ length: 40 }, () => s("2026-11-12", 540))]
+    const st = compStats([], sales, today)
+    expect(st.estimateSource).toBe("recent")
+    // $647.43 (over 1.5x) is dropped; the median of the rest:
+    expect(st.estimate).toBe(38000)
+    expect(st.sold30Estimated).toBe(true)
+    expect(st.sold30).toBe(900) // 60 sales over 2 days → ~30/day
+  })
 })
