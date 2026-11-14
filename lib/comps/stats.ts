@@ -146,3 +146,22 @@ export function buyProfit(costCents: number, sellCents: number, labelCents = DEF
 
 /** A UPC/EAN/ISBN typed or scanned: 8, 12, 13 or 14 digits. */
 export const isGtin = (s: string) => /^(\d{8}|\d{12,14})$/.test(s.trim())
+
+/**
+ * The words sent to the sold search. eBay needs every word to match, so the product name is cut to
+ * the core: "Pokémon TCG 30th Celebration Ultra Premium Collection Night (Umbreon)" missed the
+ * many sales titled "Pokemon 30th Anniversary UPC … Night" with no "TCG" or "Celebration". The wider
+ * search brings in look-alikes too; the AI judge drops those. Pure.
+ */
+export function soldPhrase(product: string): string {
+  const words = product
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\([^)]*\)/g, " ")
+    .replace(/[|•–—\-:,]/g, " ")
+    .replace(/\b(tcg|ccg|celebration|anniversary|edition|official|brand|new|sealed|factory|the|and|of)\b/gi, " ")
+    .split(/\s+/)
+    .filter(Boolean)
+  return words.slice(0, 7).join(" ") || product
+}
+

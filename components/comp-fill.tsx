@@ -7,7 +7,9 @@ import { toast } from "sonner"
 import { compLookup } from "@/app/(app)/actions/comps"
 import { Scanner } from "@/app/(app)/comp/scanner"
 import type { CompLookup, CompPick } from "@/lib/comps/lookup"
+import { useExtension } from "@/lib/extension"
 import { formatCents } from "@/lib/money"
+import { pullSoldHere, soldIsStale, soldSource } from "@/lib/sold-browser"
 
 /**
  * Profit Calculator's "What does it sell for?": scan or type, pick the product if the words are
@@ -20,14 +22,24 @@ export function CompFill({ onPrice }: { onPrice: (cents: number) => void }) {
   const [found, setFound] = useState<CompLookup | null>(null)
   const [pending, start] = useTransition()
 
+  const ext = useExtension()
+  const source = soldSource(!!ext.info)
+
   const run = (input: string, product?: string) =>
     start(async () => {
-      const res = await compLookup(input, product)
+      let res = await compLookup(input, product, !!source)
       if (!res.ok) return void toast.error(res.error)
       if ("pick" in res) {
         setFound(null)
         return setPick(res.pick)
       }
+      // This device reads eBay's sold prices itself (extension or phone app): refresh them if stale.
+      if (source && soldIsStale(res.lookup.soldCollectedAt)) {
+        const pulled = await pullSoldHere(source, res.lookup.query)
+        const again = await compLookup(res.lookup.gtin ?? input, res.lookup.gtin ? null : res.lookup.product, pulled.ok)
+        if (again.ok && "lookup" in again) res = again
+      }
+      if (!("lookup" in res)) return
       setPick(null)
       setFound(res.lookup)
       if (res.lookup.stats.estimate != null) onPrice(res.lookup.stats.estimate)

@@ -1,5 +1,6 @@
 // Runs on eBay sold-search pages opened by FlipLedger (a "comps" job). Reads the sold
 // listings on the page (ported from CompAmp's collector) and hands them back. Only reads.
+// The phone app uses the same rules from lib/comps/collect-sold.ts: keep the two in step.
 ;(function () {
   const MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"]
   const FOREIGN = /\bto\b|AU\s*\$|C\s*\$|CAD|AUD|£|€/i
@@ -57,7 +58,10 @@
     await new Promise((r) => setTimeout(r, 1500))
     const rows = collectSoldCards(document)
     const challenged = !rows.length && /captcha|verify yourself|security measure|sign in/i.test(document.body?.innerText?.slice(0, 3000) ?? "")
-    chrome.runtime.sendMessage({ type: "DONE", rows, challenged }).catch(() => {})
+    // "1,113 results": eBay's count of matching sold listings, so the app can cap its 30-day estimate.
+    const heading = document.querySelector(".srp-controls__count-heading")?.textContent ?? ""
+    const total = Number(heading.match(/([\d,]+)\s+results?/i)?.[1]?.replace(/,/g, "")) || null
+    chrome.runtime.sendMessage({ type: "DONE", rows, challenged, total }).catch(() => {})
   }
   if (typeof chrome !== "undefined" && chrome.runtime?.id) run()
 })()

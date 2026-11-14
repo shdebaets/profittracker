@@ -232,10 +232,14 @@ export type SoldCompRow = {
 }
 
 /** Ask the extension to read eBay's public sold listings for a search (background tab, read only). */
-export function collectSoldWithExtension(query: string): Promise<{ ok: true; rows: SoldCompRow[] } | { ok: false; error: string }> {
+export function collectSoldWithExtension(
+  query: string,
+  /** The words to search (soldPhrase); extension 0.10.0+ also reads eBay's result count. */
+  phrase?: string,
+): Promise<{ ok: true; rows: SoldCompRow[]; total: number | null } | { ok: false; error: string }> {
   const jobId = crypto.randomUUID()
   return new Promise((resolve) => {
-    const finish = (r: { ok: true; rows: SoldCompRow[] } | { ok: false; error: string }) => {
+    const finish = (r: { ok: true; rows: SoldCompRow[]; total: number | null } | { ok: false; error: string }) => {
       clearTimeout(timer)
       window.removeEventListener("message", onMsg)
       resolve(r)
@@ -244,11 +248,11 @@ export function collectSoldWithExtension(query: string): Promise<{ ok: true; row
       if (e.source !== window || e.origin !== location.origin) return
       const d = e.data
       if (d?.source !== EXT_SOURCE || d.jobId !== jobId) return
-      if (d.type === "SOLD_COMPS") finish({ ok: true, rows: Array.isArray(d.rows) ? d.rows : [] })
+      if (d.type === "SOLD_COMPS") finish({ ok: true, rows: Array.isArray(d.rows) ? d.rows : [], total: typeof d.total === "number" ? d.total : null })
       else if (d.type === "ERROR") finish({ ok: false, error: d.error })
     }
     const timer = setTimeout(() => finish({ ok: false, error: "eBay didn't show its sold listings. Since July 2026 eBay only shows them to signed-in members: sign in at ebay.com in this Chrome, then try again." }), 45_000)
     window.addEventListener("message", onMsg)
-    window.postMessage({ source: APP_SOURCE, type: "COMPS", jobId, query }, location.origin)
+    window.postMessage({ source: APP_SOURCE, type: "COMPS", jobId, query, phrase: phrase ?? query }, location.origin)
   })
 }

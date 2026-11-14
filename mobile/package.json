@@ -1,0 +1,20 @@
+{
+  "name": "flipledger-mobile",
+  "private": true,
+  "version": "1.0.0",
+  "description": "FlipLedger phone app: a Capacitor shell around profit.emoneydeals.com with an eBay window for sold prices",
+  "scripts": {
+    "sync": "cap sync",
+    "ios": "cap open ios",
+    "android": "cap open android"
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.0.0",
+    "@capacitor/core": "^8.0.0",
+    "@capacitor/ios": "^8.0.0",
+    "@capgo/inappbrowser": "^8.6.14"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^8.0.0"
+  }
+}

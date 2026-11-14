@@ -6,7 +6,7 @@
 import "server-only"
 import { createHash } from "node:crypto"
 import { createAdminClient } from "@/lib/supabase/admin"
-import { queryKey } from "./stats"
+import { queryKey, soldPhrase } from "./stats"
 
 export const SOLD_TTL_MS = 12 * 60 * 60_000
 const ENDPOINT = "https://api.openwebninja.com/real-time-ebay-data/search"
@@ -105,27 +105,12 @@ async function fetchPage(query: string, page: number): Promise<{ items: unknown[
   return { items, total }
 }
 
-/**
- * The words sent to the sold search. eBay needs every word to match, so the product name is cut to
- * the core: "Pokémon TCG 30th Celebration Ultra Premium Collection Night (Umbreon)" missed the
- * many sales titled "Pokemon 30th Anniversary UPC … Night" with no "TCG" or "Celebration". The wider
- * search brings in look-alikes too; the AI judge drops those. Pure.
- */
-export function soldPhrase(product: string): string {
-  const words = product
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/\([^)]*\)/g, " ")
-    .replace(/[|•–—\-:,]/g, " ")
-    .replace(/\b(tcg|ccg|celebration|anniversary|edition|official|brand|new|sealed|factory|the|and|of)\b/gi, " ")
-    .split(/\s+/)
-    .filter(Boolean)
-  return words.slice(0, 7).join(" ") || product
-}
+export { soldPhrase }
 
 const MAX_PAGES = () => Number(process.env.SOLD_DATA_MAX_PAGES) || 4
 
-const soldKey = (query: string) => `sold5:${queryKey(query)}`
+/** comp_cache key for the last sold read of a search (paid API or a browser read). */
+export const soldKey = (query: string) => `sold5:${queryKey(query)}`
 
 /** What the last sold read found: when it ran and eBay's own count of matching sold listings. */
 export async function lastSoldRead(query: string): Promise<{ at: string; total: number | null } | null> {
