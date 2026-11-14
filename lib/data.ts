@@ -60,7 +60,7 @@ export async function getSettings(): Promise<Settings> {
   const { supabase } = await requireUser()
   const { data } = await supabase
     .from("settings")
-    .select("mileage_rate_cents, default_return_days, tax_bracket, tax_bracket_set, stale_days, email_recap, email_tax_reminders")
+    .select("mileage_rate_cents, default_return_days, tax_bracket, tax_bracket_set, stale_days, email_recap, email_tax_reminders, push_recap, push_tax_reminders")
     .maybeSingle()
   const row = data as Settings | null
   return row ? { ...row, tax_bracket: Number(row.tax_bracket) } : DEFAULT_SETTINGS

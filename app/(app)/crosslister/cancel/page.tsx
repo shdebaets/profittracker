@@ -20,10 +20,14 @@ export default async function CancelPage() {
 
   const [items, expenses, subs, settings] = await Promise.all([getItems(), getExpenses(), getSubscriptions(), getSettings()])
   const now = new Date()
-  const year = periodReport(items, expenses, subs, yearPeriod(now.getFullYear()), now)
+  // Every tile is this calendar year, the same year as the tax savings.
+  const period = yearPeriod(now.getFullYear())
+  const year = periodReport(items, expenses, subs, period, now)
   const { savings } = taxSavings(year, settings.tax_bracket)
-  const miles = expenses.filter((e) => e.kind === "mileage").reduce((a, e) => a + Number(e.miles ?? 0), 0)
-  const expenseCents = expenses.filter((e) => e.kind === "expense").reduce((a, e) => a + e.amount_cents, 0)
+  const itemsThisYear = items.filter((i) => {
+    const t = new Date(i.purchased_at)
+    return t >= period.from && t < period.to
+  }).length
   const liveListings = items.reduce((a, i) => a + i.listings.filter((l) => l.status === "active").length, 0)
   const { annualUrl, savePromoCode } = whopConfig()
 
@@ -34,9 +38,9 @@ export default async function CancelPage() {
         stats={{
           savings,
           year: now.getFullYear(),
-          miles: Math.round(miles * 10) / 10,
-          expenseCents,
-          items: items.length,
+          miles: year.miles,
+          expenseCents: year.expenseCents,
+          items: itemsThisYear,
           liveListings,
         }}
         plan={billing.plan}
