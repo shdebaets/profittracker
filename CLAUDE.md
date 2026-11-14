@@ -113,6 +113,12 @@ Local QA logins live in `.env.example` (`qa-a@flipledger.test`, `qa-b@flipledger
 - `runSmartOffers` (`lib/marketplaces/ebay/offers.ts`) runs from the daily `sync-sales` cron after each account's sale sync: Negotiation API `find_eligible_items` → for listings FlipLedger knows (so cost is known) `send_offer_to_interested_buyers`, 2-day offers, no counter-offers. Each offer is logged in `smart_offers`; after 3 days it's marked `sold` (item sold within 3 days at or under offer + $1) or `expired`.
 - Poshmark and Mercari offers are deliberately not automated: no API, and their terms ban bots.
 
+### Leaderboard and win cards
+
+- `/leaderboard`: opt-in only (`leaderboard_profiles`, default off, name = initials or a nickname up to 24 chars). Monthly boards for profit, items sold and miles (`lib/leaderboard.ts`, UTC months), last month's #1 per board shown as champion. Other sellers' rows are read with the service role in `boardRows` and only names and totals reach the browser.
+- Win card: `/api/win-card` (signed-in seller's own numbers, `?last=1` for last month) renders a 1080×1080 PNG with `next/og` (`lib/win-card.tsx`).
+- "Post to eMoney Discord wins" (`postWinToDiscord`) uploads the card through `DISCORD_WINS_WEBHOOK_URL` (hidden when unset), once per seller per month (guarded by `email_log` kind `win-post`).
+
 ### Cross-listing
 
 - **Registry:** `lib/marketplaces/registry.ts` lists each marketplace's mode (`api` / `assisted`), sell URL, fee preset and photo limit.
