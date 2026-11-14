@@ -14,7 +14,7 @@ function listing(marketplace: MarketplaceId, status: Listing["status"] = "active
   return {
     id: `l-${marketplace}`, user_id: "u", item_id: "item", marketplace, status,
     external_id: null, offer_id: marketplace === "ebay" ? "offer-1" : null, external_url: null,
-    price_cents: 5000, last_error: null, listed_at: null, delisted_at: null, ad_rate: null,
+    price_cents: 5000, last_error: null, listed_at: null, delisted_at: null, ad_rate: null, sync_status: "synced", sync_error: null, pending_changes: null,
   }
 }
 

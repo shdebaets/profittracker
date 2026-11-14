@@ -2,6 +2,10 @@
 
 import { revalidatePath } from "next/cache"
 import { z } from "zod"
+import { loadUserData, sendRecap } from "@/lib/email/jobs"
+import { EmailError } from "@/lib/email/send"
+import { reportError, UserError } from "@/lib/errors"
+import { createAdminClient } from "@/lib/supabase/admin"
 import { requireUser } from "@/lib/supabase/server"
 import { mileageDeduction } from "@/lib/profit"
 import { fail, type ActionResult } from "./result"
@@ -130,6 +134,9 @@ const settingsSchema = z.object({
   mileageRateCents: z.number().int().min(0).max(1000),
   defaultReturnDays: z.number().int().min(0).max(365),
   taxBracket: bracket,
+  staleDays: z.union([z.literal(30), z.literal(45), z.literal(60), z.literal(90), z.literal(120)]),
+  emailRecap: z.boolean(),
+  emailTaxReminders: z.boolean(),
 })
 
 export async function saveSettings(input: z.input<typeof settingsSchema>): Promise<ActionResult> {
@@ -142,6 +149,9 @@ export async function saveSettings(input: z.input<typeof settingsSchema>): Promi
       default_return_days: s.defaultReturnDays,
       tax_bracket: s.taxBracket,
       tax_bracket_set: true,
+      stale_days: s.staleDays,
+      email_recap: s.emailRecap,
+      email_tax_reminders: s.emailTaxReminders,
     })
     if (error) throw error
     return done()
@@ -191,6 +201,24 @@ export async function saveTaxForm(input: z.input<typeof taxFormSchema>): Promise
     if (error) throw error
     return done()
   } catch (e) {
+    return fail(e)
+  }
+}
+
+/** Settings → "Email me this week's recap now": sends it right away, even for a quiet week. */
+export async function sendTestRecap(): Promise<ActionResult> {
+  try {
+    const { userId, email } = await requireUser()
+    if (!email) throw new UserError("Your account has no email address.")
+    const admin = createAdminClient()
+    const data = await loadUserData(admin, userId)
+    await sendRecap(admin, { id: userId, email }, data, new Date(), true)
+    return { ok: true }
+  } catch (e) {
+    if (e instanceof EmailError) {
+      reportError(e, "test recap")
+      return { ok: false, error: "The email didn't send. We're looking into it." }
+    }
     return fail(e)
   }
 }

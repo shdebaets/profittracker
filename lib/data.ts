@@ -1,15 +1,13 @@
 import "server-only"
 import { signPaths } from "@/lib/photos"
-import { DEFAULT_TAX_BRACKET, type TaxPlatform } from "@/lib/tax"
+import type { Haul } from "@/lib/lots"
+import type { TaxPlatform } from "@/lib/tax"
 import { requireUser } from "@/lib/supabase/server"
 import type { Expense, Item, MarketplaceConnection, Settings, Subscription } from "@/lib/types"
 
-export const DEFAULT_SETTINGS: Settings = {
-  mileage_rate_cents: 76,
-  default_return_days: 90,
-  tax_bracket: DEFAULT_TAX_BRACKET,
-  tax_bracket_set: false,
-}
+import { DEFAULT_SETTINGS } from "@/lib/data-defaults"
+
+export { DEFAULT_SETTINGS }
 
 export async function getItems(): Promise<Item[]> {
   const { supabase } = await requireUser()
@@ -62,7 +60,7 @@ export async function getSettings(): Promise<Settings> {
   const { supabase } = await requireUser()
   const { data } = await supabase
     .from("settings")
-    .select("mileage_rate_cents, default_return_days, tax_bracket, tax_bracket_set")
+    .select("mileage_rate_cents, default_return_days, tax_bracket, tax_bracket_set, stale_days, email_recap, email_tax_reminders")
     .maybeSingle()
   const row = data as Settings | null
   return row ? { ...row, tax_bracket: Number(row.tax_bracket) } : DEFAULT_SETTINGS
@@ -74,4 +72,11 @@ export async function getTaxForms(year: number): Promise<Partial<Record<TaxPlatf
   const { data, error } = await supabase.from("tax_forms").select("platform, gross_cents").eq("tax_year", year)
   if (error) throw error
   return Object.fromEntries((data ?? []).map((r) => [r.platform, Number(r.gross_cents)]))
+}
+
+export async function getHauls(): Promise<Haul[]> {
+  const { supabase } = await requireUser()
+  const { data, error } = await supabase.from("hauls").select("*").order("purchased_at", { ascending: false })
+  if (error) throw error
+  return data as Haul[]
 }

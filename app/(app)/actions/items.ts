@@ -191,6 +191,8 @@ const haulSchema = z.object({
   purchasedAt: z.string().optional(),
   returnable: z.boolean().default(false),
   returnDeadline: z.string().nullable().optional(),
+  splitMode: z.enum(["even", "value"]).default("value"),
+  receiptPath: z.string().max(200).regex(/^[0-9a-f-]+\/[0-9a-f-]+\.jpg$/).nullable().optional(),
   lines: z
     .array(
       z.object({
@@ -206,16 +208,28 @@ export type HaulInput = z.input<typeof haulSchema>
 export async function createHaul(input: HaulInput): Promise<ActionResult> {
   try {
     const h = haulSchema.parse(input)
-    const { supabase } = await requireUser()
+    const { supabase, userId } = await requireUser()
+    if (h.receiptPath && !h.receiptPath.startsWith(`${userId}/`)) throw new Error("Receipt photo belongs to another user")
     const purchased_at = h.purchasedAt ? new Date(h.purchasedAt).toISOString() : new Date().toISOString()
     const { data: haul, error } = await supabase
       .from("hauls")
-      .insert({ title: h.title || null, store: h.store || null, total_cents: h.totalCents, purchased_at })
+      .insert({
+        title: h.title || null,
+        store: h.store || null,
+        total_cents: h.totalCents,
+        purchased_at,
+        split_mode: h.splitMode,
+        receipt_path: h.receiptPath ?? null,
+      })
       .select("id")
       .single()
     if (error) throw error
 
-    const split = distributeHaul(h.totalCents, h.lines)
+    // Even split ignores the estimated values: same cost for every unit.
+    const split = distributeHaul(
+      h.totalCents,
+      h.splitMode === "even" ? h.lines.map((l) => ({ ...l, estValueCents: 0 })) : h.lines,
+    )
     // Insert one at a time so the seq trigger numbers them in order.
     for (const [idx, line] of h.lines.entries()) {
       const { error: insErr } = await supabase.from("items").insert({

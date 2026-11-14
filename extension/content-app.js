@@ -21,7 +21,7 @@
         .catch(() => reply(null))
       return
     }
-    if (!["LIST", "DELIST", "IMPORT", "IMPORT_SALES"].includes(msg.type)) return
+    if (!["LIST", "DELIST", "IMPORT", "IMPORT_SALES", "COMPS"].includes(msg.type)) return
     const fail = (error) =>
       window.postMessage({ source: EXT_SOURCE, type: "ERROR", jobId: msg.jobId, marketplace: msg.marketplace, error }, location.origin)
     chrome.runtime

@@ -1,11 +1,13 @@
 "use client"
 
 import {
-  ArrowLeft, Check, ChevronDown, Copy, ExternalLink, Images, Loader2, Search, Unplug, Wand2,
+  ArrowLeft, Check, ChevronDown, Copy, ExternalLink, Images, Loader2, Search, Sparkles, Unplug, Wand2,
 } from "lucide-react"
 import Link from "next/link"
 import { useEffect, useState, useTransition } from "react"
 import { toast } from "sonner"
+import { aiDraftListing } from "@/app/(app)/actions/ai"
+import { markListingSynced, retryListingSync } from "@/app/(app)/actions/edit"
 import {
   delistEverywhere, ebayCategories, ebayCategoryDetails, endListing, forgetListing, getEbayStatus,
   markAssistedListed, promoteEbayListing, publishEbay, saveListingDetails, type EbayStatus,
@@ -88,6 +90,26 @@ export function CrosslistPanel({ item, active, onBack }: { item: Item; active: b
     k === "price" ? toCents(draft.price) !== toCents(saved.price) : draft[k].trim() !== saved[k],
   )
   const set = <K extends keyof Draft>(k: K, v: Draft[K]) => setDraft((d) => ({ ...d, [k]: v }))
+  const [ai, setAi] = useState<{ category: string; specifics: { name: string; value: string }[]; priceNote: string } | null>(null)
+  const [aiPending, startAi] = useTransition()
+
+  function writeWithAi() {
+    startAi(async () => {
+      const res = await aiDraftListing(item.id)
+      if (!res.ok) return void toast.error(res.error)
+      const d = res.draft
+      setDraft((cur) => ({
+        title: d.title || cur.title,
+        description: d.description || cur.description,
+        condition: (d.condition as ItemCondition | null) ?? cur.condition,
+        brand: d.brand ?? cur.brand,
+        size: d.size ?? cur.size,
+        price: d.suggested_price_usd != null ? d.suggested_price_usd.toFixed(2) : cur.price,
+      }))
+      setAi({ category: d.category, specifics: d.item_specifics, priceNote: d.price_note })
+      toast.success("Drafted from your photos. Check it, then save.")
+    })
+  }
 
   useEffect(() => {
     writeSheetStore("crosslist-draft", dirty ? { itemId: item.id, draft } : null)
@@ -118,7 +140,27 @@ export function CrosslistPanel({ item, active, onBack }: { item: Item; active: b
   return (
     <div className="flex flex-col gap-4">
       <section className="flex flex-col gap-3 rounded-3xl border bg-card p-4">
-        <p className="text-xs font-bold tracking-wider text-muted-foreground uppercase">Listing details</p>
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-xs font-bold tracking-wider text-muted-foreground uppercase">Listing details</p>
+          <button
+            type="button"
+            disabled={aiPending}
+            onClick={writeWithAi}
+            className="flex items-center gap-1.5 rounded-xl bg-brand-soft px-3 py-2 text-sm font-bold text-brand disabled:opacity-60"
+          >
+            {aiPending ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
+            {aiPending ? "Writing…" : "Write it from photos"}
+          </button>
+        </div>
+        {ai && (
+          <div className="rounded-2xl bg-muted/60 p-3 text-xs">
+            <p><b>Category:</b> {ai.category}</p>
+            {ai.specifics.length > 0 && (
+              <p className="mt-1"><b>Item specifics:</b> {ai.specifics.map((x) => `${x.name}: ${x.value}`).join(" · ")}</p>
+            )}
+            {ai.priceNote && <p className="mt-1 text-muted-foreground">Price: {ai.priceNote}</p>}
+          </div>
+        )}
         <div>
           <FieldLabel htmlFor="xl-title">Title</FieldLabel>
           <TextInput id="xl-title" value={draft.title} onChange={(e) => set("title", e.target.value)} placeholder="Brand, item, size, color" />
@@ -305,6 +347,7 @@ function LiveActions({ listing, m, title }: { listing: Listing; m: Marketplace; 
   }
   return (
     <div className="grid grid-cols-2 gap-2">
+      <SyncNotice listing={listing} m={m} url={url} />
       <a href={url} target="_blank" rel="noopener noreferrer" className="flex h-11 items-center justify-center gap-1.5 rounded-xl border font-semibold">
         View <ExternalLink className="size-4" />
       </a>
@@ -327,6 +370,52 @@ function LiveActions({ listing, m, title }: { listing: Listing; m: Marketplace; 
           Not actually listed? Remove
         </button>
       )}
+    </div>
+  )
+}
+
+/** Edit once, update everywhere: what still has to reach this site. */
+function SyncNotice({ listing, m, url }: { listing: Listing; m: Marketplace; url: string }) {
+  const [pending, run] = useRun()
+  if (listing.sync_status === "synced") return null
+  const c = listing.pending_changes ?? {}
+  const what = [
+    c.priceCents !== undefined && `price to ${formatCents(c.priceCents)}`,
+    c.title !== undefined && "title",
+    c.description !== undefined && "description",
+    c.quantity !== undefined && `quantity to ${c.quantity}`,
+  ].filter(Boolean)
+  return (
+    <div className="col-span-2 flex flex-col gap-2 rounded-xl border border-brand/40 bg-brand-soft p-3 text-sm">
+      {listing.sync_status === "failed" ? (
+        <p className="text-loss">Couldn&apos;t update {m.short}: {listing.sync_error ?? "unknown error"}</p>
+      ) : (
+        <p>
+          Update {m.short}: change the {what.length ? what.join(", ") : "listing"}.
+        </p>
+      )}
+      <div className="grid grid-cols-2 gap-2">
+        {listing.sync_status === "failed" ? (
+          <button
+            disabled={pending}
+            onClick={() => run(() => retryListingSync(listing.id), `${m.short} updated`)}
+            className="h-10 rounded-lg bg-ink font-semibold text-white disabled:opacity-60"
+          >
+            Retry
+          </button>
+        ) : (
+          <a href={url} target="_blank" rel="noopener noreferrer" className="flex h-10 items-center justify-center gap-1 rounded-lg border bg-card font-semibold">
+            Open {m.short} <ExternalLink className="size-3.5" />
+          </a>
+        )}
+        <button
+          disabled={pending}
+          onClick={() => run(() => markListingSynced(listing.id), "Marked updated")}
+          className="h-10 rounded-lg border bg-card font-semibold disabled:opacity-60"
+        >
+          {listing.sync_status === "failed" ? "I fixed it" : "Done"}
+        </button>
+      </div>
     </div>
   )
 }

@@ -49,7 +49,8 @@ Local QA logins live in `.env.example` (`qa-a@flipledger.test`, `qa-b@flipledger
   - **Enforcement:** cross-listing actions call `requireCrosslister()` (throws a `UserError`); pages and the layout use `canCrosslist()` to swap the tools for `CrosslistUpsell`, which links to `/crosslister` (buy, "I already bought it", billing). `endListing({ manual: true })` stays open so lapsed members can clear delist alerts. Access = email in `FLIPLEDGER_FREE_EMAILS`, or Whop `checkAccess` says yes (customer or admin) for any of `WHOP_CROSSLIST_PRODUCT_IDS`. The answer is cached 10 minutes in `whop_links` (service-role only, no RLS policies, so users can't grant themselves access); if Whop errors, the last answer stands.
   - **Kill switches:** empty `WHOP_CROSSLIST_PRODUCT_IDS` = cross-listing open to everyone. Empty `WHOP_CLIENT_ID` = email login comes back. `ALLOW_EMAIL_LOGIN=1` shows the email form for local QA. Set the product IDs only after `WHOP_CLIENT_ID`: users who never signed in with Whop have no `whop_links` row and can't be granted the Cross-Lister.
   - The daily cron doesn't check access, so lapsed members' eBay sales still sync into their profit numbers.
-  - If a buyer's Whop email differs from their old FlipLedger email they get a new empty account; fix by pointing `whop_links.user_id` at the old user.
+  - **Linking an existing account:** if someone is already signed in (an older email-login account) when the Whop callback runs, `linkWhopToCurrentUser` attaches Whop to that account instead of matching by email, so a different Whop email can't make a second, empty account. `/crosslister` shows "Connect your Whop account" (`/auth/whop/start`) to signed-in users with no `whop_links` row. If someone signs in fresh with a Whop email that differs from their old FlipLedger email, they still get a new empty account; fix by pointing `whop_links.user_id` at the old user.
+  - **Billing and the cancel flow** (`lib/whop/billing.ts`, `/crosslister`, `/crosslister/cancel`): reads the user's Cross-Lister memberships from Whop (`GET /memberships?user_id&product_ids&statuses`), shows plan and renewal date, and runs the cancel flow inside FlipLedger: their numbers (tax savings, miles, expenses, items), what turns off, then save offers before a cancel at period end. Offers: pause billing 1–3 months (`/memberships/{id}/pause` with `until`; Whop keeps access during a pause), a promo code on next renewals (`WHOP_SAVE_PROMO_CODE`, hidden when empty), and the yearly plan (`WHOP_CROSSLIST_ANNUAL_URL`). Once a yearly membership is live, `billingState` sets any monthly one to cancel at period end. Actions never take a membership id from the browser; they look it up from `whop_links`. Plans on Whop (eMoney Inner Circle, `biz_nfZESqY1ozpUqF`): $30/month `plan_t4m0Uu4JBQbM0`, $300/year `plan_6PimZZjEnRdYN`, plus a free one. The FlipLedger Whop app is `app_aRVAnzNgupBdws`; `WHOP_API_KEY` is a business key on eMoney Inner Circle.
 - **Money** is always stored as integer cents. Profit math lives in `lib/profit.ts`.
 - **Items:** `status` is `inventory | sold | returned`. A partial sale splits the row (`lib/items/sell.ts`). "Listed" isn't a status; it's derived from active `marketplace_listings` rows.
 - **Photos:**
@@ -75,6 +76,48 @@ Local QA logins live in `.env.example` (`qa-a@flipledger.test`, `qa-b@flipledger
 - **Quarterly estimates** use IRS periods (Jan–Mar, Apr–May, Jun–Aug, Sep–Dec; Q4 due Jan 15) and `estimatedTax` = 15.3% SE tax on 92.35% of net + bracket × (net − half SE).
 - **PDF:** `/tax-report/[year]` is a plain printable page outside the `(app)` layout; the browser's "Save as PDF" makes the file.
 - **Mileage log:** `expenses.start_location`/`end_location`. GPS trips save their first and last fix as "lat, lon"; manual trips take typed places.
+
+### Lots, stale inventory, edit everywhere
+
+- **Lots** are `hauls` (`lib/lots.ts`, `/lots`, `HaulForm`). Split mode `even` (same cost per unit) or `value` (by estimated resale value, `distributeHaul`), optional receipt photo (`hauls.receipt_path`, same `item-photos` bucket, path must start with the user's id). Items keep `haul_id`, also on partial-sale rows, so `lotStats` can show what a lot returned: sale revenue minus fees and labels, before the lot's cost; ROI = (returned − lot cost) / lot cost.
+- **Stale alerts** (`lib/stale.ts`): an inventory item is stale after `settings.stale_days` (30/45/60/90/120, default 60) counted from its first live listing, else its purchase date. Dashboard card → `/inventory?filter=stale`, where `RepriceBar` drops prices by %, by $, or sets one (`repriceItems`, never below $0.99, from `askingPrice` = list price else highest live listing price).
+- **Edit once, update everywhere** (`lib/crosslist/edit.ts`): `saveListingDetails` and `repriceItems` call `propagateToListings` with what changed. eBay is revised in place (`lib/marketplaces/ebay/revise.ts`: `bulk_update_price_quantity` for price/quantity, which answers 200 even when a line fails so check `responses[]`; title/description by GET + PUT of the inventory item, dropping read-only fields, plus the offer's `listingDescription`). Assisted sites get `marketplace_listings.sync_status = 'pending'` with `pending_changes`; failures get `failed` + `sync_error` and a Retry. The crosslist panel's `SyncNotice` shows each listing's state. Applying pending changes on assisted sites through the extension is not built yet; the seller opens the site and taps Done.
+- **Overpriced alerts** (`lib/comps/overpriced.ts`, `findOverpriced`, `OverpricedCheck` on Inventory): items whose asking price is 25%+ above the 90-day sold median on file for their title (`comp_sales`, at least 3 sales, best offers left out). One tap sets the sold median everywhere through `repriceItems`.
+
+### Scan to Comp (CompAmp in FlipLedger)
+
+- `/comp` (header scan button): camera barcode scan (`BarcodeDetector` on Android Chrome, ZXing `@zxing/browser` on iPhone) or typed UPC/keywords → `lookupComps` (`lib/comps/`).
+- **Live listings:** eBay Browse API `item_summary/search` by `gtin` or `q` with the app token (`getAppToken`), no seller login. eBay's public APIs don't give sold prices (Marketplace Insights needs eBay approval).
+- **Sold prices:** `comp_sales`, shared by all users (public market data; read policy for authenticated, writes only through `saveSoldComps` with the service role). Filled by extension 0.8.0+: `COMPS` opens `ebay.com/sch/i.html?_nkw=…&LH_Sold=1&LH_Complete=1&_ipg=240` in a background tab, `extension/comps-ebay.js` reads the cards (parser ported from CompAmp's `collector.js`), and the app saves them. Rows are filed under `queryKey(query)`; a barcode's query is `searchPhrase(first live title)`. Phones see whatever a desktop already read.
+- **Stats** (`lib/comps/stats.ts`, from CompAmp's sold research): 30/90-day sold medians (price + shipping, best offers left out), live count and lowest Buy It Now, sell-through = sold30 / (sold30 + live), days of supply. Estimate = sold 30d median, else 90d, else live median. Profit = estimate − 13.25% eBay fee − $6 label − cost.
+- **Tracked products** (`tracked_products`, per user): CompAmp's product tracking with a target cost; refreshed on demand (Browse calls are rate-limited, so no cron yet).
+- Not ported from CompAmp: product versions/editions, the AI listing judge, collector leases and daily background refreshes. CompAmp itself (Lovable project `a7f2033a-…`, comp.emoneydeals.com) still runs separately.
+
+### Emails (Resend)
+
+- `lib/email/`: `sendEmail` posts to Resend with `RESEND_API_KEY`, from `RESEND_FROM` (default `FlipLedger <noreply@emoneydeals.com>`; the domain must be verified in Resend). Templates are inline-styled and left-aligned.
+- Daily cron `/api/cron/daily-emails` (14:00 UTC = 9am ET): on Sundays the weekly recap (`lib/recap.ts`, skipped for quiet weeks), every day the quarterly tax reminder 7 days and 1 day before a due date (skipped when there's nothing to set aside). `email_log` (service role only) makes each send happen once.
+- Opt-outs: `settings.email_recap`, `settings.email_tax_reminders`, toggled in Settings, or one-click from the signed link `/api/email/unsubscribe?u&k&s` (HMAC with `CRON_SECRET`; public path in `proxy.ts`; also sent as `List-Unsubscribe`).
+- Settings → "Email me this week's recap now" sends a recap immediately (good for checking Resend). `/recap` is the in-app recap screen.
+- Push notifications are not built: web push only works on iPhone once the app is on the home screen, and needs VAPID keys. The trip-saved toast covers the in-app part.
+
+### AI listing from photos
+
+- `lib/ai/listing.ts` + `aiDraftListing` (`actions/ai.ts`), button "Write it from photos" in the crosslist panel. Calls the Claude Messages API directly (`ANTHROPIC_API_KEY`, model `AI_MODEL`, default `claude-haiku-5-5`) with up to 4 signed photo URLs and a forced tool call so the answer is structured (`listingDraftSchema`). Fills the draft form only; nothing is saved until the seller saves.
+- Budget guard: client asked for under $500/month. Small model, 4 photos, 900 max tokens, and a per-user cap of `AI_DAILY_LIMIT` (default 60) calls per 24 hours, counted in `ai_usage` (service role only; also the place to check spend).
+- Background removal isn't built (needs a separate paid service).
+
+### Smart Offers (eBay only)
+
+- Rules in `smart_offer_rules` (Settings, Cross-Lister + eBay connected): start discount, max discount, floor = cost × (1 + margin), minimum listing age, how often. `offerPrice` (`lib/offers.ts`, tested) deepens the discount 1 point per week past the minimum age, never below the floor, and skips anything under 5% / $1 off.
+- `runSmartOffers` (`lib/marketplaces/ebay/offers.ts`) runs from the daily `sync-sales` cron after each account's sale sync: Negotiation API `find_eligible_items` → for listings FlipLedger knows (so cost is known) `send_offer_to_interested_buyers`, 2-day offers, no counter-offers. Each offer is logged in `smart_offers`; after 3 days it's marked `sold` (item sold within 3 days at or under offer + $1) or `expired`.
+- Poshmark and Mercari offers are deliberately not automated: no API, and their terms ban bots.
+
+### Leaderboard and win cards
+
+- `/leaderboard`: opt-in only (`leaderboard_profiles`, default off, name = initials or a nickname up to 24 chars). Monthly boards for profit, items sold and miles (`lib/leaderboard.ts`, UTC months), last month's #1 per board shown as champion. Other sellers' rows are read with the service role in `boardRows` and only names and totals reach the browser.
+- Win card: `/api/win-card` (signed-in seller's own numbers, `?last=1` for last month) renders a 1080×1080 PNG with `next/og` (`lib/win-card.tsx`).
+- "Post to eMoney Discord wins" (`postWinToDiscord`) uploads the card through `DISCORD_WINS_WEBHOOK_URL` (hidden when unset), once per seller per month (guarded by `email_log` kind `win-post`).
 
 ### Cross-listing
 
@@ -131,7 +174,7 @@ A Capacitor app could put the same fill-in scripts in an in-app web view for pho
 - **Env vars** (full list in `.env.example`):
   - Supabase: `SUPABASE_SERVICE_ROLE_KEY` (from the integration)
   - Generated by us: `TOKEN_ENCRYPTION_KEY` (never change it once set), `CRON_SECRET`
-  - Whop: `WHOP_CLIENT_ID`, `WHOP_API_KEY`, `WHOP_CROSSLIST_PRODUCT_IDS`, `WHOP_CROSSLIST_CHECKOUT_URL`, `FLIPLEDGER_FREE_EMAILS` (`ALLOW_EMAIL_LOGIN` local only)
+  - Whop: `WHOP_CLIENT_ID`, `WHOP_API_KEY`, `WHOP_CROSSLIST_PRODUCT_IDS`, `WHOP_CROSSLIST_CHECKOUT_URL` (monthly), `WHOP_CROSSLIST_ANNUAL_URL`, `WHOP_CROSSLIST_ANNUAL_PLAN_ID`, `WHOP_SAVE_PROMO_CODE` (optional), `FLIPLEDGER_FREE_EMAILS` (`ALLOW_EMAIL_LOGIN` local only). All set in production since Nov 13 2026, so Whop sign-in and the paywall are live.
   - `CANONICAL_HOST` (e.g. `profit.emoneydeals.com`): when set, `proxy.ts` redirects production `*.vercel.app` visits there (`lib/canonical-host.ts`), except `/api`. Set to `profit.emoneydeals.com` in production (live since Nov 2026).
   - eBay: `EBAY_ENV`, `EBAY_CLIENT_ID`, `EBAY_CLIENT_SECRET`, `EBAY_RUNAME`, `EBAY_VERIFICATION_TOKEN`, `EBAY_DELETION_ENDPOINT`
   - Vercel marks secrets "Sensitive"; `vercel env pull` can't read those.

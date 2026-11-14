@@ -1,5 +1,6 @@
 "use server"
 
+import { propagateToListings, type ListingChanges } from "@/lib/crosslist/edit"
 import { revalidatePath } from "next/cache"
 import { headers } from "next/headers"
 import { z } from "zod"
@@ -48,6 +49,7 @@ export async function saveListingDetails(itemId: string, input: ListingDetails):
   try {
     const d = detailsSchema.parse(input)
     const { supabase } = await requireCrosslister()
+    const { data: before } = await supabase.from("items").select("title, description, list_price_cents").eq("id", itemId).single()
     const { error } = await supabase
       .from("items")
       .update({
@@ -60,6 +62,14 @@ export async function saveListingDetails(itemId: string, input: ListingDetails):
       })
       .eq("id", itemId)
     if (error) throw error
+    // Edit once, update everywhere: send what changed to the item's live listings.
+    if (before) {
+      const changes: ListingChanges = {}
+      if (d.title !== undefined && (d.title || null) !== before.title && d.title) changes.title = d.title
+      if ((d.description || null) !== before.description && d.description) changes.description = d.description
+      if (d.listPriceCents != null && d.listPriceCents !== before.list_price_cents) changes.priceCents = d.listPriceCents
+      await propagateToListings(supabase, itemId, changes, { canUseApi: true })
+    }
     return done()
   } catch (e) {
     return fail(e)

@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server"
 import { checkPoshmarkListings } from "@/lib/marketplaces/assisted-sync"
+import { runSmartOffers } from "@/lib/marketplaces/ebay/offers"
 import { syncEbaySales } from "@/lib/marketplaces/ebay/sync"
 import { createAdminClient } from "@/lib/supabase/admin"
 
@@ -15,7 +16,7 @@ export async function GET(request: NextRequest) {
   const { data: accounts, error } = await admin.from("marketplace_accounts").select("user_id").eq("marketplace", "ebay")
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
-  let sales = 0
+  let sales = 0, offers = 0
   const failures: string[] = []
   for (const a of accounts ?? []) {
     try {
@@ -23,6 +24,12 @@ export async function GET(request: NextRequest) {
     } catch (e) {
       failures.push(a.user_id)
       console.error("sync-sales failed for", a.user_id, e)
+    }
+    // Smart Offers after the sale sync, so nothing that just sold gets an offer.
+    try {
+      offers += (await runSmartOffers(admin, a.user_id)).sent
+    } catch (e) {
+      console.error("smart offers failed for", a.user_id, e)
     }
   }
   // Poshmark: everyone's listings not already checked in the last hour.
@@ -33,5 +40,5 @@ export async function GET(request: NextRequest) {
     failures.push("poshmark")
     console.error("sync-sales: poshmark check failed", e)
   }
-  return NextResponse.json({ accounts: accounts?.length ?? 0, sales, poshmark, failures: failures.length })
+  return NextResponse.json({ accounts: accounts?.length ?? 0, sales, offers, poshmark, failures: failures.length })
 }

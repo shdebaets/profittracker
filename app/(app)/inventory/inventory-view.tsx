@@ -1,6 +1,10 @@
 "use client"
 
-import { Boxes, CircleDollarSign, Cloud, Download, Package, RotateCcw, Search, Share2, ShoppingBag, Sparkles } from "lucide-react"
+import { Boxes, CircleDollarSign, Clock, Cloud, Download, Layers, Package, RotateCcw, Search, Share2, ShoppingBag, Sparkles } from "lucide-react"
+import Link from "next/link"
+import { OverpricedCheck } from "@/components/overpriced-check"
+import { RepriceBar } from "@/components/reprice-bar"
+import { daysSitting } from "@/lib/stale"
 import { useState } from "react"
 import { PageTitle } from "@/components/app-header"
 import { DelistAlerts } from "@/components/crosslist/delist-alerts"
@@ -24,16 +28,18 @@ const TIME: { value: Range; label: string }[] = [
 const itemDate = (i: Item) => (i.status === "sold" ? i.sold_at : i.purchased_at)
 const isReturnEligible = (i: Item) =>
   i.status === "inventory" && !!i.return_deadline && daysUntil(i.return_deadline) >= 0
+export type Chip = "all" | "returns" | "unlisted" | "cost" | "stale"
 const isUnlisted = (i: Item) => i.status === "inventory" && !i.listings.some((l) => l.status === "active")
 
 export function InventoryView({
-  items, email, focusSearch = false, needsCost = false,
-}: { items: Item[]; email?: string; focusSearch?: boolean; needsCost?: boolean }) {
+  items, email, focusSearch = false, initialChip = "all", staleDays = 60,
+}: { items: Item[]; email?: string; focusSearch?: boolean; initialChip?: Chip; staleDays?: number }) {
   const { openItem, openHaul, openEntry } = useEntry()
   const [tab, setTab] = useState<Tab>("all")
   const [time, setTime] = useState<Range>("all")
   const [query, setQuery] = useState("")
-  const [chip, setChip] = useState<"all" | "returns" | "unlisted" | "cost">(needsCost ? "cost" : "all")
+  const [chip, setChip] = useState<Chip>(initialChip)
+  const isStale = (i: Item) => i.status === "inventory" && daysSitting(i) >= staleDays
   useSyncItems(items)
 
   const sales = items.filter((i) => i.status === "sold")
@@ -46,6 +52,7 @@ export function InventoryView({
   const returnCount = byTab.filter(isReturnEligible).length
   const unlistedCount = byTab.filter(isUnlisted).length
   const noCostCount = byTab.filter((i) => i.cost_unknown).length
+  const staleCount = byTab.filter(isStale).length
 
   const q = query.trim().toLowerCase()
   const visible = byTab.filter((i) => {
@@ -53,6 +60,7 @@ export function InventoryView({
     if (chip === "returns" && !isReturnEligible(i)) return false
     if (chip === "unlisted" && !isUnlisted(i)) return false
     if (chip === "cost" && !i.cost_unknown) return false
+    if (chip === "stale" && !isStale(i)) return false
     if (!q) return true
     return (
       (i.title ?? "").toLowerCase().includes(q) ||
@@ -112,6 +120,9 @@ export function InventoryView({
         <button onClick={() => openEntry("inventory")} className="flex h-12 items-center justify-center gap-2 rounded-2xl bg-ink font-bold text-white shadow-sm">
           <Package className="size-4" /> Add Stock
         </button>
+        <Link href="/lots" className="col-span-2 flex h-11 items-center justify-center gap-2 rounded-2xl border bg-card text-sm font-semibold">
+          <Layers className="size-4 text-brand" /> Lots &amp; ROI
+        </Link>
       </div>
 
       <div className="flex gap-1 rounded-2xl bg-muted p-1">
@@ -232,7 +243,27 @@ export function InventoryView({
             <CircleDollarSign className="size-4" /> Needs Cost ({noCostCount})
           </button>
         )}
+        {tab !== "sales" && (staleCount > 0 || chip === "stale") && (
+          <button
+            onClick={() => setChip("stale")}
+            className={cn(
+              "flex shrink-0 items-center gap-1.5 rounded-full px-4 py-2 text-sm font-semibold",
+              chip === "stale" ? "bg-loss text-white" : "border border-loss/40 bg-card text-loss",
+            )}
+          >
+            <Clock className="size-4" /> {staleDays}+ Days ({staleCount})
+          </button>
+        )}
       </div>
+
+      {tab !== "sales" && <OverpricedCheck />}
+
+      {chip === "stale" && visible.length > 0 && (
+        <RepriceBar
+          itemIds={visible.map((i) => i.id)}
+          label={`These ${visible.length} item${visible.length === 1 ? " has" : "s have"} sat ${staleDays}+ days. Drop the price?`}
+        />
+      )}
 
       <div className="flex flex-col gap-3">
         {visible.map((i) => (
