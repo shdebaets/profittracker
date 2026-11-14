@@ -247,6 +247,38 @@ export function CompView({ tracked, initialQuery }: { tracked: Tracked[]; initia
                 ? ""
                 : "eBay had no recent sales we could read for this one. The FlipLedger Chrome extension can read more on a computer."}
           </p>
+          {result.recentSales.length > 0 && (
+            <details className="rounded-2xl bg-muted/60 p-3 text-xs">
+              <summary className="cursor-pointer font-semibold">Recent sales behind this price ({result.recentSales.length})</summary>
+              <ul className="mt-2 flex flex-col gap-1.5">
+                {result.recentSales.map((r, i) => (
+                  <li key={i} className="flex gap-2">
+                    <span className="w-12 shrink-0 font-mono text-muted-foreground">{r.soldOn.slice(5)}</span>
+                    <span className="min-w-0 flex-1 truncate">{r.title}</span>
+                    <span className="shrink-0 font-mono">
+                      {formatCents(r.priceCents + (r.shippingCents ?? 0))}
+                      {r.bestOffer ? " BO" : ""}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              {result.droppedSales.length > 0 && (
+                <>
+                  <p className="mt-3 font-semibold text-muted-foreground">Left out (not this exact item)</p>
+                  <ul className="mt-1 flex flex-col gap-1 text-muted-foreground">
+                    {result.droppedSales.map((r, i) => (
+                      <li key={i} className="flex gap-2">
+                        <span className="w-12 shrink-0 font-mono">{r.soldOn.slice(5)}</span>
+                        <span className="min-w-0 flex-1 truncate line-through">{r.title}</span>
+                        <span className="shrink-0 font-mono">{formatCents(r.priceCents)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              )}
+              <p className="mt-2 text-muted-foreground">Prices include shipping. Best-offer sales show the asking price, because eBay hides the accepted amount, so they&apos;re left out of the median.</p>
+            </details>
+          )}
           <div className="grid grid-cols-2 gap-2">
             {canCollect && (
               <button

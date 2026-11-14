@@ -19,6 +19,10 @@ export type CompLookup = {
   soldCollectedAt: string | null
   /** Listings the AI judge left out as not this exact product (cases, lots, parts, other models). */
   filteredOut: number
+  /** The newest sales behind the numbers, so sellers can check them. */
+  recentSales: { title: string; priceCents: number; shippingCents: number | null; soldOn: string; bestOffer: boolean; condition: string | null }[]
+  /** Sold listings read for this search that the judge didn't count, newest first (for checking). */
+  droppedSales: { title: string; priceCents: number; soldOn: string }[]
 }
 
 /** A loose search matched several products: the seller picks one first. */
@@ -88,7 +92,14 @@ export async function lookupComps(
   const latest = rows.reduce<string | null>((m, r) => (!m || r.collected_at > m ? r.collected_at : m), null)
   // Show a listing that really is the product, not whatever eBay ranked first.
   const shown = active[0] ?? null
+  const byDate = <T extends { sold_on: string }>(a: T, b: T) => b.sold_on.localeCompare(a.sold_on)
+  const recentSales = [...rows].sort(byDate).slice(0, 25).map((r) => ({
+    title: r.title, priceCents: r.price_cents, shippingCents: r.shipping_cents, soldOn: r.sold_on, bestOffer: r.best_offer, condition: r.condition,
+  }))
+  const droppedSales = (data ?? []).filter((r) => !judge.keep(r.title)).sort(byDate).slice(0, 10).map((r) => ({ title: r.title, priceCents: r.price_cents, soldOn: r.sold_on }))
   return {
+    recentSales,
+    droppedSales,
     query,
     gtin,
     product,
