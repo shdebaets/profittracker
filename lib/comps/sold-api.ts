@@ -110,7 +110,8 @@ export { soldPhrase }
 const MAX_PAGES = () => Number(process.env.SOLD_DATA_MAX_PAGES) || 4
 
 /** comp_cache key for the last sold read of a search (paid API or a browser read). */
-export const soldKey = (query: string) => `sold5:${queryKey(query)}`
+// v6: reads every AI search for the product (lib/comps/variants.ts), not just one phrase.
+export const soldKey = (query: string) => `sold6:${queryKey(query)}`
 
 /** What the last sold read found: when it ran and eBay's own count of matching sold listings. */
 export async function lastSoldRead(query: string): Promise<{ at: string; total: number | null } | null> {
@@ -125,7 +126,7 @@ export async function lastSoldRead(query: string): Promise<{ at: string; total: 
  * last 12 hours or the daily cap is used up. Returns how many rows it saved (0 when skipped).
  * Never throws: comps still work from live listings if the provider is down.
  */
-export async function refreshSoldFromApi(query: string): Promise<number> {
+export async function refreshSoldFromApi(query: string, searches?: string[]): Promise<number> {
   if (!process.env.SOLD_DATA_API_KEY?.trim()) return 0
   const admin = createAdminClient()
   // v2: reads several pages (v1 read one, which undercounted busy products).
@@ -147,25 +148,19 @@ export async function refreshSoldFromApi(query: string): Promise<number> {
     let requests = 0
     let total: number | null = null
     const monthAgo = new Date(Date.now() - 30 * 86_400_000).toISOString().slice(0, 10)
-    for (let page = 1; page <= MAX_PAGES(); page++) {
-      const res = await fetchPage(soldPhrase(query), page)
-      requests++
-      total ??= res.total
-      if (page === 1)
-        // What the provider sends for prices and formats: to tell best-offer sales apart.
-        console.log(
-          "[sold data] sample",
-          JSON.stringify(
-            res.items.slice(0, 12).map((x) => {
-              const o = x as Record<string, unknown>
-              return { t: String(o.title ?? "").slice(0, 40), p: o.price, pr: o.price_raw, op: o.original_price, d: o.discount, bf: o.buying_format, c: o.caption, s: o.shipping }
-            }),
-          ),
-        )
-      const got = res.items.map(toSoldRow).filter((r): r is SoldRow => !!r)
-      rows.push(...got)
-      const oldest = got.map((r) => r.sold_on).sort()[0]
-      if (res.items.length < 60 || !oldest || oldest < monthAgo) break
+    const phrases = searches?.length ? searches : [soldPhrase(query)]
+    // The first search pages deep (busy products); the others read one page each, to catch sales
+    // titled differently. eBay's count per search overlaps, so the biggest one is kept.
+    for (const [n, phrase] of phrases.entries()) {
+      for (let page = 1; page <= (n === 0 ? MAX_PAGES() : 1); page++) {
+        const res = await fetchPage(phrase, page)
+        requests++
+        if (res.total != null) total = Math.max(total ?? 0, res.total)
+        const got = res.items.map(toSoldRow).filter((r): r is SoldRow => !!r)
+        rows.push(...got)
+        const oldest = got.map((r) => r.sold_on).sort()[0]
+        if (res.items.length < 60 || !oldest || oldest < monthAgo) break
+      }
     }
     // Pages can overlap while new sales come in: one row per sale, or the upsert refuses the batch.
     const unique = [...new Map(rows.map((r) => [r.external_id, r])).values()]
@@ -180,7 +175,7 @@ export async function refreshSoldFromApi(query: string): Promise<number> {
       if (error) throw error
     }
     // Only mark it read once it's saved, so a failure is retried on the next lookup.
-    console.log("[sold data] read", JSON.stringify({ phrase: soldPhrase(query), requests, results: unique.length, total }))
+    console.log("[sold data] read", JSON.stringify({ phrases, requests, results: unique.length, total }))
     await admin.from("comp_cache").upsert({ key, payload: { requests, results: unique.length, total }, fetched_at: readAt })
     return unique.length
   } catch (e) {

@@ -6,8 +6,9 @@ import { searchActive, type LiveSearch } from "./ebay-browse"
 import { buildHistory, type HistoryDay } from "./history"
 import { identifyProducts, type ProductCandidate } from "./identify"
 import { judgeTitles } from "./judge"
+import { searchVariants } from "./variants"
 import { lastSoldRead, refreshSoldFromApi } from "./sold-api"
-import { compStats, isGtin, queryKey, type CompStats, type SoldComp } from "./stats"
+import { compStats, isGtin, queryKey, soldPhrase, type CompStats, type SoldComp } from "./stats"
 
 export type CompLookup = {
   /** What sold history is filed under (and what the extension searches eBay for). */
@@ -27,6 +28,8 @@ export type CompLookup = {
   droppedSales: { title: string; priceCents: number; soldOn: string }[]
   /** Last 90 days, one row per day: sales, sold median, live listings and lowest price (for the charts). */
   history: HistoryDay[]
+  /** The eBay searches sold prices are read from (AI-written, up to 3), for the extension and phone app. */
+  searches: string[]
 }
 
 /** A loose search matched several products: the seller picks one first. */
@@ -78,7 +81,12 @@ export async function lookupComps(
   const query = searchPhrase(product)
 
   // Sold prices from the data provider when nobody has read this product in 12 hours (no-op without a key).
-  if (!opts.skipPaidSold) await refreshSoldFromApi(query)
+  // Up to 3 searches worded the way different sellers title this product (cached a week).
+  const searches = await cached(`var:${queryKey(query)}`, 7 * 24 * 60 * 60_000, () => searchVariants(product, live.comps.map((c) => c.title))).catch((e) => {
+    console.error("[comp searches]", e)
+    return [soldPhrase(query)]
+  })
+  if (!opts.skipPaidSold) await refreshSoldFromApi(query, searches)
   const read = await lastSoldRead(query).catch(() => null)
   const since = new Date(now.getTime() - 90 * 86_400_000).toISOString().slice(0, 10)
   const { data } = await supabase
@@ -117,6 +125,7 @@ export async function lookupComps(
     return [] as HistoryDay[]
   })
   return {
+    searches,
     history,
     recentSales,
     droppedSales,
