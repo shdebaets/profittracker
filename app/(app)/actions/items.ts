@@ -48,6 +48,8 @@ const itemSchema = z.object({
   purchasedAt: z.string().optional(),
   sale: saleFields.optional(),
   photoPaths: z.array(z.string().max(200)).max(12).default([]),
+  /** Listing description; left alone when not sent. */
+  description: z.string().trim().max(5000).optional(),
 })
 export type ItemInput = z.input<typeof itemSchema>
 
@@ -73,6 +75,7 @@ function baseColumns(i: z.output<typeof itemSchema>) {
     returnable: i.returnable,
     return_deadline: i.returnable ? i.returnDeadline || null : null,
     photo_paths: i.photoPaths,
+    ...(i.description !== undefined ? { description: i.description || null } : {}),
     ...(i.purchasedAt ? { purchased_at: new Date(i.purchasedAt).toISOString() } : {}),
   }
 }
@@ -103,7 +106,7 @@ export async function updateItem(id: string, input: ItemInput): Promise<ActionRe
   try {
     const i = itemSchema.parse(input)
     const { supabase } = await requireUser()
-    const { data: before } = await supabase.from("items").select("photo_paths, cost_unknown, title, quantity, status").eq("id", id).single()
+    const { data: before } = await supabase.from("items").select("photo_paths, cost_unknown, title, description, quantity, status").eq("id", id).single()
     const { error } = await supabase
       .from("items")
       .update({
@@ -115,10 +118,11 @@ export async function updateItem(id: string, input: ItemInput): Promise<ActionRe
       .eq("id", id)
     if (error) throw error
     const oldPhotos = (before?.photo_paths as string[] | undefined) ?? []
-    // Edit once, update everywhere: title, quantity and photo changes go to the live listings.
+    // Edit once, update everywhere: title, description, quantity and photo changes go to the live listings.
     if (before?.status === "inventory" && i.mode === "inventory") {
       const changes: ListingChanges = {}
       if (i.title && i.title !== before.title) changes.title = i.title
+      if (i.description && i.description !== before.description) changes.description = i.description
       if (i.quantity !== before.quantity) changes.quantity = i.quantity
       if (i.photoPaths.length && i.photoPaths.join() !== oldPhotos.join()) changes.photoPaths = i.photoPaths
       if (hasChanges(changes)) await propagateToListings(supabase, id, changes, { canUseApi: await canCrosslist() })

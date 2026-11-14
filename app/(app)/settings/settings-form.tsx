@@ -17,6 +17,7 @@ export function SettingsForm({ settings }: { settings: Settings }) {
   const [stale, setStale] = useState(String(settings.stale_days))
   const [recap, setRecap] = useState(settings.email_recap)
   const [taxMail, setTaxMail] = useState(settings.email_tax_reminders)
+  const [alerts, setAlerts] = useState(settings.email_alerts)
   const [testing, startTest] = useTransition()
   const [pending, startTransition] = useTransition()
 
@@ -25,7 +26,7 @@ export function SettingsForm({ settings }: { settings: Settings }) {
       onSubmit={(e) => {
         e.preventDefault()
         startTransition(async () => {
-          const res = await saveSettings({ mileageRateCents: toCents(rate), defaultReturnDays: Number(days) || 0, taxBracket: Number(bracket), staleDays: Number(stale) as 30 | 45 | 60 | 90 | 120, emailRecap: recap, emailTaxReminders: taxMail })
+          const res = await saveSettings({ mileageRateCents: toCents(rate), defaultReturnDays: Number(days) || 0, taxBracket: Number(bracket), staleDays: Number(stale) as 30 | 45 | 60 | 90 | 120, emailRecap: recap, emailTaxReminders: taxMail, emailAlerts: alerts })
           if (res.ok) toast.success("Settings saved")
           else toast.error(res.error)
         })
@@ -74,6 +75,10 @@ export function SettingsForm({ settings }: { settings: Settings }) {
         <label className="flex items-center justify-between gap-3 text-sm">
           <span>Quarterly tax reminders</span>
           <Toggle checked={taxMail} onChange={setTaxMail} label="Quarterly tax reminders" />
+        </label>
+        <label className="flex items-center justify-between gap-3 text-sm">
+          <span>Weekly stale &amp; overpriced alert</span>
+          <Toggle checked={alerts} onChange={setAlerts} label="Weekly stale and overpriced alert" />
         </label>
         <button
           type="button"

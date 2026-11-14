@@ -64,6 +64,8 @@ async function startJob(msg, sender) {
     title: msg.title ?? msg.listing?.title ?? "",
     url: msg.url ?? null,
     changes: msg.type === "EDIT" ? msg.changes ?? {} : null,
+    // EDIT: the item's photos when they changed (signed FlipLedger links), added on the edit form.
+    photoUrls: msg.type === "EDIT" && Array.isArray(msg.photoUrls) ? msg.photoUrls.filter((u) => typeof u === "string").slice(0, 16) : [],
     offerCents: msg.type === "OFFER" ? msg.offerCents : null,
     auto: msg.type === "DELIST" && msg.auto === true,
     autoPublish: msg.type === "LIST" && msg.autoPublish === true,
@@ -188,9 +190,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
     if (msg?.type === "GET_JOB") {
       if (!job) return { job: null }
-      if (job.kind === "list" && msg.withPhotos) {
+      if ((job.kind === "list" || job.kind === "edit") && msg.withPhotos) {
         const photos = []
-        for (const url of job.listing?.photoUrls ?? []) {
+        for (const url of (job.kind === "edit" ? job.photoUrls : job.listing?.photoUrls) ?? []) {
           try {
             photos.push(await toDataUrl(url))
           } catch (e) {

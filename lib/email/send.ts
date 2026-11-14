@@ -27,7 +27,7 @@ export async function sendEmail(to: string, subject: string, html: string, unsub
   if (!res.ok) throw new EmailError(`Resend ${res.status}: ${(await res.text()).slice(0, 300)}`)
 }
 
-export type EmailKind = "recap" | "tax"
+export type EmailKind = "recap" | "tax" | "alerts"
 
 function sign(userId: string, kind: EmailKind) {
   const secret = process.env.CRON_SECRET ?? ""
@@ -39,7 +39,7 @@ export function unsubscribeUrl(userId: string, kind: EmailKind) {
 }
 
 export function verifyUnsubscribe(userId: string, kind: string, sig: string): kind is EmailKind {
-  if (kind !== "recap" && kind !== "tax") return false
+  if (kind !== "recap" && kind !== "tax" && kind !== "alerts") return false
   if (!process.env.CRON_SECRET) return false
   const a = Buffer.from(sign(userId, kind))
   const b = Buffer.from(sig)

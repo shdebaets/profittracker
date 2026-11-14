@@ -52,7 +52,9 @@
       open: /^edit( item| listing)?$/i,
       isEditPage: (path) => /\/edit\b/.test(path),
       saveHint: 'click "Update" or "Save changes"',
+      // Mercari listings are one unit, so there is no quantity box: quantity stays "your turn".
       fields: { title: TITLE, description: ["Description", "Describe your item"], price: ["Price", "Listing price"] },
+      photos: true,
     },
 
     // Smart Offers (assisted): "Send offer" to likers on the item page; the seller sends it.

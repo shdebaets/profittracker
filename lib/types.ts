@@ -120,6 +120,8 @@ export type Settings = {
   email_recap: boolean
   /** Quarterly estimated tax reminder emails. */
   email_tax_reminders: boolean
+  /** Weekly "N stale, M overpriced" digest (push + email). */
+  email_alerts: boolean
 }
 
 export const EXPENSE_CATEGORIES = [

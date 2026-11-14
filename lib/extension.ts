@@ -69,7 +69,15 @@ export function delistWithExtension(
 /** Edit once, update everywhere on a site with no API: the extension fills the changes on its edit page. */
 export function editWithExtension(
   marketplace: MarketplaceId,
-  job: { listingId: string; itemId: string; url: string; title: string; changes: { title?: string; description?: string; priceCents?: number; quantity?: number } },
+  job: {
+    listingId: string
+    itemId: string
+    url: string
+    title: string
+    changes: { title?: string; description?: string; priceCents?: number; quantity?: number; photoPaths?: string[] }
+    /** The item's photos when they changed; 0.11.0+ adds them to the site's edit form. */
+    photoUrls?: string[]
+  },
 ) {
   window.postMessage({ source: APP_SOURCE, type: "EDIT", jobId: crypto.randomUUID(), marketplace, ...job }, location.origin)
 }
@@ -85,7 +93,7 @@ export function offerWithExtension(
 /** Filling offers arrived in extension 0.9.0, with edits. */
 export const extensionCanOffer = () => extensionAtLeast(9)
 
-/** Filling edits on Poshmark, Mercari and Facebook arrived in extension 0.9.0. */
+/** Filling edits on Poshmark, Mercari and Facebook arrived in extension 0.9.0 (quantity and photos in 0.11.0). */
 export const extensionCanEdit = () => extensionAtLeast(9)
 
 export function onExtensionResult(handler: (r: ExtResult) => void) {
