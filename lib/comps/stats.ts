@@ -89,11 +89,14 @@ export function compStats(
   // How far back the sales we have go. If they don't cover 30 days (a busy product: the newest few
   // hundred sales can be a couple of days), the 30-day count comes from the pace instead.
   const counted30 = sold.filter((x) => daysAgo(x.soldOn, now) <= 30).length
-  const pace = soldPace(soldRead?.latest.length ? soldRead.latest : sold, now)
+  // When the read already holds every sale eBay has for this search (Godzilla bucket: 111 read of
+  // 110), there's nothing to project: the count is the count. Otherwise project from the pace.
+  const readAll = !!soldRead?.total && soldRead.latest.length >= soldRead.total * 0.9
+  const pace = readAll ? null : soldPace(soldRead?.latest.length ? soldRead.latest : sold, now)
   const sold30Estimated = pace != null && pace > counted30
   let sold30 = sold30Estimated ? pace : counted30
-  // eBay's sold count covers ~90 days, so the 30-day number can't be higher than it.
-  if (soldRead?.total && soldRead.total >= counted30) sold30 = Math.min(sold30, soldRead.total)
+  // eBay's sold count covers ~90 days, so a projected 30-day number can't be higher than it.
+  if (sold30Estimated && soldRead?.total) sold30 = Math.max(counted30, Math.min(sold30, soldRead.total))
   const sold90 = Math.max(sold.filter((x) => daysAgo(x.soldOn, now) <= 90).length, sold30Estimated ? sold30 : 0)
   const soldMedian30 = median(priced(30))
   const soldMedian90 = median(priced(90))
