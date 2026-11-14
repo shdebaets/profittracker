@@ -4,7 +4,7 @@ import { cached, IDENTIFY_TTL_MS, LIVE_TTL_MS } from "./cache"
 import { searchActive, type LiveSearch } from "./ebay-browse"
 import { identifyProducts, type ProductCandidate } from "./identify"
 import { judgeTitles } from "./judge"
-import { refreshSoldFromApi } from "./sold-api"
+import { lastSoldRead, refreshSoldFromApi } from "./sold-api"
 import { compStats, isGtin, queryKey, type CompStats, type SoldComp } from "./stats"
 
 export type CompLookup = {
@@ -75,6 +75,7 @@ export async function lookupComps(
 
   // Sold prices from the data provider when nobody has read this product in 12 hours (no-op without a key).
   await refreshSoldFromApi(query)
+  const read = await lastSoldRead(query).catch(() => null)
   const since = new Date(now.getTime() - 90 * 86_400_000).toISOString().slice(0, 10)
   const { data } = await supabase
     .from("comp_sales")
@@ -89,6 +90,15 @@ export async function lookupComps(
   // eBay's total counts every match; scale it by the share of the sample that was really this product.
   const liveTotal = live.comps.length ? Math.round((live.total * active.length) / live.comps.length) : 0
   const sold: SoldComp[] = rows.map((r) => ({ priceCents: r.price_cents, shippingCents: r.shipping_cents, soldOn: r.sold_on, bestOffer: r.best_offer, condition: r.condition }))
+  // The latest read on its own (older reads can be patchy), and eBay's sold count scaled like liveTotal.
+  const readRows = read ? (data ?? []).filter((r) => Math.abs(Date.parse(r.collected_at) - Date.parse(read.at)) < 1000) : []
+  const readKept = readRows.filter((r) => judge.keep(r.title))
+  const soldRead = read
+    ? {
+        latest: readKept.map((r) => ({ priceCents: r.price_cents, shippingCents: r.shipping_cents, soldOn: r.sold_on, bestOffer: r.best_offer, condition: r.condition })),
+        total: read.total && readRows.length ? Math.round((read.total * readKept.length) / readRows.length) : null,
+      }
+    : undefined
   const latest = rows.reduce<string | null>((m, r) => (!m || r.collected_at > m ? r.collected_at : m), null)
   // Show a listing that really is the product, not whatever eBay ranked first.
   const shown = active[0] ?? null
@@ -105,7 +115,7 @@ export async function lookupComps(
     product,
     title: gtin ? product : shown?.title ?? product,
     image: shown?.image ?? live.image,
-    stats: compStats(active, sold, now, liveTotal),
+    stats: compStats(active, sold, now, liveTotal, soldRead),
     soldCollectedAt: latest,
     filteredOut,
   }

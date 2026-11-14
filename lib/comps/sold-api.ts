@@ -105,7 +105,35 @@ async function fetchPage(query: string, page: number): Promise<{ items: unknown[
   return { items, total }
 }
 
+/**
+ * The words sent to the sold search. eBay needs every word to match, so the product name is cut to
+ * the core: "Pokémon TCG 30th Celebration Ultra Premium Collection Night (Umbreon)" missed the
+ * many sales titled "Pokemon 30th Anniversary UPC … Night" with no "TCG" or "Celebration". The wider
+ * search brings in look-alikes too; the AI judge drops those. Pure.
+ */
+export function soldPhrase(product: string): string {
+  const words = product
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\([^)]*\)/g, " ")
+    .replace(/[|•–—\-:,]/g, " ")
+    .replace(/\b(tcg|ccg|celebration|anniversary|edition|official|brand|new|sealed|factory|the|and|of)\b/gi, " ")
+    .split(/\s+/)
+    .filter(Boolean)
+  return words.slice(0, 7).join(" ") || product
+}
+
 const MAX_PAGES = () => Number(process.env.SOLD_DATA_MAX_PAGES) || 4
+
+const soldKey = (query: string) => `sold5:${queryKey(query)}`
+
+/** What the last sold read found: when it ran and eBay's own count of matching sold listings. */
+export async function lastSoldRead(query: string): Promise<{ at: string; total: number | null } | null> {
+  const { data } = await createAdminClient().from("comp_cache").select("payload, fetched_at").eq("key", soldKey(query)).maybeSingle()
+  if (!data) return null
+  const total = Number((data.payload as { total?: unknown })?.total)
+  return { at: data.fetched_at, total: Number.isFinite(total) && total > 0 ? total : null }
+}
 
 /**
  * Reads sold listings for a search into comp_sales (shared) unless this search was read in the
@@ -116,7 +144,8 @@ export async function refreshSoldFromApi(query: string): Promise<number> {
   if (!process.env.SOLD_DATA_API_KEY?.trim()) return 0
   const admin = createAdminClient()
   // v2: reads several pages (v1 read one, which undercounted busy products).
-  const key = `sold4:${queryKey(query)}`
+  // v5: searches the cut-down phrase (soldPhrase) instead of the full product name.
+  const key = soldKey(query)
   const { data: last } = await admin.from("comp_cache").select("fetched_at").eq("key", key).maybeSingle()
   if (last && Date.now() - Date.parse(last.fetched_at) < SOLD_TTL_MS) return 0
   const since = new Date(Date.now() - 86_400_000).toISOString()
@@ -134,7 +163,7 @@ export async function refreshSoldFromApi(query: string): Promise<number> {
     let total: number | null = null
     const monthAgo = new Date(Date.now() - 30 * 86_400_000).toISOString().slice(0, 10)
     for (let page = 1; page <= MAX_PAGES(); page++) {
-      const res = await fetchPage(query, page)
+      const res = await fetchPage(soldPhrase(query), page)
       requests++
       total ??= res.total
       if (page === 1)
@@ -156,15 +185,18 @@ export async function refreshSoldFromApi(query: string): Promise<number> {
     // Pages can overlap while new sales come in: one row per sale, or the upsert refuses the batch.
     const unique = [...new Map(rows.map((r) => [r.external_id, r])).values()]
     const qk = queryKey(query)
+    // One timestamp for the rows and the cache entry, so lookups can pick out this read's rows.
+    const readAt = new Date().toISOString()
     if (unique.length) {
       const { error } = await admin.from("comp_sales").upsert(
-        unique.map((r) => ({ ...r, query_key: qk, collected_at: new Date().toISOString() })),
+        unique.map((r) => ({ ...r, query_key: qk, collected_at: readAt })),
         { onConflict: "query_key,external_id" },
       )
       if (error) throw error
     }
     // Only mark it read once it's saved, so a failure is retried on the next lookup.
-    await admin.from("comp_cache").upsert({ key, payload: { requests, results: unique.length, total }, fetched_at: new Date().toISOString() })
+    console.log("[sold data] read", JSON.stringify({ phrase: soldPhrase(query), requests, results: unique.length, total }))
+    await admin.from("comp_cache").upsert({ key, payload: { requests, results: unique.length, total }, fetched_at: readAt })
     return unique.length
   } catch (e) {
     console.error("[sold data]", e)

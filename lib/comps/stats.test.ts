@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { buyProfit, compStats, landed, isGtin, isNewCondition, median, queryKey } from "./stats"
+import { buyProfit, compStats, landed, soldPace, isGtin, isNewCondition, median, queryKey } from "./stats"
 
 const now = new Date("2026-11-13T12:00:00Z")
 const sold = (days: number, priceCents: number, bestOffer = false) => ({
@@ -75,10 +75,32 @@ describe("comps", () => {
 })
 
 describe("landed price", () => {
-  it("adds normal shipping and leaves out overseas or freight shipping", () => {
+  it("adds normal shipping and leaves out sales shipped from overseas", () => {
     expect(landed({ priceCents: 36000, shippingCents: 800 })).toBe(36800)
-    expect(landed({ priceCents: 46412, shippingCents: 18229 })).toBe(46412)
-    expect(landed({ priceCents: 49377, shippingCents: 4856 })).toBe(49377)
+    expect(landed({ priceCents: 46412, shippingCents: 18229 })).toBeNull()
+    expect(landed({ priceCents: 49377, shippingCents: 4856 })).toBeNull()
     expect(landed({ priceCents: 33999, shippingCents: null })).toBe(33999)
+  })
+
+  it("keeps overseas sales out of the price but in the count", () => {
+    const now = new Date("2026-11-14T20:00:00Z")
+    const us = Array.from({ length: 10 }, () => ({ priceCents: 37000, shippingCents: 0, soldOn: "2026-11-14", bestOffer: false }))
+    const abroad = Array.from({ length: 6 }, () => ({ priceCents: 48000, shippingCents: 6000, soldOn: "2026-11-14", bestOffer: false }))
+    const st = compStats([], [...us, ...abroad], now)
+    expect(st.estimate).toBe(37000)
+    expect(st.sold30).toBe(16)
+  })
+})
+
+describe("sold pace", () => {
+  const now = new Date("2026-11-14T08:00:00Z")
+  it("counts today's sales even before noon UTC and ignores one stray old sale", () => {
+    const sold = [...Array.from({ length: 40 }, (_, i) => ({ soldOn: i < 20 ? "2026-11-14" : "2026-11-13" })), { soldOn: "2026-10-01" }]
+    // 90% of the sales are within a day: 40 a day → 1,200 a month. The October sale doesn't stretch it.
+    expect(soldPace(sold, now)).toBe(1200)
+  })
+  it("is null when the read reaches back far enough", () => {
+    const sold = Array.from({ length: 30 }, (_, i) => ({ soldOn: new Date(now.getTime() - i * 2 * 86_400_000).toISOString().slice(0, 10) }))
+    expect(soldPace(sold, now)).toBeNull()
   })
 })
