@@ -1,6 +1,6 @@
 "use client"
 
-import { ChevronDown, Layers, Receipt, Sparkles } from "lucide-react"
+import { ChevronDown, Layers, Pencil, Receipt, Sparkles } from "lucide-react"
 import { useState } from "react"
 import { useEntry, useSyncItems } from "@/components/entry/entry-provider"
 import { ItemCard } from "@/components/item-card"
@@ -9,10 +9,15 @@ import { lotStats, type Haul } from "@/lib/lots"
 import { formatCents, formatPct } from "@/lib/money"
 import type { Item } from "@/lib/types"
 import { cn } from "@/lib/utils"
+import { LotEditSheet } from "./lot-edit"
 
-export function LotsView({ hauls, items }: { hauls: (Haul & { receipt_url: string | null })[]; items: Item[] }) {
+export function LotsView({
+  hauls, items, initialOpen,
+}: { hauls: (Haul & { receipt_url: string | null })[]; items: Item[]; initialOpen: string | null }) {
   const { openHaul, openItem } = useEntry()
-  const [open, setOpen] = useState<string | null>(null)
+  const [open, setOpen] = useState<string | null>(initialOpen)
+  const [editing, setEditing] = useState<string | null>(null)
+  const editLot = hauls.find((h) => h.id === editing) ?? null
   useSyncItems(items)
 
   return (
@@ -30,7 +35,7 @@ export function LotsView({ hauls, items }: { hauls: (Haul & { receipt_url: strin
         const lotItems = items.filter((i) => i.haul_id === h.id)
         const isOpen = open === h.id
         return (
-          <section key={h.id} className="rounded-3xl border bg-card shadow-sm">
+          <section key={h.id} id={`lot-${h.id}`} className="scroll-mt-4 rounded-3xl border bg-card shadow-sm">
             <button onClick={() => setOpen(isOpen ? null : h.id)} className="flex w-full items-start gap-3 p-4 text-left">
               <span className="grid size-11 shrink-0 place-items-center rounded-2xl bg-brand-soft">
                 <Layers className="size-5 text-brand" />
@@ -64,11 +69,21 @@ export function LotsView({ hauls, items }: { hauls: (Haul & { receipt_url: strin
             </div>
             {isOpen && (
               <div className="flex flex-col gap-3 border-t p-4">
-                {h.receipt_url && (
-                  <a href={h.receipt_url} target="_blank" rel="noreferrer" className="flex items-center gap-2 text-sm font-semibold text-brand">
-                    <Receipt className="size-4" /> View receipt
-                  </a>
-                )}
+                <div className="flex items-center justify-between gap-3">
+                  {h.receipt_url ? (
+                    <a href={h.receipt_url} target="_blank" rel="noreferrer" className="flex items-center gap-2 text-sm font-semibold text-brand">
+                      <Receipt className="size-4" /> View receipt
+                    </a>
+                  ) : (
+                    <span />
+                  )}
+                  <button
+                    onClick={() => setEditing(h.id)}
+                    className="flex items-center gap-1.5 rounded-xl border px-3 py-2 text-sm font-semibold"
+                  >
+                    <Pencil className="size-4" /> Edit lot
+                  </button>
+                </div>
                 <p className="text-xs text-muted-foreground">
                   Cost split {h.split_mode === "even" ? "evenly" : "by estimated value"}. {formatCents(s.stockCost)} of it is still in stock.
                 </p>
@@ -80,6 +95,7 @@ export function LotsView({ hauls, items }: { hauls: (Haul & { receipt_url: strin
           </section>
         )
       })}
+      <LotEditSheet lot={editLot} units={editLot ? lotStats(editLot, items).units : 0} onClose={() => setEditing(null)} />
     </>
   )
 }

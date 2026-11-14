@@ -120,6 +120,10 @@ export type Settings = {
   email_recap: boolean
   /** Quarterly estimated tax reminder emails. */
   email_tax_reminders: boolean
+  /** Sunday recap as a push notification (on devices that turned notifications on). */
+  push_recap: boolean
+  /** Quarterly tax reminders as a push notification. */
+  push_tax_reminders: boolean
 }
 
 export const EXPENSE_CATEGORIES = [

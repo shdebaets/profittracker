@@ -1,12 +1,13 @@
 // Push notification copy. Pure.
 import { formatCents } from "@/lib/money"
 
-export function recapPush(n: { profit: number; itemsSold: number; miles: number; mileageWriteOff: number }) {
+/** `weekKey` (see `recapWeekKey`) makes the tap open the week the push described, not whatever "this week" is by then. */
+export function recapPush(n: { profit: number; itemsSold: number; miles: number; mileageWriteOff: number }, weekKey?: string) {
   const miles = n.miles > 0 ? `, ${Math.round(n.miles * 10) / 10} mi logged (${formatCents(n.mileageWriteOff)} write-off)` : ""
   return {
     title: "Your week on FlipLedger",
     body: `This week: ${formatCents(n.profit)} profit, ${n.itemsSold} ${n.itemsSold === 1 ? "item" : "items"} sold${miles}.`,
-    url: "/recap",
+    url: weekKey ? `/recap?week=${weekKey}` : "/recap",
     tag: "recap",
   }
 }
@@ -17,5 +18,17 @@ export function tripPush(miles: number, deductionCents: number) {
     body: `${Math.round(miles * 10) / 10} mi logged, ${formatCents(deductionCents)} write-off.`,
     url: "/expenses",
     tag: "trip",
+  }
+}
+
+/** The quarterly estimated tax reminder, sent next to the email. */
+export function taxPush(q: { n: number; due: Date }, setAsideCents: number, daysLeft: number) {
+  const due = q.due.toLocaleDateString("en-US", { month: "short", day: "numeric" })
+  const when = daysLeft <= 0 ? "today" : daysLeft === 1 ? "tomorrow" : `in ${daysLeft} days`
+  return {
+    title: `Q${q.n} estimated tax due ${when}`,
+    body: `Due ${due}. Set aside about ${formatCents(setAsideCents)}. Estimate only, not tax advice.`,
+    url: "/taxes",
+    tag: "tax",
   }
 }

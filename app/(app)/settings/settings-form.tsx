@@ -17,6 +17,8 @@ export function SettingsForm({ settings }: { settings: Settings }) {
   const [stale, setStale] = useState(String(settings.stale_days))
   const [recap, setRecap] = useState(settings.email_recap)
   const [taxMail, setTaxMail] = useState(settings.email_tax_reminders)
+  const [recapPush, setRecapPush] = useState(settings.push_recap)
+  const [taxPush, setTaxPush] = useState(settings.push_tax_reminders)
   const [testing, startTest] = useTransition()
   const [pending, startTransition] = useTransition()
 
@@ -25,7 +27,7 @@ export function SettingsForm({ settings }: { settings: Settings }) {
       onSubmit={(e) => {
         e.preventDefault()
         startTransition(async () => {
-          const res = await saveSettings({ mileageRateCents: toCents(rate), defaultReturnDays: Number(days) || 0, taxBracket: Number(bracket), staleDays: Number(stale) as 30 | 45 | 60 | 90 | 120, emailRecap: recap, emailTaxReminders: taxMail })
+          const res = await saveSettings({ mileageRateCents: toCents(rate), defaultReturnDays: Number(days) || 0, taxBracket: Number(bracket), staleDays: Number(stale) as 30 | 45 | 60 | 90 | 120, emailRecap: recap, emailTaxReminders: taxMail, pushRecap: recapPush, pushTaxReminders: taxPush })
           if (res.ok) toast.success("Settings saved")
           else toast.error(res.error)
         })
@@ -68,13 +70,22 @@ export function SettingsForm({ settings }: { settings: Settings }) {
         <p className="text-sm font-semibold">Emails and notifications</p>
         <PushToggle />
         <label className="flex items-center justify-between gap-3 text-sm">
-          <span>Sunday profit recap</span>
-          <Toggle checked={recap} onChange={setRecap} label="Sunday profit recap" />
+          <span>Sunday recap email</span>
+          <Toggle checked={recap} onChange={setRecap} label="Sunday recap email" />
         </label>
         <label className="flex items-center justify-between gap-3 text-sm">
-          <span>Quarterly tax reminders</span>
-          <Toggle checked={taxMail} onChange={setTaxMail} label="Quarterly tax reminders" />
+          <span>Sunday recap notification</span>
+          <Toggle checked={recapPush} onChange={setRecapPush} label="Sunday recap notification" />
         </label>
+        <label className="flex items-center justify-between gap-3 text-sm">
+          <span>Quarterly tax reminder emails</span>
+          <Toggle checked={taxMail} onChange={setTaxMail} label="Quarterly tax reminder emails" />
+        </label>
+        <label className="flex items-center justify-between gap-3 text-sm">
+          <span>Quarterly tax reminder notifications</span>
+          <Toggle checked={taxPush} onChange={setTaxPush} label="Quarterly tax reminder notifications" />
+        </label>
+        <p className="-mt-1 text-xs text-muted-foreground">Notifications only reach devices where you turned them on above.</p>
         <button
           type="button"
           disabled={testing}

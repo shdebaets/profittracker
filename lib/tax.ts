@@ -239,6 +239,16 @@ export function estimatedTax(netProfitCents: number, bracket: number) {
   return { se, income, total: se + income }
 }
 
+/**
+ * Which quarterly reminder is due `days` before a payment: the week-before one (sent on days 7 to 2)
+ * or the day-before one (days 1 and 0). A window instead of an exact day, so a cron run that was
+ * missed still sends late; `email_log` keeps each one to a single send.
+ */
+export function taxReminderWindow(days: number): 7 | 1 | null {
+  if (days < 0 || days > 7) return null
+  return days <= 1 ? 1 : 7
+}
+
 export function daysBetween(a: Date, b: Date) {
   const day = (d: Date) => Date.UTC(d.getFullYear(), d.getMonth(), d.getDate())
   return Math.round((day(b) - day(a)) / 86_400_000)
