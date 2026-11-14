@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest"
 vi.mock("server-only", () => ({}))
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => ({}) }))
-import { moneyCents, shippingCents, soldDate, toSoldRow, soldPhrase } from "./sold-api"
+import { moneyCents, shippingCents, soldDate, toSoldRow, soldPhrase, isOverseas } from "./sold-api"
 
 describe("sold data parsing", () => {
   it("reads sold dates", () => {
@@ -36,6 +36,7 @@ describe("sold data parsing", () => {
       sold_on: "2026-07-28",
       best_offer: false,
       condition: "Pre-Owned",
+      overseas: false,
     })
   })
   it("skips unpriced, undated or non-USD results and makes a stable id when none is given", () => {
@@ -51,5 +52,15 @@ describe("soldPhrase", () => {
   it("cuts a product name to the words every sale title shares", () => {
     expect(soldPhrase("Pokémon TCG 30th Celebration Ultra Premium Collection Night (Umbreon)")).toBe("Pokemon 30th Ultra Premium Collection Night")
     expect(soldPhrase("Nintendo Switch OLED")).toBe("Nintendo Switch OLED")
+  })
+})
+
+describe("isOverseas", () => {
+  it("reads the provider's item location", () => {
+    expect(isOverseas("United States")).toBe(false)
+    expect(isOverseas("Brooklyn, NY, USA")).toBe(false)
+    expect(isOverseas(null)).toBe(false)
+    expect(isOverseas("Japan")).toBe(true)
+    expect(isOverseas("from United Kingdom")).toBe(true)
   })
 })

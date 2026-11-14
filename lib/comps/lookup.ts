@@ -91,7 +91,7 @@ export async function lookupComps(
   const since = new Date(now.getTime() - 90 * 86_400_000).toISOString().slice(0, 10)
   const { data } = await supabase
     .from("comp_sales")
-    .select("title, price_cents, shipping_cents, sold_on, best_offer, condition, collected_at")
+    .select("title, price_cents, shipping_cents, sold_on, best_offer, condition, collected_at, overseas")
     .eq("query_key", queryKey(query))
     .gte("sold_on", since)
     .limit(1000)
@@ -101,13 +101,14 @@ export async function lookupComps(
   const filteredOut = live.comps.length - active.length + ((data?.length ?? 0) - rows.length)
   // eBay's total counts every match; scale it by the share of the sample that was really this product.
   const liveTotal = live.comps.length ? Math.round((live.total * active.length) / live.comps.length) : 0
-  const sold: SoldComp[] = rows.map((r) => ({ priceCents: r.price_cents, shippingCents: r.shipping_cents, soldOn: r.sold_on, bestOffer: r.best_offer, condition: r.condition }))
+  const sold: SoldComp[] = rows.map((r) => ({ priceCents: r.price_cents, shippingCents: r.shipping_cents, soldOn: r.sold_on, bestOffer: r.best_offer, condition: r.condition, overseas: r.overseas }))
   // The latest read on its own (older reads can be patchy), and eBay's sold count scaled like liveTotal.
   const readRows = read ? (data ?? []).filter((r) => Math.abs(Date.parse(r.collected_at) - Date.parse(read.at)) < 1000) : []
   const readKept = readRows.filter((r) => judge.keep(r.title))
   const soldRead = read
     ? {
-        latest: readKept.map((r) => ({ priceCents: r.price_cents, shippingCents: r.shipping_cents, soldOn: r.sold_on, bestOffer: r.best_offer, condition: r.condition })),
+        latest: readKept.map((r) => ({ priceCents: r.price_cents, shippingCents: r.shipping_cents, soldOn: r.sold_on, bestOffer: r.best_offer, condition: r.condition, overseas: r.overseas })),
+        oldest: read.oldest,
         total: read.total && readRows.length ? Math.round((read.total * readKept.length) / readRows.length) : null,
       }
     : undefined

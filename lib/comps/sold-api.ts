@@ -20,6 +20,15 @@ export type SoldRow = {
   sold_on: string
   best_offer: boolean
   condition: string | null
+  /** Item located outside the US (from the provider's location field). */
+  overseas: boolean
+}
+
+/** "Shenzhen, China" / "from United Kingdom" → true; "United States", "Brooklyn, NY, USA", unknown → false. Pure. */
+export function isOverseas(location: unknown): boolean {
+  const l = String(location ?? "").trim()
+  if (!l) return false
+  return !/united states|\busa?\b/i.test(l)
 }
 
 const MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"]
@@ -85,6 +94,7 @@ export function toSoldRow(raw: unknown): SoldRow | null {
       /best offer accepted/i.test(String(pick(p, "caption") ?? "")) ||
       /best offer accepted/i.test(String(pick(p, "price_raw") ?? "")),
     condition: (pick(p, "condition", "item_condition") as string | null)?.toString().slice(0, 60) ?? null,
+    overseas: isOverseas(pick(p, "location", "item_location", "ships_from")),
   }
 }
 
@@ -110,15 +120,16 @@ export { soldPhrase }
 const MAX_PAGES = () => Number(process.env.SOLD_DATA_MAX_PAGES) || 4
 
 /** comp_cache key for the last sold read of a search (paid API or a browser read). */
-// v6: reads every AI search for the product (lib/comps/variants.ts), not just one phrase.
-export const soldKey = (query: string) => `sold6:${queryKey(query)}`
+// v7: item location and eBay's last page (exact 30-day count). v6: reads every AI search for the product (lib/comps/variants.ts), not just one phrase.
+export const soldKey = (query: string) => `sold7:${queryKey(query)}`
 
 /** What the last sold read found: when it ran and eBay's own count of matching sold listings. */
-export async function lastSoldRead(query: string): Promise<{ at: string; total: number | null } | null> {
+export async function lastSoldRead(query: string): Promise<{ at: string; total: number | null; oldest: string | null } | null> {
   const { data } = await createAdminClient().from("comp_cache").select("payload, fetched_at").eq("key", soldKey(query)).maybeSingle()
   if (!data) return null
   const total = Number((data.payload as { total?: unknown })?.total)
-  return { at: data.fetched_at, total: Number.isFinite(total) && total > 0 ? total : null }
+  const oldest = (data.payload as { oldest?: unknown })?.oldest
+  return { at: data.fetched_at, total: Number.isFinite(total) && total > 0 ? total : null, oldest: typeof oldest === "string" ? oldest : null }
 }
 
 /**
@@ -151,15 +162,37 @@ export async function refreshSoldFromApi(query: string, searches?: string[]): Pr
     const phrases = searches?.length ? searches : [soldPhrase(query)]
     // The first search pages deep (busy products); the others read one page each, to catch sales
     // titled differently. eBay's count per search overlaps, so the biggest one is kept.
+    let oldest: string | null = null
     for (const [n, phrase] of phrases.entries()) {
+      let lastRead = 0
+      let phraseTotal: number | null = null
       for (let page = 1; page <= (n === 0 ? MAX_PAGES() : 1); page++) {
         const res = await fetchPage(phrase, page)
         requests++
+        lastRead = page
+        phraseTotal ??= res.total
         if (res.total != null) total = Math.max(total ?? 0, res.total)
         const got = res.items.map(toSoldRow).filter((r): r is SoldRow => !!r)
         rows.push(...got)
-        const oldest = got.map((r) => r.sold_on).sort()[0]
-        if (res.items.length < 60 || !oldest || oldest < monthAgo) break
+        if (page === 1 && n === 0)
+          console.log("[sold data] sample", JSON.stringify(res.items.slice(0, 8).map((x) => {
+            const o = x as Record<string, unknown>
+            return { p: o.price, s: o.shipping, loc: o.location, bf: o.buying_format, c: o.caption }
+          })))
+        const pageOldest = got.map((r) => r.sold_on).sort()[0]
+        if (pageOldest && (!oldest || pageOldest < oldest)) oldest = pageOldest
+        if (res.items.length < 60 || !pageOldest || pageOldest < monthAgo) break
+      }
+      // A busy product: the pages read are only the newest few days. One more request for the
+      // last page tells how far back eBay's count goes, so the 30-day count is a real count.
+      const lastPage = phraseTotal ? Math.min(100, Math.ceil(phraseTotal / 60)) : 0
+      if (n === 0 && lastPage > lastRead && oldest && oldest >= monthAgo) {
+        const res = await fetchPage(phrase, lastPage)
+        requests++
+        const got = res.items.map(toSoldRow).filter((r): r is SoldRow => !!r)
+        rows.push(...got)
+        const pageOldest = got.map((r) => r.sold_on).sort()[0]
+        if (pageOldest && pageOldest < oldest) oldest = pageOldest
       }
     }
     // Pages can overlap while new sales come in: one row per sale, or the upsert refuses the batch.
@@ -175,8 +208,8 @@ export async function refreshSoldFromApi(query: string, searches?: string[]): Pr
       if (error) throw error
     }
     // Only mark it read once it's saved, so a failure is retried on the next lookup.
-    console.log("[sold data] read", JSON.stringify({ phrases, requests, results: unique.length, total }))
-    await admin.from("comp_cache").upsert({ key, payload: { requests, results: unique.length, total }, fetched_at: readAt })
+    console.log("[sold data] read", JSON.stringify({ phrases, requests, results: unique.length, total, oldest }))
+    await admin.from("comp_cache").upsert({ key, payload: { requests, results: unique.length, total, oldest }, fetched_at: readAt })
     return unique.length
   } catch (e) {
     console.error("[sold data]", e)
