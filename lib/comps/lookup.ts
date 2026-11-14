@@ -1,7 +1,9 @@
 import "server-only"
 import type { SupabaseClient } from "@supabase/supabase-js"
+import { createAdminClient } from "@/lib/supabase/admin"
 import { cached, IDENTIFY_TTL_MS, LIVE_TTL_MS } from "./cache"
 import { searchActive, type LiveSearch } from "./ebay-browse"
+import { buildHistory, type HistoryDay } from "./history"
 import { identifyProducts, type ProductCandidate } from "./identify"
 import { judgeTitles } from "./judge"
 import { lastSoldRead, refreshSoldFromApi } from "./sold-api"
@@ -23,6 +25,8 @@ export type CompLookup = {
   recentSales: { title: string; priceCents: number; shippingCents: number | null; soldOn: string; bestOffer: boolean; condition: string | null }[]
   /** Sold listings read for this search that the judge didn't count, newest first (for checking). */
   droppedSales: { title: string; priceCents: number; soldOn: string }[]
+  /** Last 90 days, one row per day: sales, sold median, live listings and lowest price (for the charts). */
+  history: HistoryDay[]
 }
 
 /** A loose search matched several products: the seller picks one first. */
@@ -107,7 +111,13 @@ export async function lookupComps(
     title: r.title, priceCents: r.price_cents, shippingCents: r.shipping_cents, soldOn: r.sold_on, bestOffer: r.best_offer, condition: r.condition,
   }))
   const droppedSales = (data ?? []).filter((r) => !judge.keep(r.title)).sort(byDate).slice(0, 10).map((r) => ({ title: r.title, priceCents: r.price_cents, soldOn: r.sold_on }))
+  const stats = compStats(active, sold, now, liveTotal, soldRead)
+  const history = await recordAndReadHistory(queryKey(query), stats, sold, now).catch((e) => {
+    console.error("[comp history]", e)
+    return [] as HistoryDay[]
+  })
   return {
+    history,
     recentSales,
     droppedSales,
     query,
@@ -115,10 +125,34 @@ export async function lookupComps(
     product,
     title: gtin ? product : shown?.title ?? product,
     image: shown?.image ?? live.image,
-    stats: compStats(active, sold, now, liveTotal, soldRead),
+    stats,
     soldCollectedAt: latest,
     filteredOut,
   }
+}
+
+/**
+ * Saves a snapshot of the live market (at most one per 2 hours per product, matching the live
+ * cache) and returns the 90-day daily history for the charts.
+ */
+async function recordAndReadHistory(key: string, stats: CompStats, sold: SoldComp[], now: Date): Promise<HistoryDay[]> {
+  const admin = createAdminClient()
+  const since = new Date(now.getTime() - 90 * 86_400_000).toISOString()
+  const { data: snaps } = await admin
+    .from("comp_snapshots")
+    .select("taken_at, live_count, lowest_cents")
+    .eq("query_key", key)
+    .gte("taken_at", since)
+    .order("taken_at", { ascending: true })
+    .limit(2000)
+  const list = snaps ?? []
+  const last = list.at(-1)
+  if (stats.activeCount > 0 && (!last || now.getTime() - Date.parse(last.taken_at) > LIVE_TTL_MS)) {
+    const row = { query_key: key, taken_at: now.toISOString(), live_count: stats.activeCount, lowest_cents: stats.activeLowest, median_cents: stats.activeMedian }
+    const { error } = await admin.from("comp_snapshots").insert(row)
+    if (!error) list.push(row)
+  }
+  return buildHistory(sold, list, now)
 }
 
 export const isPick = (r: CompLookup | CompPick): r is CompPick => "candidates" in r

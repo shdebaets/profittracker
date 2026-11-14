@@ -9,7 +9,9 @@ import { MoneyInput } from "@/components/fields"
 import type { CompLookup, CompPick } from "@/lib/comps/lookup"
 import { buyProfit, type CompStats } from "@/lib/comps/stats"
 import { relativeTime } from "@/lib/dates"
+import { CompDetails } from "@/components/comp-details"
 import { useExtension } from "@/lib/extension"
+import { EXTENSION_STORE_URL } from "@/lib/marketplaces/registry"
 import { pullSoldHere, soldIsStale, soldSource } from "@/lib/sold-browser"
 import { centsToInput, formatCents, toCents } from "@/lib/money"
 import { cn } from "@/lib/utils"
@@ -248,6 +250,8 @@ export function CompView({ tracked, initialQuery }: { tracked: Tracked[]; initia
             </>
           )}
 
+          <CompDetails history={result.history} />
+          {!canCollect && <ExtensionNudge outdated={!!ext.info} />}
           <p className="text-xs text-muted-foreground">
             {result.soldCollectedAt ? `Sold prices read ${relativeTime(result.soldCollectedAt)}.` : "No sold prices for this yet."}{" "}
             {canCollect
@@ -386,5 +390,31 @@ function TrackedList({ tracked, onOpen }: { tracked: Tracked[]; onOpen: (t: Trac
         )
       })}
     </section>
+  )
+}
+
+/**
+ * On a computer without the extension (or with one too old to read sold prices): sold prices then
+ * come from the paid data service, which can't see best offers or units. Point them to the extension.
+ */
+function ExtensionNudge({ outdated }: { outdated: boolean }) {
+  const [desktop, setDesktop] = useState(false)
+  useEffect(() => {
+    const t = setTimeout(() => setDesktop(window.matchMedia("(pointer: fine)").matches), 0)
+    return () => clearTimeout(t)
+  }, [])
+  if (!desktop) return null
+  return (
+    <a
+      href={EXTENSION_STORE_URL}
+      target="_blank"
+      rel="noreferrer"
+      className="flex flex-col gap-0.5 rounded-2xl border border-brand/40 bg-brand/10 px-4 py-3 text-sm"
+    >
+      <span className="font-semibold">{outdated ? "Update the FlipLedger Chrome extension" : "Add the FlipLedger Chrome extension"} for exact sold prices</span>
+      <span className="text-xs text-muted-foreground">
+        It reads eBay&apos;s sold listings in your own signed-in Chrome: free, and it spots best offers. Without it these numbers come from a data service.
+      </span>
+    </a>
   )
 }

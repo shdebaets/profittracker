@@ -104,3 +104,19 @@ describe("sold pace", () => {
     expect(soldPace(sold, now)).toBeNull()
   })
 })
+
+describe("30-day count with eBay's total", () => {
+  const now = new Date("2026-11-14T20:00:00Z")
+  const sale = (d: string) => ({ priceCents: 11000, shippingCents: 0, soldOn: d, bestOffer: false })
+  it("doesn't project when the read already has every sale eBay lists", () => {
+    const latest = [...Array.from({ length: 60 }, () => sale("2026-11-13")), ...Array.from({ length: 40 }, () => sale("2026-11-10"))]
+    const st = compStats([], latest, now, undefined, { latest, total: 100 })
+    expect(st.sold30Estimated).toBe(false)
+    expect(st.sold30).toBe(100)
+  })
+  it("caps a projection at eBay's total", () => {
+    const latest = Array.from({ length: 240 }, () => sale("2026-11-14"))
+    const st = compStats([], latest, now, undefined, { latest, total: 894 })
+    expect(st.sold30).toBe(894)
+  })
+})
