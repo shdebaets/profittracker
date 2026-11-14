@@ -243,7 +243,9 @@ export function CompView({ tracked, initialQuery }: { tracked: Tracked[]; initia
               ? collecting
                 ? "Reading eBay's sold listings now…"
                 : ""
-              : "Sold prices come from the FlipLedger Chrome extension: open this page in Chrome on a computer with the extension and they load by themselves. Phones then see them too."}
+              : result.soldCollectedAt
+                ? ""
+                : "eBay had no recent sales we could read for this one. The FlipLedger Chrome extension can read more on a computer."}
           </p>
           <div className="grid grid-cols-2 gap-2">
             {canCollect && (
