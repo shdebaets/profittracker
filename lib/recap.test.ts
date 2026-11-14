@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { lastTwoWeeks, quietWeek, weekNumbers } from "./recap"
+import { lastTwoWeeks, quietWeek, recapWeekKey, weekLabel, weekNumbers, weeksEnding } from "./recap"
 import type { Expense, Item } from "./types"
 
 const base = {
@@ -30,5 +30,29 @@ describe("weekly recap", () => {
     const none = weekNumbers([], [], week)
     expect(quietWeek(none, none)).toBe(true)
     expect(quietWeek(weekNumbers(items, [], week), none)).toBe(false)
+  })
+})
+
+describe("recap week range", () => {
+  it("names the week by the Sunday it ends on, at midnight US Eastern", () => {
+    expect(recapWeekKey(new Date("2026-11-15T14:00:00Z"))).toBe("2026-11-15") // the Sunday cron
+    expect(recapWeekKey(new Date("2026-11-15T04:59:00Z"))).toBe("2026-11-14") // still Saturday night in New York
+    expect(recapWeekKey(new Date("2026-11-15T05:00:00Z"))).toBe("2026-11-15")
+  })
+  it("turns ?week= back into the same 7 days and the 7 before", () => {
+    const r = weeksEnding("2026-11-15")!
+    expect(r.week.from.toISOString()).toBe("2026-11-08T05:00:00.000Z")
+    expect(r.week.to.toISOString()).toBe("2026-11-15T05:00:00.000Z")
+    expect(r.prev.from.toISOString()).toBe("2026-11-01T05:00:00.000Z")
+    expect(r.prev.to.toISOString()).toBe("2026-11-08T05:00:00.000Z")
+    expect(weekLabel(r.week)).toBe("Nov 8 – Nov 14")
+  })
+  it("rejects anything that isn't a real date", () => {
+    for (const bad of ["", "2026-11", "2026-02-30", "2026-13-01", "nope", "2026-11-15T00:00"]) expect(weeksEnding(bad)).toBeNull()
+  })
+  it("a sale late Saturday evening US time belongs to the week that just ended", () => {
+    const { week } = weeksEnding("2026-11-15")!
+    const sat = [item({ sold_at: "2026-11-15T03:30:00Z" })] // 10:30pm Saturday in New York
+    expect(weekNumbers(sat, [], week).itemsSold).toBe(1)
   })
 })

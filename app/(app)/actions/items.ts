@@ -11,7 +11,7 @@ import type { MarketplaceId } from "@/lib/marketplaces/registry"
 import { getItem } from "@/lib/data"
 import { UserError } from "@/lib/errors"
 import { marketplace } from "@/lib/marketplaces/registry"
-import { removeUnreferencedPhotos } from "@/lib/photos"
+import { PHOTO_BUCKET, removeUnreferencedPhotos } from "@/lib/photos"
 import { distributeHaul } from "@/lib/profit"
 import type { Item } from "@/lib/types"
 import { fail, type ActionResult } from "./result"
@@ -255,6 +255,90 @@ export async function createHaul(input: HaulInput): Promise<ActionResult> {
       })
       if (insErr) throw insErr
     }
+    return done()
+  } catch (e) {
+    return fail(e)
+  }
+}
+
+const receiptPath = z.string().max(200).regex(/^[0-9a-f-]+\/[0-9a-f-]+\.jpg$/)
+
+const haulEditSchema = z.object({
+  id: z.string().uuid(),
+  title: z.string().trim().max(200),
+  store: z.string().trim().max(100),
+  /** Only sent when the date changed. */
+  purchasedAt: z.string().datetime().optional(),
+  /** undefined keeps the receipt, null removes it, a path replaces it. */
+  receiptPath: receiptPath.nullable().optional(),
+})
+export type HaulEditInput = z.input<typeof haulEditSchema>
+
+/**
+ * Edit a lot's name, store, date and receipt. The store and date were copied onto the lot's items when it
+ * was logged, so items that still have the lot's old value follow the change; items edited since keep theirs.
+ */
+export async function updateHaul(input: HaulEditInput): Promise<ActionResult> {
+  try {
+    const h = haulEditSchema.parse(input)
+    const { supabase, userId } = await requireUser()
+    if (h.receiptPath && !h.receiptPath.startsWith(`${userId}/`)) throw new Error("Receipt photo belongs to another user")
+    const { data: old, error: readErr } = await supabase
+      .from("hauls")
+      .select("store, purchased_at, receipt_path")
+      .eq("id", h.id)
+      .maybeSingle<{ store: string | null; purchased_at: string; receipt_path: string | null }>()
+    if (readErr) throw readErr
+    if (!old) throw new UserError("That lot is gone. Refresh and try again.")
+
+    const store = h.store || null
+    const { error } = await supabase
+      .from("hauls")
+      .update({
+        title: h.title || null,
+        store,
+        ...(h.purchasedAt ? { purchased_at: h.purchasedAt } : {}),
+        ...(h.receiptPath !== undefined ? { receipt_path: h.receiptPath } : {}),
+      })
+      .eq("id", h.id)
+    if (error) throw error
+
+    if (store !== old.store) {
+      const q = supabase.from("items").update({ store }).eq("haul_id", h.id)
+      const { error: e } = old.store === null ? await q.is("store", null) : await q.eq("store", old.store)
+      if (e) throw e
+    }
+    if (h.purchasedAt && h.purchasedAt !== old.purchased_at) {
+      const { error: e } = await supabase
+        .from("items")
+        .update({ purchased_at: h.purchasedAt })
+        .eq("haul_id", h.id)
+        .eq("purchased_at", old.purchased_at)
+      if (e) throw e
+    }
+    // The old receipt file belongs to this lot only.
+    if (h.receiptPath !== undefined && old.receipt_path && old.receipt_path !== h.receiptPath) {
+      await supabase.storage.from(PHOTO_BUCKET).remove([old.receipt_path])
+    }
+    return done()
+  } catch (e) {
+    return fail(e)
+  }
+}
+
+/** Delete a lot. Its items stay, with their costs; they're just no longer grouped (`haul_id` is set null). */
+export async function deleteHaul(id: string): Promise<ActionResult> {
+  try {
+    const haulId = z.string().uuid().parse(id)
+    const { supabase } = await requireUser()
+    const { data: gone, error } = await supabase
+      .from("hauls")
+      .delete()
+      .eq("id", haulId)
+      .select("receipt_path")
+      .maybeSingle<{ receipt_path: string | null }>()
+    if (error) throw error
+    if (gone?.receipt_path) await supabase.storage.from(PHOTO_BUCKET).remove([gone.receipt_path])
     return done()
   } catch (e) {
     return fail(e)

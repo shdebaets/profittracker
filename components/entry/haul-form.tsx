@@ -4,10 +4,8 @@ import { Camera, Plus, Receipt, RotateCcw, Sparkles, Trash2 } from "lucide-react
 import { useState, useTransition } from "react"
 import { toast } from "sonner"
 import { createHaul } from "@/app/(app)/actions/items"
-import { createPhotoUploads } from "@/app/(app)/actions/photos"
 import { friendlyError } from "@/lib/errors"
-import { compressImage } from "@/lib/image"
-import { SUPABASE_KEY } from "@/lib/supabase/env"
+import { uploadReceipt } from "@/lib/receipt-upload"
 import { FieldLabel, MoneyInput, Segmented, Stepper, TextInput, Toggle } from "@/components/fields"
 import { addDays, dateInputToIso, toDateInput } from "@/lib/dates"
 import { formatCents, toCents } from "@/lib/money"
@@ -44,15 +42,7 @@ export function HaulForm({ defaultReturnDays, onDone }: { defaultReturnDays: num
     if (!file) return
     setUploading(true)
     try {
-      const res = await createPhotoUploads(1)
-      if (!res.ok) throw new Error(res.error)
-      const blob = await compressImage(file)
-      const body = new FormData()
-      body.append("cacheControl", "3600")
-      body.append("", blob, "receipt.jpg")
-      const put = await fetch(res.uploads[0].signedUrl, { method: "PUT", body, headers: { apikey: SUPABASE_KEY, "x-upsert": "false" } })
-      if (!put.ok) throw new Error("Couldn't upload the receipt. Check your connection and try again.")
-      setReceipt({ path: res.uploads[0].path, url: URL.createObjectURL(blob) })
+      setReceipt(await uploadReceipt(file))
     } catch (e) {
       toast.error(friendlyError(e))
     } finally {
