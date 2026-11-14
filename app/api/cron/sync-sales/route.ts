@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server"
+import { refreshTrackedProducts } from "@/lib/comps/tracked-refresh"
 import { checkPoshmarkListings } from "@/lib/marketplaces/assisted-sync"
 import { runSmartOffers } from "@/lib/marketplaces/ebay/offers"
 import { syncEbaySales } from "@/lib/marketplaces/ebay/sync"
@@ -12,6 +13,7 @@ export async function GET(request: NextRequest) {
   if (!secret || request.headers.get("authorization") !== `Bearer ${secret}`) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
+  const started = Date.now()
   const admin = createAdminClient()
   const { data: accounts, error } = await admin.from("marketplace_accounts").select("user_id").eq("marketplace", "ebay")
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
@@ -40,5 +42,13 @@ export async function GET(request: NextRequest) {
     failures.push("poshmark")
     console.error("sync-sales: poshmark check failed", e)
   }
-  return NextResponse.json({ accounts: accounts?.length ?? 0, sales, offers, poshmark, failures: failures.length })
+  // Tracked products (Scan to Comp): refresh, alert on price moves. Stops well before maxDuration.
+  let tracked: Awaited<ReturnType<typeof refreshTrackedProducts>> | null = null
+  try {
+    tracked = await refreshTrackedProducts(admin, { deadline: started + 250_000 })
+  } catch (e) {
+    failures.push("tracked")
+    console.error("sync-sales: tracked products failed", e)
+  }
+  return NextResponse.json({ accounts: accounts?.length ?? 0, sales, offers, poshmark, tracked, failures: failures.length })
 }

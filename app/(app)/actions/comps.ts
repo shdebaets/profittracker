@@ -10,7 +10,9 @@ import { median, queryKey } from "@/lib/comps/stats"
 import type { Item } from "@/lib/types"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { requireUser } from "@/lib/supabase/server"
-import { UserError } from "@/lib/errors"
+import { AiError } from "@/lib/ai/listing"
+import { COMP_PHOTO_DAILY_LIMIT, identifyFromPhoto } from "@/lib/comps/photo"
+import { reportError, UserError } from "@/lib/errors"
 import { fail, type ActionResult } from "./result"
 
 export type LookupResult = { ok: true; lookup: CompLookup } | { ok: true; pick: CompPick } | { ok: false; error: string }
@@ -32,6 +34,36 @@ export async function compLookup(
     const r = await lookupComps(supabase, q, { userId, product: p, skipPaidSold: z.boolean().parse(readsSoldHere) })
     return isPick(r) ? { ok: true, pick: r } : { ok: true, lookup: r }
   } catch (e) {
+    return fail(e) as { ok: false; error: string }
+  }
+}
+
+export type PhotoIdResult = { ok: true; search: string; product: string; barcode: string | null } | { ok: false; error: string }
+
+/**
+ * Photo scan: Claude says what the product in the photo is and what to search for. The browser then
+ * runs the normal compLookup with it (so the product picker still applies). Saves nothing.
+ */
+export async function compPhotoIdentify(photo: string): Promise<PhotoIdResult> {
+  try {
+    // A ~1024px JPEG from the browser, well under the 1MB server action body cap.
+    const m = z.string().max(900_000, "That photo is too big. Try again.").regex(/^data:image\/jpeg;base64,[A-Za-z0-9+/=]+$/, "Take or pick a photo.").parse(photo)
+    const { userId } = await requireUser()
+    // ai_usage is service-role only, scoped to this user.
+    const admin = createAdminClient()
+    const since = new Date(Date.now() - 86_400_000).toISOString()
+    const { count } = await admin.from("ai_usage").select("id", { count: "exact", head: true }).eq("user_id", userId).eq("kind", "comp_photo").gte("created_at", since)
+    if ((count ?? 0) >= COMP_PHOTO_DAILY_LIMIT) throw new UserError(`You've used photo scan ${COMP_PHOTO_DAILY_LIMIT} times today. It resets in 24 hours. Scan the barcode or type it instead.`)
+    const { id, usage } = await identifyFromPhoto(m.slice(m.indexOf(",") + 1))
+    await admin.from("ai_usage").insert({ user_id: userId, kind: "comp_photo", input_tokens: usage.input, output_tokens: usage.output })
+    const search = id.search.trim() || id.product.trim()
+    if (!id.found || search.length < 2) throw new UserError("Couldn't tell what that is. Get the front of the box or the label in the photo, or type it.")
+    return { ok: true, search: search.slice(0, 120), product: id.product.trim().slice(0, 120), barcode: id.barcode }
+  } catch (e) {
+    if (e instanceof AiError) {
+      reportError(e, "comp photo")
+      return { ok: false, error: "Photo scan isn't working right now. Scan the barcode or type it instead." }
+    }
     return fail(e) as { ok: false; error: string }
   }
 }

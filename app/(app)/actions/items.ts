@@ -48,6 +48,8 @@ const itemSchema = z.object({
   purchasedAt: z.string().optional(),
   sale: saleFields.optional(),
   photoPaths: z.array(z.string().max(200)).max(12).default([]),
+  /** Asking price for a new inventory item (from Scan to Comp's estimate). */
+  listPriceCents: cents.nullable().optional(),
 })
 export type ItemInput = z.input<typeof itemSchema>
 
@@ -73,6 +75,7 @@ function baseColumns(i: z.output<typeof itemSchema>) {
     returnable: i.returnable,
     return_deadline: i.returnable ? i.returnDeadline || null : null,
     photo_paths: i.photoPaths,
+    ...(i.listPriceCents ? { list_price_cents: i.listPriceCents } : {}),
     ...(i.purchasedAt ? { purchased_at: new Date(i.purchasedAt).toISOString() } : {}),
   }
 }
