@@ -1,11 +1,12 @@
 "use client"
 
 import {
-  ArrowLeft, Check, ChevronDown, Copy, ExternalLink, Images, Loader2, Search, Unplug, Wand2,
+  ArrowLeft, Check, ChevronDown, Copy, ExternalLink, Images, Loader2, Search, Sparkles, Unplug, Wand2,
 } from "lucide-react"
 import Link from "next/link"
 import { useEffect, useState, useTransition } from "react"
 import { toast } from "sonner"
+import { aiDraftListing } from "@/app/(app)/actions/ai"
 import { markListingSynced, retryListingSync } from "@/app/(app)/actions/edit"
 import {
   delistEverywhere, ebayCategories, ebayCategoryDetails, endListing, forgetListing, getEbayStatus,
@@ -89,6 +90,26 @@ export function CrosslistPanel({ item, active, onBack }: { item: Item; active: b
     k === "price" ? toCents(draft.price) !== toCents(saved.price) : draft[k].trim() !== saved[k],
   )
   const set = <K extends keyof Draft>(k: K, v: Draft[K]) => setDraft((d) => ({ ...d, [k]: v }))
+  const [ai, setAi] = useState<{ category: string; specifics: { name: string; value: string }[]; priceNote: string } | null>(null)
+  const [aiPending, startAi] = useTransition()
+
+  function writeWithAi() {
+    startAi(async () => {
+      const res = await aiDraftListing(item.id)
+      if (!res.ok) return void toast.error(res.error)
+      const d = res.draft
+      setDraft((cur) => ({
+        title: d.title || cur.title,
+        description: d.description || cur.description,
+        condition: (d.condition as ItemCondition | null) ?? cur.condition,
+        brand: d.brand ?? cur.brand,
+        size: d.size ?? cur.size,
+        price: d.suggested_price_usd != null ? d.suggested_price_usd.toFixed(2) : cur.price,
+      }))
+      setAi({ category: d.category, specifics: d.item_specifics, priceNote: d.price_note })
+      toast.success("Drafted from your photos. Check it, then save.")
+    })
+  }
 
   useEffect(() => {
     writeSheetStore("crosslist-draft", dirty ? { itemId: item.id, draft } : null)
@@ -119,7 +140,27 @@ export function CrosslistPanel({ item, active, onBack }: { item: Item; active: b
   return (
     <div className="flex flex-col gap-4">
       <section className="flex flex-col gap-3 rounded-3xl border bg-card p-4">
-        <p className="text-xs font-bold tracking-wider text-muted-foreground uppercase">Listing details</p>
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-xs font-bold tracking-wider text-muted-foreground uppercase">Listing details</p>
+          <button
+            type="button"
+            disabled={aiPending}
+            onClick={writeWithAi}
+            className="flex items-center gap-1.5 rounded-xl bg-brand-soft px-3 py-2 text-sm font-bold text-brand disabled:opacity-60"
+          >
+            {aiPending ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
+            {aiPending ? "Writing…" : "Write it from photos"}
+          </button>
+        </div>
+        {ai && (
+          <div className="rounded-2xl bg-muted/60 p-3 text-xs">
+            <p><b>Category:</b> {ai.category}</p>
+            {ai.specifics.length > 0 && (
+              <p className="mt-1"><b>Item specifics:</b> {ai.specifics.map((x) => `${x.name}: ${x.value}`).join(" · ")}</p>
+            )}
+            {ai.priceNote && <p className="mt-1 text-muted-foreground">Price: {ai.priceNote}</p>}
+          </div>
+        )}
         <div>
           <FieldLabel htmlFor="xl-title">Title</FieldLabel>
           <TextInput id="xl-title" value={draft.title} onChange={(e) => set("title", e.target.value)} placeholder="Brand, item, size, color" />

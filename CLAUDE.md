@@ -92,6 +92,12 @@ Local QA logins live in `.env.example` (`qa-a@flipledger.test`, `qa-b@flipledger
 - Settings → "Email me this week's recap now" sends a recap immediately (good for checking Resend). `/recap` is the in-app recap screen.
 - Push notifications are not built: web push only works on iPhone once the app is on the home screen, and needs VAPID keys. The trip-saved toast covers the in-app part.
 
+### AI listing from photos
+
+- `lib/ai/listing.ts` + `aiDraftListing` (`actions/ai.ts`), button "Write it from photos" in the crosslist panel. Calls the Claude Messages API directly (`ANTHROPIC_API_KEY`, model `AI_MODEL`, default `claude-haiku-5-5`) with up to 4 signed photo URLs and a forced tool call so the answer is structured (`listingDraftSchema`). Fills the draft form only; nothing is saved until the seller saves.
+- Budget guard: client asked for under $500/month. Small model, 4 photos, 900 max tokens, and a per-user cap of `AI_DAILY_LIMIT` (default 60) calls per 24 hours, counted in `ai_usage` (service role only; also the place to check spend).
+- Background removal isn't built (needs a separate paid service).
+
 ### Cross-listing
 
 - **Registry:** `lib/marketplaces/registry.ts` lists each marketplace's mode (`api` / `assisted`), sell URL, fee preset and photo limit.
