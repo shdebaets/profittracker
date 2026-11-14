@@ -3,22 +3,28 @@
 import { revalidatePath } from "next/cache"
 import { z } from "zod"
 import { judgeTitles } from "@/lib/comps/judge"
-import { lookupComps, searchPhrase, type CompLookup } from "@/lib/comps/lookup"
+import { isPick, lookupComps, searchPhrase, type CompLookup, type CompPick } from "@/lib/comps/lookup"
 import { overpricedItems, type Overpriced } from "@/lib/comps/overpriced"
 import { median, queryKey } from "@/lib/comps/stats"
 import type { Item } from "@/lib/types"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { requireUser } from "@/lib/supabase/server"
+import { UserError } from "@/lib/errors"
 import { fail, type ActionResult } from "./result"
 
-export type LookupResult = { ok: true; lookup: CompLookup } | { ok: false; error: string }
+export type LookupResult = { ok: true; lookup: CompLookup } | { ok: true; pick: CompPick } | { ok: false; error: string }
 
-/** Scan to Comp: a barcode or keywords → live listings plus any sold history we have. */
-export async function compLookup(input: string): Promise<LookupResult> {
+/**
+ * Scan to Comp: a barcode or keywords → live listings plus any sold history we have.
+ * Loose keywords that match several products return `pick`; call again with the chosen `product`.
+ */
+export async function compLookup(input: string, product?: string | null): Promise<LookupResult> {
   try {
     const q = z.string().trim().min(2, "Scan a barcode or type what it is").max(120).parse(input)
+    const p = z.string().trim().max(120).nullable().optional().parse(product)
     const { supabase, userId } = await requireUser()
-    return { ok: true, lookup: await lookupComps(supabase, q, new Date(), userId) }
+    const r = await lookupComps(supabase, q, { userId, product: p })
+    return isPick(r) ? { ok: true, pick: r } : { ok: true, lookup: r }
   } catch (e) {
     return fail(e) as { ok: false; error: string }
   }
@@ -72,6 +78,7 @@ const trackSchema = z.object({
   query: z.string().trim().min(2).max(120),
   gtin: z.string().regex(/^\d{8,14}$/).nullable().optional(),
   title: z.string().max(200).nullable().optional(),
+  product: z.string().max(120).nullable().optional(),
   image: z.url().max(500).nullable().optional(),
   targetCostCents: z.number().int().min(0).max(10_000_000).nullable().optional(),
 })
@@ -81,7 +88,7 @@ export async function trackProduct(input: z.input<typeof trackSchema>): Promise<
     const t = trackSchema.parse(input)
     const { supabase, userId } = await requireUser()
     const { error } = await supabase.from("tracked_products").upsert(
-      { user_id: userId, query: t.query, gtin: t.gtin ?? null, title: t.title ?? null, image_url: t.image ?? null, target_cost_cents: t.targetCostCents ?? null },
+      { user_id: userId, query: t.query, gtin: t.gtin ?? null, title: t.title ?? null, product: t.product ?? null, image_url: t.image ?? null, target_cost_cents: t.targetCostCents ?? null },
       { onConflict: "user_id,query" },
     )
     if (error) throw error
@@ -108,9 +115,11 @@ export async function untrackProduct(id: string): Promise<ActionResult> {
 export async function refreshTracked(id: string): Promise<ActionResult> {
   try {
     const { supabase, userId } = await requireUser()
-    const { data: t, error } = await supabase.from("tracked_products").select("query, gtin").eq("id", z.uuid().parse(id)).single()
+    const { data: t, error } = await supabase.from("tracked_products").select("query, gtin, product").eq("id", z.uuid().parse(id)).single()
     if (error) throw error
-    const l = await lookupComps(supabase, t.gtin ?? t.query, new Date(), userId)
+    // Old tracked rows have no product: their query is already the narrowed search phrase.
+    const l = await lookupComps(supabase, t.gtin ?? t.query, { userId, product: t.gtin ? null : t.product ?? t.query })
+    if (isPick(l)) throw new UserError("Open this product and pick which one you mean, then track it again.")
     const { error: upErr } = await supabase
       .from("tracked_products")
       .update({ stats: l.stats, title: l.title, image_url: l.image, checked_at: new Date().toISOString() })

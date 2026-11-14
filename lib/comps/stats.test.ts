@@ -31,6 +31,24 @@ describe("comps", () => {
     const s = compStats([{ priceCents: 2000, shippingCents: null, title: "", condition: null, buyItNow: true }], [], now)
     expect(s).toMatchObject({ estimate: 2000, estimateSource: "active", sellThrough: 0 })
   })
+  it("counts every live match, not just the page read", () => {
+    const one = { priceCents: 2000, shippingCents: null, title: "", condition: null, buyItNow: true }
+    const s = compStats([one], [sold(2, 3000), sold(5, 3000), sold(9, 3000)], now, 30)
+    expect(s.activeCount).toBe(30)
+    expect(s.sellThrough).toBeCloseTo(3 / 33)
+    expect(s.daysOfSupply).toBe(300)
+  })
+  it("splits new from used once there are 3+ of each", () => {
+    const live = (cents: number, condition: string) => ({ priceCents: cents, shippingCents: 0, title: "", condition, buyItNow: true })
+    const s = compStats(
+      [live(10000, "New"), live(11000, "New"), live(12000, "New"), live(7000, "Used"), live(8000, "Open box"), live(9000, "Pre-owned")],
+      [],
+      now,
+    )
+    expect(s.newEstimate).toBe(11000)
+    expect(s.usedEstimate).toBe(8000)
+    expect(compStats([live(10000, "New")], [], now).newEstimate).toBeNull()
+  })
   it("profit after eBay fee and label", () => {
     const p = buyProfit(800, 3200)
     expect(p.fees).toBe(Math.round(3200 * 0.1325))

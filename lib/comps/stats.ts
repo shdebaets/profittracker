@@ -14,10 +14,11 @@ export function median(nums: number[]): number | null {
   return a.length % 2 ? a[m] : Math.round((a[m - 1] + a[m]) / 2)
 }
 
-export type ActiveComp = { priceCents: number; shippingCents: number | null; title: string; condition: string | null; buyItNow: boolean }
-export type SoldComp = { priceCents: number; shippingCents: number | null; soldOn: string; bestOffer: boolean }
+export type ActiveComp = { priceCents: number; shippingCents: number | null; title: string; condition: string | null; buyItNow: boolean; image?: string | null }
+export type SoldComp = { priceCents: number; shippingCents: number | null; soldOn: string; bestOffer: boolean; condition?: string | null }
 
 export type CompStats = {
+  /** Every live listing of this exact product on eBay (not just the sample read). */
   activeCount: number
   activeMedian: number | null
   activeLowest: number | null
@@ -32,11 +33,21 @@ export type CompStats = {
   /** Best price estimate and where it came from. */
   estimate: number | null
   estimateSource: "sold30" | "sold90" | "active" | null
+  /** The same estimate for new and for used/open-box units alone, when there's enough of each. */
+  newEstimate: number | null
+  usedEstimate: number | null
 }
+
+/** eBay condition text → new or used. Open box and "new other" count as used: they sell below sealed. */
+export const isNewCondition = (c: string | null | undefined) => !!c && /^(new|brand new)$/i.test(c.trim())
 
 const daysAgo = (iso: string, now: Date) => (now.getTime() - new Date(iso + "T12:00:00Z").getTime()) / 86_400_000
 
-export function compStats(active: ActiveComp[], sold: SoldComp[], now = new Date()): CompStats {
+/**
+ * `liveTotal`: how many live listings eBay says match (the search reads at most a page of them),
+ * already scaled down for look-alikes the AI judge dropped. Defaults to the ones passed in.
+ */
+export function compStats(active: ActiveComp[], sold: SoldComp[], now = new Date(), liveTotal?: number): CompStats {
   const bins = active.filter((a) => a.buyItNow).map((a) => a.priceCents + (a.shippingCents ?? 0))
   // Best-offer sales show the list price, not what it sold for, so they're left out of prices.
   const priced = (days: number) => sold.filter((s) => daysAgo(s.soldOn, now) <= days && !s.bestOffer).map((s) => s.priceCents + (s.shippingCents ?? 0))
@@ -46,16 +57,26 @@ export function compStats(active: ActiveComp[], sold: SoldComp[], now = new Date
   const soldMedian90 = median(priced(90))
   const activeMedian = median(bins)
   const estimate = soldMedian30 ?? soldMedian90 ?? activeMedian
+  const liveCount = Math.max(active.length, liveTotal ?? 0)
+  // Per condition: needs 3+ prices so one odd listing doesn't set it.
+  const bucket = (wantNew: boolean) => {
+    const soldP = sold.filter((x) => daysAgo(x.soldOn, now) <= 90 && !x.bestOffer && isNewCondition(x.condition) === wantNew).map((x) => x.priceCents + (x.shippingCents ?? 0))
+    if (soldP.length >= 3) return median(soldP)
+    const liveP = active.filter((a) => a.buyItNow && isNewCondition(a.condition) === wantNew).map((a) => a.priceCents + (a.shippingCents ?? 0))
+    return liveP.length >= 3 ? median(liveP) : null
+  }
   return {
-    activeCount: active.length,
+    newEstimate: bucket(true),
+    usedEstimate: bucket(false),
+    activeCount: liveCount,
     activeMedian,
     activeLowest: bins.length ? Math.min(...bins) : null,
     sold30,
     sold90,
     soldMedian30,
     soldMedian90,
-    sellThrough: sold30 + active.length ? sold30 / (sold30 + active.length) : null,
-    daysOfSupply: sold30 ? Math.round(active.length / (sold30 / 30)) : null,
+    sellThrough: sold30 + liveCount ? sold30 / (sold30 + liveCount) : null,
+    daysOfSupply: sold30 ? Math.round(liveCount / (sold30 / 30)) : null,
     estimate,
     estimateSource: soldMedian30 != null ? "sold30" : soldMedian90 != null ? "sold90" : activeMedian != null ? "active" : null,
   }
