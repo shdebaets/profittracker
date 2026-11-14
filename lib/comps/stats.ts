@@ -81,7 +81,7 @@ export function compStats(
   now = new Date(),
   liveTotal?: number,
   /** From the latest sold read: its rows (so older, patchier reads don't stretch the span) and eBay's own match count, already scaled by the share that was this product. */
-  soldRead?: { latest: SoldComp[]; total: number | null; oldest?: string | null },
+  soldRead?: { latest: SoldComp[]; total: number | null; within30?: number | null },
 ): CompStats {
   const bins = prices(active.filter((a) => a.buyItNow))
   // Best-offer sales show the list price, not what it sold for, so they're left out of prices.
@@ -89,14 +89,14 @@ export function compStats(
   // How far back the sales we have go. If they don't cover 30 days (a busy product: the newest few
   // hundred sales can be a couple of days), the 30-day count comes from the pace instead.
   const counted30 = sold.filter((x) => daysAgo(x.soldOn, now) <= 30).length
-  // Best case: the read reached eBay's last page, so we know how far back eBay's count goes.
-  // All of it inside 30 days (a new release) → the count is eBay's count. Otherwise spread it.
-  const counted = soldRead?.total && soldRead.oldest ? Math.round(soldRead.total * Math.min(1, 30 / Math.max(1, daysAgo(soldRead.oldest, now)))) : null
+  // Best case: the read found where eBay's results cross 30 days ago, so this is eBay's own count
+  // of 30-day sales for the product (already scaled by the judge's keep share).
+  const counted = soldRead?.within30 ?? null
   // When the read already holds every sale eBay has for this search (Godzilla bucket: 111 read of
   // 110), there's nothing to project: the count is the count. Otherwise project from the pace.
   const readAll = !!soldRead?.total && soldRead.latest.length >= soldRead.total * 0.9
   const pace = readAll ? null : soldPace(soldRead?.latest.length ? soldRead.latest : sold, now)
-  const sold30Estimated = counted != null ? daysAgo(soldRead!.oldest!, now) > 30 : pace != null && pace > counted30
+  const sold30Estimated = counted != null ? false : pace != null && pace > counted30
   let sold30: number = counted != null ? Math.max(counted, counted30) : sold30Estimated && pace != null ? pace : counted30
   // eBay's sold count covers ~90 days, so a projected 30-day number can't be higher than it.
   if (counted == null && sold30Estimated && soldRead?.total) sold30 = Math.max(counted30, Math.min(sold30, soldRead.total))

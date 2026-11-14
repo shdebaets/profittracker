@@ -108,7 +108,13 @@ export async function lookupComps(
   const soldRead = read
     ? {
         latest: readKept.map((r) => ({ priceCents: r.price_cents, shippingCents: r.shipping_cents, soldOn: r.sold_on, bestOffer: r.best_offer, condition: r.condition, overseas: r.overseas })),
-        oldest: read.oldest,
+        // eBay's results inside 30 days, scaled by the share of this read's last-30-day sales the judge kept.
+        within30: (() => {
+          if (!read.within30) return null
+          const month = new Date(now.getTime() - 30 * 86_400_000).toISOString().slice(0, 10)
+          const recent = readRows.filter((r) => r.sold_on >= month)
+          return recent.length ? Math.round((read.within30 * recent.filter((r) => judge.keep(r.title)).length) / recent.length) : null
+        })(),
         total: read.total && readRows.length ? Math.round((read.total * readKept.length) / readRows.length) : null,
       }
     : undefined

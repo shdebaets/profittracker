@@ -120,16 +120,16 @@ export { soldPhrase }
 const MAX_PAGES = () => Number(process.env.SOLD_DATA_MAX_PAGES) || 4
 
 /** comp_cache key for the last sold read of a search (paid API or a browser read). */
-// v7: item location and eBay's last page (exact 30-day count). v6: reads every AI search for the product (lib/comps/variants.ts), not just one phrase.
-export const soldKey = (query: string) => `sold7:${queryKey(query)}`
+// v8: binary search for the 30-day line in eBay's results. v7: item location. v6: reads every AI search for the product (lib/comps/variants.ts), not just one phrase.
+export const soldKey = (query: string) => `sold8:${queryKey(query)}`
 
 /** What the last sold read found: when it ran and eBay's own count of matching sold listings. */
-export async function lastSoldRead(query: string): Promise<{ at: string; total: number | null; oldest: string | null } | null> {
+export async function lastSoldRead(query: string): Promise<{ at: string; total: number | null; within30: number | null } | null> {
   const { data } = await createAdminClient().from("comp_cache").select("payload, fetched_at").eq("key", soldKey(query)).maybeSingle()
   if (!data) return null
   const total = Number((data.payload as { total?: unknown })?.total)
-  const oldest = (data.payload as { oldest?: unknown })?.oldest
-  return { at: data.fetched_at, total: Number.isFinite(total) && total > 0 ? total : null, oldest: typeof oldest === "string" ? oldest : null }
+  const w = Number((data.payload as { within30?: unknown })?.within30)
+  return { at: data.fetched_at, total: Number.isFinite(total) && total > 0 ? total : null, within30: Number.isFinite(w) && w > 0 ? w : null }
 }
 
 /**
@@ -163,6 +163,8 @@ export async function refreshSoldFromApi(query: string, searches?: string[]): Pr
     // The first search pages deep (busy products); the others read one page each, to catch sales
     // titled differently. eBay's count per search overlaps, so the biggest one is kept.
     let oldest: string | null = null
+    // eBay results (before the AI judge) sold in the last 30 days, when the read could tell.
+    let within30: number | null = null
     for (const [n, phrase] of phrases.entries()) {
       let lastRead = 0
       let phraseTotal: number | null = null
@@ -183,16 +185,34 @@ export async function refreshSoldFromApi(query: string, searches?: string[]): Pr
         if (pageOldest && (!oldest || pageOldest < oldest)) oldest = pageOldest
         if (res.items.length < 60 || !pageOldest || pageOldest < monthAgo) break
       }
-      // A busy product: the pages read are only the newest few days. One more request for the
-      // last page tells how far back eBay's count goes, so the 30-day count is a real count.
+      // A busy product: the pages read are only the newest few days. Find the page where eBay's
+      // results cross 30 days ago (binary search, at most 5 requests), so the 30-day count is a
+      // real count of eBay's results, not a guess from the pace.
       const lastPage = phraseTotal ? Math.min(100, Math.ceil(phraseTotal / 60)) : 0
-      if (n === 0 && lastPage > lastRead && oldest && oldest >= monthAgo) {
-        const res = await fetchPage(phrase, lastPage)
-        requests++
-        const got = res.items.map(toSoldRow).filter((r): r is SoldRow => !!r)
-        rows.push(...got)
-        const pageOldest = got.map((r) => r.sold_on).sort()[0]
-        if (pageOldest && pageOldest < oldest) oldest = pageOldest
+      if (n === 0 && phraseTotal && lastPage > lastRead && oldest && oldest >= monthAgo) {
+        let inside = lastRead // newest pages: all inside 30 days
+        let outside: number
+        const probe = async (page: number) => {
+          const res = await fetchPage(phrase, page)
+          requests++
+          const got = res.items.map(toSoldRow).filter((r): r is SoldRow => !!r)
+          rows.push(...got)
+          const dates = got.map((r) => r.sold_on).sort()
+          return { oldest: dates[0] ?? null }
+        }
+        const last = await probe(lastPage)
+        if (last.oldest && last.oldest >= monthAgo) within30 = phraseTotal
+        else {
+          outside = lastPage
+          for (let i = 0; i < 4 && outside - inside > 1; i++) {
+            const mid = Math.floor((inside + outside) / 2)
+            const r = await probe(mid)
+            if (r.oldest && r.oldest >= monthAgo) inside = mid
+            else outside = mid
+          }
+          // Whole pages inside, plus about half of the page that crosses the line.
+          within30 = Math.min(phraseTotal, inside * 60 + 30)
+        }
       }
     }
     // Pages can overlap while new sales come in: one row per sale, or the upsert refuses the batch.
@@ -208,8 +228,8 @@ export async function refreshSoldFromApi(query: string, searches?: string[]): Pr
       if (error) throw error
     }
     // Only mark it read once it's saved, so a failure is retried on the next lookup.
-    console.log("[sold data] read", JSON.stringify({ phrases, requests, results: unique.length, total, oldest }))
-    await admin.from("comp_cache").upsert({ key, payload: { requests, results: unique.length, total, oldest }, fetched_at: readAt })
+    console.log("[sold data] read", JSON.stringify({ phrases, requests, results: unique.length, total, within30 }))
+    await admin.from("comp_cache").upsert({ key, payload: { requests, results: unique.length, total, within30 }, fetched_at: readAt })
     return unique.length
   } catch (e) {
     console.error("[sold data]", e)
