@@ -17,7 +17,7 @@ import { FieldLabel, MoneyInput, NativeSelect, TextInput, Toggle } from "@/compo
 import type { Aspect, CategorySuggestion, ConditionOption } from "@/lib/marketplaces/ebay/adapter"
 import { AD_RATE_MAX, AD_RATE_MIN, defaultConditionId, normalizeAdRate } from "@/lib/marketplaces/ebay/mapping"
 import { EXTENSION_STORE_URL, ITEM_CONDITIONS, MARKETPLACES, type ItemCondition, type Marketplace } from "@/lib/marketplaces/registry"
-import { delistWithExtension, listWithExtension, useExtension } from "@/lib/extension"
+import { delistWithExtension, editWithExtension, extensionCanEdit, listWithExtension, useExtension } from "@/lib/extension"
 import { centsToInput, formatCents, toCents } from "@/lib/money"
 import type { Item, Listing } from "@/lib/types"
 import { cn } from "@/lib/utils"
@@ -347,7 +347,7 @@ function LiveActions({ listing, m, title }: { listing: Listing; m: Marketplace; 
   }
   return (
     <div className="grid grid-cols-2 gap-2">
-      <SyncNotice listing={listing} m={m} url={url} />
+      <SyncNotice listing={listing} m={m} url={url} title={title} />
       <a href={url} target="_blank" rel="noopener noreferrer" className="flex h-11 items-center justify-center gap-1.5 rounded-xl border font-semibold">
         View <ExternalLink className="size-4" />
       </a>
@@ -375,8 +375,11 @@ function LiveActions({ listing, m, title }: { listing: Listing; m: Marketplace; 
 }
 
 /** Edit once, update everywhere: what still has to reach this site. */
-function SyncNotice({ listing, m, url }: { listing: Listing; m: Marketplace; url: string }) {
+function SyncNotice({ listing, m, url, title }: { listing: Listing; m: Marketplace; url: string; title: string }) {
   const [pending, run] = useRun()
+  const ext = useExtension()
+  // The extension can open this listing's edit page and fill the changes (0.9.0+).
+  const canFill = m.mode !== "api" && ext.supports(m.id) && extensionCanEdit() && !!listing.external_url
   if (listing.sync_status === "synced") return null
   const c = listing.pending_changes ?? {}
   const what = [
@@ -384,6 +387,7 @@ function SyncNotice({ listing, m, url }: { listing: Listing; m: Marketplace; url
     c.title !== undefined && "title",
     c.description !== undefined && "description",
     c.quantity !== undefined && `quantity to ${c.quantity}`,
+    !!c.photoPaths?.length && "photos",
   ].filter(Boolean)
   return (
     <div className="col-span-2 flex flex-col gap-2 rounded-xl border border-brand/40 bg-brand-soft p-3 text-sm">
@@ -402,6 +406,22 @@ function SyncNotice({ listing, m, url }: { listing: Listing; m: Marketplace; url
             className="h-10 rounded-lg bg-ink font-semibold text-white disabled:opacity-60"
           >
             Retry
+          </button>
+        ) : canFill ? (
+          <button
+            type="button"
+            onClick={() =>
+              editWithExtension(m.id, {
+                listingId: listing.id,
+                itemId: listing.item_id,
+                url: listing.external_url!,
+                title,
+                changes: listing.pending_changes ?? {},
+              })
+            }
+            className="flex h-10 items-center justify-center gap-1 rounded-lg border bg-card font-semibold"
+          >
+            <Wand2 className="size-3.5" /> Update {m.short}
           </button>
         ) : (
           <a href={url} target="_blank" rel="noopener noreferrer" className="flex h-10 items-center justify-center gap-1 rounded-lg border bg-card font-semibold">

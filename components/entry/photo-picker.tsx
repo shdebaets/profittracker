@@ -1,6 +1,6 @@
 "use client"
 
-import { Camera, Loader2, Star, X } from "lucide-react"
+import { Camera, Loader2, Star, Wand2, X } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
 import { toast } from "sonner"
 import { createPhotoUploads } from "@/app/(app)/actions/photos"
@@ -39,6 +39,11 @@ export function PhotoPicker({
   const input = useRef<HTMLInputElement>(null)
   const [uploading, setUploading] = useState(0)
   const room = MAX_PHOTOS - value.length - uploading
+  // The list can change while a background is being removed; swap into the newest one.
+  const latest = useRef(value)
+  useEffect(() => {
+    latest.current = value
+  }, [value])
 
   useEffect(() => {
     onUploadingChange?.(uploading)
@@ -69,6 +74,31 @@ export function PhotoPicker({
     }
   }
 
+  const [cleaning, setCleaning] = useState<string | null>(null)
+
+  /** Swap one photo for a white-background copy. The old file is cleaned up when the item is saved. */
+  async function cleanUp(p: Photo) {
+    if (cleaning) return
+    setCleaning(p.path)
+    const id = toast.loading("Removing the background. The first time takes a minute to load.")
+    try {
+      const { removeBackground } = await import("@/lib/bg-remove")
+      const original = await (await fetch(p.url)).blob()
+      const blob = await compressImage(new File([await removeBackground(original)], "photo.jpg", { type: "image/jpeg" }))
+      const res = await createPhotoUploads(1)
+      if (!res.ok) throw new Error(res.error)
+      await putPhoto(res.uploads[0].signedUrl, blob)
+      const next: Photo = { path: res.uploads[0].path, url: URL.createObjectURL(blob) }
+      onChange(latest.current.map((x) => (x.path === p.path ? next : x)))
+      toast.success("Background removed", { id })
+    } catch (e) {
+      console.error("[bg-remove]", e)
+      toast.error("Couldn't remove the background on this device. Try it on a computer.", { id })
+    } finally {
+      setCleaning(null)
+    }
+  }
+
   const makeCover = (i: number) => onChange([value[i], ...value.filter((_, j) => j !== i)])
   const remove = (i: number) => onChange(value.filter((_, j) => j !== i))
 
@@ -94,6 +124,13 @@ export function PhotoPicker({
               className="absolute -top-1.5 -right-1.5 grid size-6 place-items-center rounded-full bg-ink text-white shadow"
             >
               <X className="size-3.5" />
+            </button>
+            <button
+              type="button" onClick={() => cleanUp(p)} disabled={!!cleaning} aria-label="Remove background"
+              title="Remove background"
+              className="absolute right-1 bottom-1 grid size-6 place-items-center rounded-full bg-white/90 text-ink shadow disabled:opacity-60"
+            >
+              {cleaning === p.path ? <Loader2 className="size-3.5 animate-spin" /> : <Wand2 className="size-3.5" />}
             </button>
           </div>
         ))}

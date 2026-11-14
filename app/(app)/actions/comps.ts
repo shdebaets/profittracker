@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache"
 import { z } from "zod"
+import { judgeTitles } from "@/lib/comps/judge"
 import { lookupComps, searchPhrase, type CompLookup } from "@/lib/comps/lookup"
 import { overpricedItems, type Overpriced } from "@/lib/comps/overpriced"
 import { median, queryKey } from "@/lib/comps/stats"
@@ -16,8 +17,8 @@ export type LookupResult = { ok: true; lookup: CompLookup } | { ok: false; error
 export async function compLookup(input: string): Promise<LookupResult> {
   try {
     const q = z.string().trim().min(2, "Scan a barcode or type what it is").max(120).parse(input)
-    const { supabase } = await requireUser()
-    return { ok: true, lookup: await lookupComps(supabase, q) }
+    const { supabase, userId } = await requireUser()
+    return { ok: true, lookup: await lookupComps(supabase, q, new Date(), userId) }
   } catch (e) {
     return fail(e) as { ok: false; error: string }
   }
@@ -106,10 +107,10 @@ export async function untrackProduct(id: string): Promise<ActionResult> {
 /** Re-check one tracked product's numbers and save them. */
 export async function refreshTracked(id: string): Promise<ActionResult> {
   try {
-    const { supabase } = await requireUser()
+    const { supabase, userId } = await requireUser()
     const { data: t, error } = await supabase.from("tracked_products").select("query, gtin").eq("id", z.uuid().parse(id)).single()
     if (error) throw error
-    const l = await lookupComps(supabase, t.gtin ?? t.query)
+    const l = await lookupComps(supabase, t.gtin ?? t.query, new Date(), userId)
     const { error: upErr } = await supabase
       .from("tracked_products")
       .update({ stats: l.stats, title: l.title, image_url: l.image, checked_at: new Date().toISOString() })
@@ -127,7 +128,7 @@ export type OverpricedResult = { ok: true; items: Overpriced[]; checked: number 
 /** Compare each priced inventory item with the sold comps on file for its title (last 90 days). */
 export async function findOverpriced(): Promise<OverpricedResult> {
   try {
-    const { supabase } = await requireUser()
+    const { supabase, userId } = await requireUser()
     const { data, error } = await supabase.from("items").select("*, listings:marketplace_listings(*)").eq("status", "inventory")
     if (error) throw error
     const items = (data ?? []) as Item[]
@@ -138,11 +139,14 @@ export async function findOverpriced(): Promise<OverpricedResult> {
       if (!i.title) continue
       const { data: rows } = await supabase
         .from("comp_sales")
-        .select("price_cents, shipping_cents, best_offer")
+        .select("title, price_cents, shipping_cents, best_offer")
         .eq("query_key", queryKey(searchPhrase(i.title)))
         .gte("sold_on", since)
         .limit(500)
-      const prices = (rows ?? []).filter((r) => !r.best_offer).map((r) => r.price_cents + (r.shipping_cents ?? 0))
+      if (!rows?.length) continue
+      // Same AI judge as Scan to Comp, so a case or a lot doesn't drag the median down.
+      const judge = await judgeTitles(i.title, rows.map((r) => r.title), userId)
+      const prices = rows.filter((r) => !r.best_offer && judge.keep(r.title)).map((r) => r.price_cents + (r.shipping_cents ?? 0))
       const med = median(prices)
       if (med && prices.length >= 3) {
         medians.set(i.id, med)

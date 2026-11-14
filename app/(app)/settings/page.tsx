@@ -23,7 +23,7 @@ export default async function SettingsPage({ searchParams }: PageProps<"/setting
   const cfg = ebayConfig()
   const ebayConnected = connections.some((c) => c.marketplace === "ebay")
   const supabase = (await requireUser()).supabase
-  const [{ data: offerRule }, { data: offerLog }] = crosslist && ebayConnected
+  const [{ data: offerRule }, { data: offerLog }] = crosslist
     ? await Promise.all([
         supabase.from("smart_offer_rules").select("*").maybeSingle<OfferRuleRow>(),
         supabase.from("smart_offers").select("*").order("sent_at", { ascending: false }).limit(50),
@@ -57,7 +57,7 @@ export default async function SettingsPage({ searchParams }: PageProps<"/setting
       ) : (
         <CrosslistUpsell />
       )}
-      {crosslist && ebayConnected && <SmartOffers rule={offerRule} log={(offerLog ?? []) as OfferLog[]} />}
+      {crosslist && <SmartOffers rule={offerRule} log={(offerLog ?? []) as OfferLog[]} ebayConnected={ebayConnected} />}
       <div className="rounded-3xl border bg-card p-5 text-sm text-muted-foreground">
         <p className="font-semibold text-foreground">Install on Your Phone</p>
         <p className="mt-1">

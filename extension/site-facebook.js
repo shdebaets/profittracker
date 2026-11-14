@@ -39,6 +39,14 @@
       return { done, todo }
     },
 
+    // Edit once, update everywhere: "Edit listing" on the item opens /marketplace/edit/?listing_id=…
+    edit: {
+      open: /^edit( listing)?$/i,
+      isEditPage: (path) => path.startsWith("/marketplace/edit"),
+      saveHint: 'click "Update"',
+      fields: { title: ["Title"], description: ["Description"], price: ["Price"] },
+    },
+
     delist: {
       buttons: [/^mark as sold$/i],
       auto: { final: /^mark as sold$/i, confirm: /^(mark as sold|confirm|done)$/i },

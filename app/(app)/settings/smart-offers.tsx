@@ -4,6 +4,7 @@ import { HandCoins } from "lucide-react"
 import { useState, useTransition } from "react"
 import { toast } from "sonner"
 import { saveOfferRules } from "@/app/(app)/actions/offers"
+import { AssistedOffers } from "./assisted-offers"
 import { FieldLabel, Toggle } from "@/components/fields"
 import { relativeTime } from "@/lib/dates"
 import { formatCents } from "@/lib/money"
@@ -36,7 +37,7 @@ function Num({ id, label, value, onChange, suffix }: { id: string; label: string
   )
 }
 
-export function SmartOffers({ rule, log }: { rule: OfferRuleRow | null; log: OfferLog[] }) {
+export function SmartOffers({ rule, log, ebayConnected }: { rule: OfferRuleRow | null; log: OfferLog[]; ebayConnected: boolean }) {
   const [r, setR] = useState<OfferRuleRow>(rule ?? DEFAULTS)
   const [pending, start] = useTransition()
   const set = <K extends keyof OfferRuleRow>(k: K, v: OfferRuleRow[K]) => setR((x) => ({ ...x, [k]: v }))
@@ -48,8 +49,11 @@ export function SmartOffers({ rule, log }: { rule: OfferRuleRow | null; log: Off
       <div className="flex items-start gap-3">
         <span className="grid size-10 shrink-0 place-items-center rounded-2xl bg-brand-soft"><HandCoins className="size-5 text-brand" /></span>
         <div className="min-w-0 flex-1">
-          <p className="font-bold">Smart Offers on eBay</p>
-          <p className="text-sm text-muted-foreground">Sends offers to people watching your eBay listings, by your rules. Never below cost plus your margin.</p>
+          <p className="font-bold">Smart Offers</p>
+          <p className="text-sm text-muted-foreground">
+            Offers to people watching or liking your listings, by your rules. Never below cost plus your margin.
+            {ebayConnected ? " Sent automatically on eBay." : " Connect eBay to send them there automatically."}
+          </p>
         </div>
         <Toggle checked={r.enabled} onChange={(v) => set("enabled", v)} label="Smart Offers" />
       </div>
@@ -61,7 +65,7 @@ export function SmartOffers({ rule, log }: { rule: OfferRuleRow | null; log: Off
         <Num id="so-every" label="Send every" value={r.every_days} onChange={(n) => set("every_days", n)} suffix="days" />
       </div>
       <p className="text-xs text-muted-foreground">
-        The discount grows 1% a week past the starting age, up to your max. Offers last 2 days. eBay only: Poshmark and Mercari ban automated offers.
+        The discount grows 1% a week past the starting age, up to your max. eBay offers last 2 days. Poshmark and Mercari ban automated offers, so FlipLedger lines those up below and you send them.
       </p>
       <button
         disabled={pending}
@@ -79,6 +83,8 @@ export function SmartOffers({ rule, log }: { rule: OfferRuleRow | null; log: Off
       >
         {pending ? "Saving…" : "Save Smart Offers"}
       </button>
+
+      <AssistedOffers enabled={!!rule?.enabled} />
 
       {log.length > 0 && (
         <div className="flex flex-col gap-2 border-t pt-3">

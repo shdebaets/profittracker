@@ -1,6 +1,8 @@
 // The daily email job: Sunday recaps and quarterly tax reminders (7 days and 1 day before each due
 // date). `email_log` makes every send idempotent, so re-running the cron never double-sends.
 import "server-only"
+import { recapPush } from "@/lib/push/messages"
+import { pushToUser } from "@/lib/push/send"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { DEFAULT_SETTINGS } from "@/lib/data-defaults"
 import { lastTwoWeeks, quietWeek, weekNumbers } from "@/lib/recap"
@@ -48,6 +50,8 @@ export async function sendRecap(admin: SupabaseClient, user: { id: string; email
   const p = weekNumbers(data.items, data.expenses, prev)
   if (!force && quietWeek(n, p)) return false
   await sendEmail(user.email, recapSubject(n), recapEmail(n, p, `${APP_URL}/recap`, unsubscribeUrl(user.id, "recap")), unsubscribeUrl(user.id, "recap"))
+  // Same recap as a push on every device that turned notifications on. A push failure never blocks the email.
+  await pushToUser(admin, user.id, recapPush(n)).catch((e) => console.error("[recap push]", user.id, e))
   if (!force) await logSent(admin, user.id, "recap", key)
   return true
 }

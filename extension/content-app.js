@@ -21,7 +21,7 @@
         .catch(() => reply(null))
       return
     }
-    if (!["LIST", "DELIST", "IMPORT", "IMPORT_SALES", "COMPS"].includes(msg.type)) return
+    if (!["LIST", "DELIST", "EDIT", "OFFER", "IMPORT", "IMPORT_SALES", "COMPS"].includes(msg.type)) return
     const fail = (error) =>
       window.postMessage({ source: EXT_SOURCE, type: "ERROR", jobId: msg.jobId, marketplace: msg.marketplace, error }, location.origin)
     chrome.runtime
@@ -30,7 +30,7 @@
       .catch((e) => fail(String(e?.message ?? e)))
   })
 
-  // Results coming back from a marketplace tab (LISTED / DELISTED / IMPORTED / SOLD_ITEMS / ERROR).
+  // Results coming back from a marketplace tab (LISTED / DELISTED / EDITED / IMPORTED / SOLD_ITEMS / ERROR).
   chrome.runtime.onMessage.addListener((msg) => {
     if (msg?.to !== "app") return
     const rest = { ...msg }

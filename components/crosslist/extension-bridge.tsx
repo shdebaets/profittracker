@@ -3,6 +3,7 @@
 import { useEffect } from "react"
 import { toast } from "sonner"
 import { endListing, markAssistedListed } from "@/app/(app)/actions/crosslist"
+import { markListingSynced } from "@/app/(app)/actions/edit"
 import { onExtensionResult, pendingJobs } from "@/lib/extension"
 import { marketplace } from "@/lib/marketplaces/registry"
 
@@ -23,6 +24,12 @@ export function ExtensionBridge() {
           })
           if (res.ok) toast.success(`Listed on ${name}`)
           else toast.error(res.error)
+        } else if (r.type === "EDITED") {
+          const res = await markListingSynced(r.listingId)
+          if (res.ok) toast.success(`Updated on ${name}`)
+          else toast.error(res.error)
+        } else if (r.type === "OFFERED") {
+          // Logged by Settings → Smart Offers, which started it.
         } else {
           const res = await endListing(r.listingId, { manual: true })
           if (res.ok) toast.success(`Ended on ${name}`)

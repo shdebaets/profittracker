@@ -2,12 +2,14 @@
 // bulk_update_price_quantity, title and description by rewriting the inventory item (and the
 // offer's description). eBay revises published listings when these change.
 import "server-only"
+import { APP_URL } from "@/lib/email/send"
+import { photoLink } from "@/lib/photo-links"
 import type { Listing } from "@/lib/types"
 import { EbayError, ebayFetch } from "./client"
 import { ebayTitle, toEbayMoney } from "./mapping"
 import { requireUserToken } from "./oauth"
 
-export type ListingChanges = { priceCents?: number; quantity?: number; title?: string; description?: string }
+export type ListingChanges = { priceCents?: number; quantity?: number; title?: string; description?: string; photoPaths?: string[] }
 
 type InventoryItem = { product?: { title?: string; description?: string; [k: string]: unknown }; [k: string]: unknown }
 type Offer = { listingDescription?: string; [k: string]: unknown }
@@ -44,12 +46,14 @@ export async function reviseEbayListing(listing: Listing, c: ListingChanges) {
     }
   }
 
-  if (c.title !== undefined || c.description !== undefined) {
+  if (c.title !== undefined || c.description !== undefined || c.photoPaths?.length) {
     const path = `/sell/inventory/v1/inventory_item/${encodeURIComponent(sku)}`
     const current = await ebayFetch<InventoryItem>(token, path)
     const product = { ...(current.product ?? {}) }
     if (c.title !== undefined) product.title = ebayTitle(c.title)
     if (c.description !== undefined) product.description = c.description
+    // Short signed links: eBay rejects picture URLs over 500 characters.
+    if (c.photoPaths?.length) product.imageUrls = c.photoPaths.slice(0, 24).map((path) => photoLink(APP_URL, path))
     // Read-only fields eBay returns but rejects on write.
     const { sku: _sku, locale: _locale, groupIds: _g, inventoryItemGroupKeys: _k, ...rest } = current as Record<string, unknown>
     void _sku; void _locale; void _g; void _k
