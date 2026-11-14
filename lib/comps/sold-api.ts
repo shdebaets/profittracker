@@ -90,7 +90,7 @@ export class SoldApiError extends Error {}
 async function fetchPage(query: string, page: number): Promise<unknown[]> {
   const key = process.env.SOLD_DATA_API_KEY?.trim()
   if (!key) throw new SoldApiError("SOLD_DATA_API_KEY is not set")
-  const params = new URLSearchParams({ query: query.slice(0, 100), show_only: "sold_items", domain: "com", page: String(page) })
+  const params = new URLSearchParams({ query: query.slice(0, 100), show_only: "sold_items", sort_by: "RECENTLY_SOLD", domain: "com", page: String(page) })
   const res = await fetch(`${ENDPOINT}?${params}`, { headers: { "x-api-key": key }, signal: AbortSignal.timeout(25_000) })
   const body = (await res.json().catch(() => ({}))) as { data?: { products?: unknown[] } | unknown[]; error?: unknown; message?: unknown }
   if (!res.ok) throw new SoldApiError(`sold data ${res.status}: ${String(body.message ?? body.error ?? "").slice(0, 200)}`)
