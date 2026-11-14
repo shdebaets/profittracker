@@ -89,7 +89,8 @@ export function compStats(active: ActiveComp[], sold: SoldComp[], now = new Date
     usedEstimate: bucket(false),
     activeCount: liveCount,
     activeMedian,
-    activeLowest: bins.length ? Math.min(...bins) : null,
+    // Under half the median is almost always a scam, a pre-order or a mislabeled part, not a real buy.
+    activeLowest: bins.length ? Math.min(...bins.filter((p) => !activeMedian || p >= activeMedian * 0.5)) : null,
     sold30,
     sold90,
     soldMedian30,
