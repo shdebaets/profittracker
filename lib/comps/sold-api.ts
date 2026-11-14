@@ -80,7 +80,10 @@ export function toSoldRow(raw: unknown): SoldRow | null {
     price_cents: price,
     shipping_cents: shippingCents(pick(p, "shipping", "shipping_price", "shipping_cost", "delivery")),
     sold_on: sold,
-    best_offer: /best.?offer/i.test(format) || /best offer accepted/i.test(String(pick(p, "caption") ?? "")),
+    best_offer:
+      /best.?offer/i.test(format) ||
+      /best offer accepted/i.test(String(pick(p, "caption") ?? "")) ||
+      /best offer accepted/i.test(String(pick(p, "price_raw") ?? "")),
     condition: (pick(p, "condition", "item_condition") as string | null)?.toString().slice(0, 60) ?? null,
   }
 }
@@ -113,7 +116,7 @@ export async function refreshSoldFromApi(query: string): Promise<number> {
   if (!process.env.SOLD_DATA_API_KEY?.trim()) return 0
   const admin = createAdminClient()
   // v2: reads several pages (v1 read one, which undercounted busy products).
-  const key = `sold3:${queryKey(query)}`
+  const key = `sold4:${queryKey(query)}`
   const { data: last } = await admin.from("comp_cache").select("fetched_at").eq("key", key).maybeSingle()
   if (last && Date.now() - Date.parse(last.fetched_at) < SOLD_TTL_MS) return 0
   const since = new Date(Date.now() - 86_400_000).toISOString()
@@ -134,6 +137,17 @@ export async function refreshSoldFromApi(query: string): Promise<number> {
       const res = await fetchPage(query, page)
       requests++
       total ??= res.total
+      if (page === 1)
+        // What the provider sends for prices and formats: to tell best-offer sales apart.
+        console.log(
+          "[sold data] sample",
+          JSON.stringify(
+            res.items.slice(0, 12).map((x) => {
+              const o = x as Record<string, unknown>
+              return { t: String(o.title ?? "").slice(0, 40), p: o.price, pr: o.price_raw, op: o.original_price, d: o.discount, bf: o.buying_format, c: o.caption, s: o.shipping }
+            }),
+          ),
+        )
       const got = res.items.map(toSoldRow).filter((r): r is SoldRow => !!r)
       rows.push(...got)
       const oldest = got.map((r) => r.sold_on).sort()[0]

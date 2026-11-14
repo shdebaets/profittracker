@@ -64,6 +64,20 @@ async function askClaude(product: string, titles: string[]): Promise<{ keep: Set
  * Which titles are the exact product. Titles it couldn't judge (no API key, Claude down) count as
  * kept, so comps still work, just unfiltered. `userId` is only for the spend log.
  */
+/**
+ * Titles that are plainly several units or a mix (lot, bundle, case, "x2", "Day & Night"), unless
+ * the product itself is named that way. The AI misses some of these. Pure.
+ */
+export function obviousMulti(title: string, product: string): boolean {
+  const multi = /\b(lot|lots|bundle|case|combo|set of \d|\d+\s?x\b|x\s?\d+\b|\d+\s?(box|boxes|pack|packs)\b|both)\b|&|\band\b.*\b(night|day)\b/i
+  const words = (t: string) => t.toLowerCase().match(/[a-z0-9]+/g) ?? []
+  if (!multi.test(title)) return false
+  // "Day & Night" in the title is fine if the product is the Day & Night combo itself.
+  const p = new Set(words(product))
+  const flagged = words(title).filter((w) => ["lot", "lots", "bundle", "case", "combo", "both", "and"].includes(w))
+  return flagged.length === 0 ? !/&/.test(product) && /&/.test(title) && /day|night|\+/i.test(title) : flagged.some((w) => !p.has(w))
+}
+
 export async function judgeTitles(product: string, titles: string[], userId: string | null): Promise<{ keep: (t: string) => boolean; judged: boolean }> {
   const unique = [...new Set(titles.map((t) => t.trim()).filter(Boolean))]
   if (!unique.length || !product.trim()) return { keep: () => true, judged: false }
@@ -97,5 +111,5 @@ export async function judgeTitles(product: string, titles: string[], userId: str
       break
     }
   }
-  return { keep: (t) => verdicts.get(hash(t)) ?? true, judged }
+  return { keep: (t) => !obviousMulti(t, product) && (verdicts.get(hash(t)) ?? true), judged }
 }
