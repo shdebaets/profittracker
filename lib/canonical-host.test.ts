@@ -23,4 +23,9 @@ describe("canonicalRedirect", () => {
     expect(canonicalRedirect(at("/api/marketplaces/ebay/account-deletion"), old, canon, "production")).toBeNull()
     expect(canonicalRedirect(at("/api/p/1/2/a.jpg"), old, canon, "production")).toBeNull()
   })
+  it("moves the eBay OAuth callback to the new host so the session cookie is there", () => {
+    expect(canonicalRedirect(at("/api/marketplaces/ebay/callback?code=c&state=s"), old, canon, "production")?.href).toBe(
+      "https://profit.emoneydeals.com/api/marketplaces/ebay/callback?code=c&state=s",
+    )
+  })
 })
