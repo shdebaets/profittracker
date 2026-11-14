@@ -193,3 +193,38 @@ export function importSalesWithExtension(marketplace: "mercari"): Promise<{ ok: 
     window.postMessage({ source: APP_SOURCE, type: "IMPORT_SALES", jobId, marketplace }, location.origin)
   })
 }
+
+/** Reading eBay sold prices for comps arrived in extension 0.8.0. */
+export const extensionCanCollectComps = () => extensionAtLeast(8)
+
+export type SoldCompRow = {
+  external_id: string
+  title: string
+  price: number
+  shipping: number | null
+  sold_on: string
+  best_offer: boolean
+  condition: string | null
+}
+
+/** Ask the extension to read eBay's public sold listings for a search (background tab, read only). */
+export function collectSoldWithExtension(query: string): Promise<{ ok: true; rows: SoldCompRow[] } | { ok: false; error: string }> {
+  const jobId = crypto.randomUUID()
+  return new Promise((resolve) => {
+    const finish = (r: { ok: true; rows: SoldCompRow[] } | { ok: false; error: string }) => {
+      clearTimeout(timer)
+      window.removeEventListener("message", onMsg)
+      resolve(r)
+    }
+    const onMsg = (e: MessageEvent) => {
+      if (e.source !== window || e.origin !== location.origin) return
+      const d = e.data
+      if (d?.source !== EXT_SOURCE || d.jobId !== jobId) return
+      if (d.type === "SOLD_COMPS") finish({ ok: true, rows: Array.isArray(d.rows) ? d.rows : [] })
+      else if (d.type === "ERROR") finish({ ok: false, error: d.error })
+    }
+    const timer = setTimeout(() => finish({ ok: false, error: "eBay took too long to answer. Try again." }), 60_000)
+    window.addEventListener("message", onMsg)
+    window.postMessage({ source: APP_SOURCE, type: "COMPS", jobId, query }, location.origin)
+  })
+}

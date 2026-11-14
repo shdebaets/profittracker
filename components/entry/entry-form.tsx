@@ -18,6 +18,8 @@ import { PhotoPicker, type Photo } from "./photo-picker"
 export type EntryMode = "sold" | "inventory"
 
 export type Prefill = Partial<{
+  title: string
+  store: string
   cost: string
   price: string
   qty: number
@@ -57,7 +59,9 @@ export function EntryForm(props: Props) {
   const init = item
     ? initialFromItem(item)
     : {
-        title: "", link: "", store: "",
+        title: props.variant === "create" ? (props.prefill?.title ?? "") : "",
+        link: "",
+        store: props.variant === "create" ? (props.prefill?.store ?? "") : "",
         cost: props.variant === "create" ? (props.prefill?.cost ?? "") : "",
         price: props.variant === "create" ? (props.prefill?.price ?? "") : "",
         qty: props.variant === "create" ? (props.prefill?.qty ?? 1) : 1,

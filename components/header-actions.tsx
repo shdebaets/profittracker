@@ -1,6 +1,6 @@
 "use client"
 
-import { PackagePlus, Search, Settings } from "lucide-react"
+import { PackagePlus, ScanBarcode, Search, Settings } from "lucide-react"
 import Link from "next/link"
 import { useEntry } from "@/components/entry/entry-provider"
 
@@ -10,6 +10,9 @@ export function HeaderActions() {
   const { openEntry } = useEntry()
   return (
     <div className="flex gap-2">
+      <Link href="/comp" aria-label="Scan to comp" className={btn}>
+        <ScanBarcode className="size-5 text-brand" />
+      </Link>
       <Link href="/inventory?search=1" aria-label="Search items" className={btn}>
         <Search className="size-5 text-brand" />
       </Link>

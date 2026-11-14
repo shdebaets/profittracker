@@ -32,10 +32,11 @@ Bump `version` in `manifest.json` before every update; the store rejects a versi
 
 ## Privacy practices tab
 
-- **Single purpose:** Fills in, publishes and removes the user's own Facebook Marketplace, Poshmark and Mercari listings from their FlipLedger inventory, and reports those listings' status back to FlipLedger.
+- **Single purpose:** Fills in, publishes and removes the user's own Facebook Marketplace, Poshmark and Mercari listings from their FlipLedger inventory, and reports those listings' status back to FlipLedger. It also reads eBay's public sold prices for items the user is pricing, so FlipLedger can show what they sell for.
 - **Permission justifications:**
   - `storage`: keeps each in-progress list, delist or import task (in session storage) while its marketplace tab loads, because the service worker can be suspended in between.
   - Host `facebook.com`, `poshmark.com`, `mercari.com`: fills in the listing form on these sites, clicks the publish or delete buttons the user asked for, and reads the user's own listing pages to check whether they sold.
+  - Host `ebay.com`: when the user asks FlipLedger for comps, opens eBay's public sold-listings search for that item in a background tab and reads the sold prices on the page. It doesn't sign in, click or change anything on eBay.
   - Host `*.supabase.co`: downloads the user's item photos from FlipLedger's storage to attach them to the listing form.
   - Content script on `profit.emoneydeals.com` (and the old `profittracker-iye3.vercel.app`): receives the listing to post from the FlipLedger app and sends results back.
 - **Remote code:** No, I am not using remote code. (All JavaScript ships in the package.)

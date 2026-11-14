@@ -1,0 +1,39 @@
+import { describe, expect, it } from "vitest"
+import { buyProfit, compStats, isGtin, median, queryKey } from "./stats"
+
+const now = new Date("2026-11-13T12:00:00Z")
+const sold = (days: number, priceCents: number, bestOffer = false) => ({
+  priceCents, shippingCents: 0, bestOffer, soldOn: new Date(now.getTime() - days * 86_400_000).toISOString().slice(0, 10),
+})
+
+describe("comps", () => {
+  it("normalises queries and spots barcodes", () => {
+    expect(queryKey("  Nintendo  Switch-OLED! ")).toBe("nintendo switch oled")
+    expect(isGtin("045496883386")).toBe(true)
+    expect(isGtin("switch")).toBe(false)
+  })
+  it("medians", () => {
+    expect(median([3, 1, 2])).toBe(2)
+    expect(median([1, 2, 3, 4])).toBe(3)
+    expect(median([])).toBeNull()
+  })
+  it("prefers 30-day sold, skips best offers, computes sell-through", () => {
+    const s = compStats(
+      [{ priceCents: 4000, shippingCents: 500, title: "", condition: null, buyItNow: true }],
+      [sold(2, 3000), sold(10, 3400), sold(20, 9999, true), sold(60, 1000)],
+      now,
+    )
+    expect(s).toMatchObject({ sold30: 3, sold90: 4, soldMedian30: 3200, estimate: 3200, estimateSource: "sold30", activeLowest: 4500 })
+    expect(s.sellThrough).toBeCloseTo(3 / 4)
+    expect(s.daysOfSupply).toBe(10)
+  })
+  it("falls back to live listings", () => {
+    const s = compStats([{ priceCents: 2000, shippingCents: null, title: "", condition: null, buyItNow: true }], [], now)
+    expect(s).toMatchObject({ estimate: 2000, estimateSource: "active", sellThrough: 0 })
+  })
+  it("profit after eBay fee and label", () => {
+    const p = buyProfit(800, 3200)
+    expect(p.fees).toBe(Math.round(3200 * 0.1325))
+    expect(p.profit).toBe(3200 - p.fees - 600 - 800)
+  })
+})

@@ -2,6 +2,7 @@
 
 import { Boxes, CircleDollarSign, Clock, Cloud, Download, Layers, Package, RotateCcw, Search, Share2, ShoppingBag, Sparkles } from "lucide-react"
 import Link from "next/link"
+import { OverpricedCheck } from "@/components/overpriced-check"
 import { RepriceBar } from "@/components/reprice-bar"
 import { daysSitting } from "@/lib/stale"
 import { useState } from "react"
@@ -254,6 +255,8 @@ export function InventoryView({
           </button>
         )}
       </div>
+
+      {tab !== "sales" && <OverpricedCheck />}
 
       {chip === "stale" && visible.length > 0 && (
         <RepriceBar

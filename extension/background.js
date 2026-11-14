@@ -151,9 +151,22 @@ async function readMercariListings(urls) {
   return items
 }
 
+/** COMPS: open eBay's public sold search for a query in a background tab; comps-ebay.js reads it. */
+async function startComps(msg, sender) {
+  const q = String(msg.query ?? "").slice(0, 120)
+  if (q.length < 2) throw new Error("Nothing to search for")
+  const url = `https://www.ebay.com/sch/i.html?_nkw=${encodeURIComponent(q)}&LH_Sold=1&LH_Complete=1&_ipg=240&rt=nc`
+  const tab = await chrome.tabs.create({ url, active: false })
+  await saveJob(tab.id, { kind: "comps", jobId: msg.jobId, marketplace: "ebay", appTabId: sender.tab?.id ?? null, query: q })
+}
+
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   ;(async () => {
     // From the FlipLedger app tab.
+    if (msg?.from === "app" && msg.type === "COMPS") {
+      await startComps(msg, sender)
+      return { ok: true }
+    }
     if (msg?.from === "app" && msg.type === "CHECK_SALES") {
       return { ok: true, results: await checkSales(msg.listings) }
     }
@@ -187,6 +200,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
     if (msg?.type === "UPDATE") {
       await saveJob(tabId, { ...job, ...msg.patch })
+      return { ok: true }
+    }
+    if (msg?.type === "DONE" && job.kind === "comps") {
+      await dropJob(tabId)
+      chrome.tabs.remove(tabId).catch(() => {})
+      if (msg.challenged) tellApp(job, { type: "ERROR", error: "eBay asked for a security check. Open ebay.com in Chrome, finish it, then try again." })
+      else tellApp(job, { type: "SOLD_COMPS", query: job.query, rows: Array.isArray(msg.rows) ? msg.rows : [] })
       return { ok: true }
     }
     if (msg?.type === "DONE" && job.kind === "sales") {
