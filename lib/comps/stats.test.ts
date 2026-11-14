@@ -67,8 +67,8 @@ describe("comps", () => {
     const sales = [...thisWeek.map((p) => s("2026-11-13", p)), ...Array.from({ length: 40 }, () => s("2026-11-12", 540))]
     const st = compStats([], sales, today)
     expect(st.estimateSource).toBe("recent")
-    // $647.43 (over 1.5x) is dropped; the median of the rest:
-    expect(st.estimate).toBe(38000)
+    // $544.83, $567.81 and $647.43 (over 1.3x) are dropped; the median of the rest:
+    expect(st.estimate).toBe(37999)
     expect(st.sold30Estimated).toBe(true)
     expect(st.sold30).toBe(900) // 60 sales over 2 days → ~30/day
   })

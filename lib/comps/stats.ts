@@ -74,15 +74,16 @@ export function compStats(active: ActiveComp[], sold: SoldComp[], now = new Date
   const soldMedian90 = median(priced(90))
   const activeMedian = median(bins)
   // Busy products move fast (launch hype, restocks): use the newest 20 sales once there are 8+ in a week.
-  // Prices more than 1.5x their median are dropped first: on eBay those are mostly best-offer sales
-  // showing the asking price, which the data can't tell apart.
+  // Prices more than 1.3x their median are dropped first: on eBay those are mostly best-offer sales
+  // showing the asking price, which the data can't tell apart (seen on UPC Night: real sales $345-$396,
+  // best offers showing $540-$650).
   const newest = sold
     .filter((x) => !x.bestOffer && daysAgo(x.soldOn, now) <= 7)
     .sort((a, b) => b.soldOn.localeCompare(a.soldOn))
     .slice(0, 20)
     .map(landed)
   const rough = median(newest)
-  const recentMedian = newest.length >= 8 && rough != null ? median(newest.filter((p) => p <= rough * 1.5)) : null
+  const recentMedian = newest.length >= 8 && rough != null ? median(newest.filter((p) => p <= rough * 1.3)) : null
   const estimate = recentMedian ?? soldMedian30 ?? soldMedian90 ?? activeMedian
   const liveCount = Math.max(active.length, liveTotal ?? 0)
   // Per condition: needs 3+ prices so one odd listing doesn't set it.
