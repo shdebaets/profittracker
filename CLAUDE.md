@@ -77,6 +77,13 @@ Local QA logins live in `.env.example` (`qa-a@flipledger.test`, `qa-b@flipledger
 - **PDF:** `/tax-report/[year]` is a plain printable page outside the `(app)` layout; the browser's "Save as PDF" makes the file.
 - **Mileage log:** `expenses.start_location`/`end_location`. GPS trips save their first and last fix as "lat, lon"; manual trips take typed places.
 
+### Lots, stale inventory, edit everywhere
+
+- **Lots** are `hauls` (`lib/lots.ts`, `/lots`, `HaulForm`). Split mode `even` (same cost per unit) or `value` (by estimated resale value, `distributeHaul`), optional receipt photo (`hauls.receipt_path`, same `item-photos` bucket, path must start with the user's id). Items keep `haul_id`, also on partial-sale rows, so `lotStats` can show what a lot returned: sale revenue minus fees and labels, before the lot's cost; ROI = (returned − lot cost) / lot cost.
+- **Stale alerts** (`lib/stale.ts`): an inventory item is stale after `settings.stale_days` (30/45/60/90/120, default 60) counted from its first live listing, else its purchase date. Dashboard card → `/inventory?filter=stale`, where `RepriceBar` drops prices by %, by $, or sets one (`repriceItems`, never below $0.99, from `askingPrice` = list price else highest live listing price).
+- **Edit once, update everywhere** (`lib/crosslist/edit.ts`): `saveListingDetails` and `repriceItems` call `propagateToListings` with what changed. eBay is revised in place (`lib/marketplaces/ebay/revise.ts`: `bulk_update_price_quantity` for price/quantity, which answers 200 even when a line fails so check `responses[]`; title/description by GET + PUT of the inventory item, dropping read-only fields, plus the offer's `listingDescription`). Assisted sites get `marketplace_listings.sync_status = 'pending'` with `pending_changes`; failures get `failed` + `sync_error` and a Retry. The crosslist panel's `SyncNotice` shows each listing's state. Applying pending changes on assisted sites through the extension is not built yet; the seller opens the site and taps Done.
+- **Overpriced alerts** need sold comps, which come with the CompAmp merge.
+
 ### Cross-listing
 
 - **Registry:** `lib/marketplaces/registry.ts` lists each marketplace's mode (`api` / `assisted`), sell URL, fee preset and photo limit.

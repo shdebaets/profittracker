@@ -6,6 +6,7 @@ import {
 import Link from "next/link"
 import { useEffect, useState, useTransition } from "react"
 import { toast } from "sonner"
+import { markListingSynced, retryListingSync } from "@/app/(app)/actions/edit"
 import {
   delistEverywhere, ebayCategories, ebayCategoryDetails, endListing, forgetListing, getEbayStatus,
   markAssistedListed, promoteEbayListing, publishEbay, saveListingDetails, type EbayStatus,
@@ -305,6 +306,7 @@ function LiveActions({ listing, m, title }: { listing: Listing; m: Marketplace; 
   }
   return (
     <div className="grid grid-cols-2 gap-2">
+      <SyncNotice listing={listing} m={m} url={url} />
       <a href={url} target="_blank" rel="noopener noreferrer" className="flex h-11 items-center justify-center gap-1.5 rounded-xl border font-semibold">
         View <ExternalLink className="size-4" />
       </a>
@@ -327,6 +329,52 @@ function LiveActions({ listing, m, title }: { listing: Listing; m: Marketplace; 
           Not actually listed? Remove
         </button>
       )}
+    </div>
+  )
+}
+
+/** Edit once, update everywhere: what still has to reach this site. */
+function SyncNotice({ listing, m, url }: { listing: Listing; m: Marketplace; url: string }) {
+  const [pending, run] = useRun()
+  if (listing.sync_status === "synced") return null
+  const c = listing.pending_changes ?? {}
+  const what = [
+    c.priceCents !== undefined && `price to ${formatCents(c.priceCents)}`,
+    c.title !== undefined && "title",
+    c.description !== undefined && "description",
+    c.quantity !== undefined && `quantity to ${c.quantity}`,
+  ].filter(Boolean)
+  return (
+    <div className="col-span-2 flex flex-col gap-2 rounded-xl border border-brand/40 bg-brand-soft p-3 text-sm">
+      {listing.sync_status === "failed" ? (
+        <p className="text-loss">Couldn&apos;t update {m.short}: {listing.sync_error ?? "unknown error"}</p>
+      ) : (
+        <p>
+          Update {m.short}: change the {what.length ? what.join(", ") : "listing"}.
+        </p>
+      )}
+      <div className="grid grid-cols-2 gap-2">
+        {listing.sync_status === "failed" ? (
+          <button
+            disabled={pending}
+            onClick={() => run(() => retryListingSync(listing.id), `${m.short} updated`)}
+            className="h-10 rounded-lg bg-ink font-semibold text-white disabled:opacity-60"
+          >
+            Retry
+          </button>
+        ) : (
+          <a href={url} target="_blank" rel="noopener noreferrer" className="flex h-10 items-center justify-center gap-1 rounded-lg border bg-card font-semibold">
+            Open {m.short} <ExternalLink className="size-3.5" />
+          </a>
+        )}
+        <button
+          disabled={pending}
+          onClick={() => run(() => markListingSynced(listing.id), "Marked updated")}
+          className="h-10 rounded-lg border bg-card font-semibold disabled:opacity-60"
+        >
+          {listing.sync_status === "failed" ? "I fixed it" : "Done"}
+        </button>
+      </div>
     </div>
   )
 }

@@ -130,6 +130,7 @@ const settingsSchema = z.object({
   mileageRateCents: z.number().int().min(0).max(1000),
   defaultReturnDays: z.number().int().min(0).max(365),
   taxBracket: bracket,
+  staleDays: z.union([z.literal(30), z.literal(45), z.literal(60), z.literal(90), z.literal(120)]),
 })
 
 export async function saveSettings(input: z.input<typeof settingsSchema>): Promise<ActionResult> {
@@ -142,6 +143,7 @@ export async function saveSettings(input: z.input<typeof settingsSchema>): Promi
       default_return_days: s.defaultReturnDays,
       tax_bracket: s.taxBracket,
       tax_bracket_set: true,
+      stale_days: s.staleDays,
     })
     if (error) throw error
     return done()

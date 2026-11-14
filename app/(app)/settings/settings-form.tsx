@@ -5,6 +5,7 @@ import { toast } from "sonner"
 import { saveSettings } from "@/app/(app)/actions/expenses"
 import { FieldLabel, MoneyInput, NativeSelect } from "@/components/fields"
 import { centsToInput, toCents } from "@/lib/money"
+import { STALE_DAY_OPTIONS } from "@/lib/stale"
 import { TAX_BRACKETS } from "@/lib/tax"
 import type { Settings } from "@/lib/types"
 
@@ -12,6 +13,7 @@ export function SettingsForm({ settings }: { settings: Settings }) {
   const [rate, setRate] = useState(centsToInput(settings.mileage_rate_cents))
   const [days, setDays] = useState(String(settings.default_return_days))
   const [bracket, setBracket] = useState(String(settings.tax_bracket))
+  const [stale, setStale] = useState(String(settings.stale_days))
   const [pending, startTransition] = useTransition()
 
   return (
@@ -19,7 +21,7 @@ export function SettingsForm({ settings }: { settings: Settings }) {
       onSubmit={(e) => {
         e.preventDefault()
         startTransition(async () => {
-          const res = await saveSettings({ mileageRateCents: toCents(rate), defaultReturnDays: Number(days) || 0, taxBracket: Number(bracket) })
+          const res = await saveSettings({ mileageRateCents: toCents(rate), defaultReturnDays: Number(days) || 0, taxBracket: Number(bracket), staleDays: Number(stale) as 30 | 45 | 60 | 90 | 120 })
           if (res.ok) toast.success("Settings saved")
           else toast.error(res.error)
         })
@@ -49,6 +51,14 @@ export function SettingsForm({ settings }: { settings: Settings }) {
         <p className="mt-1 text-xs text-muted-foreground">
           Used for your tax savings and quarterly estimates. {settings.tax_bracket_set ? "" : "Not sure? 22% is a common middle bracket."}
         </p>
+      </div>
+      <div>
+        <FieldLabel htmlFor="stale">Stale Inventory Alert</FieldLabel>
+        <NativeSelect id="stale" value={stale} onChange={(e) => setStale(e.target.value)}>
+          {STALE_DAY_OPTIONS.map((d) => (
+            <option key={d} value={String(d)}>After {d} days unsold</option>
+          ))}
+        </NativeSelect>
       </div>
       <button disabled={pending} className="h-12 rounded-2xl bg-brand font-bold text-ink disabled:opacity-60">
         {pending ? "Saving…" : "Save Settings"}

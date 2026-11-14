@@ -55,6 +55,11 @@ export type Listing = {
   delisted_at: string | null
   /** eBay Promoted Listings ad rate in percent; null when not promoted. */
   ad_rate: number | null
+  /** Edit once, update everywhere: whether the site has FlipLedger's latest title/price/quantity. */
+  sync_status: "synced" | "pending" | "failed"
+  sync_error: string | null
+  /** Changes still to make on the site (pending/failed). */
+  pending_changes: { priceCents?: number; quantity?: number; title?: string; description?: string } | null
 }
 
 export type MarketplaceConnection = {
@@ -109,6 +114,8 @@ export type Settings = {
   tax_bracket: number
   /** False until the seller picks a bracket (we default to 22%). */
   tax_bracket_set: boolean
+  /** Days before an unsold item counts as stale (30/45/60/90/120). */
+  stale_days: number
 }
 
 export const EXPENSE_CATEGORIES = [

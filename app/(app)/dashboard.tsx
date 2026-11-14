@@ -1,6 +1,6 @@
 "use client"
 
-import { Award, Box, CircleDollarSign, Plus, Sparkles, TrendingUp } from "lucide-react"
+import { Award, Box, CircleDollarSign, Clock, Plus, Sparkles, TrendingUp } from "lucide-react"
 import Link from "next/link"
 import { useState } from "react"
 import { PageTitle } from "@/components/app-header"
@@ -13,6 +13,7 @@ import { formatCents, formatPct, formatSignedCents } from "@/lib/money"
 import { expenseTotals, subscriptionCost } from "@/lib/overhead"
 import { summarize } from "@/lib/profit"
 import { TaxSavingsCard } from "@/components/tax-savings-card"
+import { staleItems } from "@/lib/stale"
 import type { Expense, Item, Settings, Subscription } from "@/lib/types"
 import { cn } from "@/lib/utils"
 
@@ -113,6 +114,20 @@ export function Dashboard({
       </section>
 
       <TaxSavingsCard items={items} expenses={expenses} subs={subs} settings={settings} />
+
+      {(() => {
+        const stale = staleItems(items, settings.stale_days)
+        if (!stale.length) return null
+        return (
+          <Link href="/inventory?filter=stale" className="flex items-center gap-3 rounded-2xl border border-loss/30 bg-card px-4 py-3 text-sm shadow-sm">
+            <Clock className="size-5 shrink-0 text-loss" />
+            <span className="min-w-0 flex-1">
+              <b>{stale.length} item{stale.length === 1 ? " has" : "s have"}</b> sat {settings.stale_days}+ days. Drop 15% to move {stale.length === 1 ? "it" : "them"}?
+            </span>
+            <span className="shrink-0 rounded-xl bg-ink px-3 py-2 font-bold text-white">Review</span>
+          </Link>
+        )
+      })()}
 
       <div className="grid grid-cols-2 gap-3">
         <StatCard
