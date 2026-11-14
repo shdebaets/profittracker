@@ -7,7 +7,7 @@ import { toast } from "sonner"
 import { saveTaxBracket } from "@/app/(app)/actions/expenses"
 import { formatCents } from "@/lib/money"
 import {
-  daysBetween, estimatedTax, nextQuarter, periodReport, TAX_BRACKETS, taxSavings, yearPeriod,
+  daysBetween, estimatedTax, nextQuarter, periodReport, TAX_BRACKETS, TAX_DISCLAIMER, taxSavings, yearPeriod,
 } from "@/lib/tax"
 import type { Expense, Item, Settings, Subscription } from "@/lib/types"
 
@@ -24,6 +24,7 @@ export function TaxSavingsCard({
   const quarter = periodReport(items, expenses, subs, q.period, now)
   const setAside = estimatedTax(quarter.netProfit, settings.tax_bracket).total
   const [pending, start] = useTransition()
+  const dueSoon = days <= 30 && setAside > 0
 
   return (
     <section className="rounded-3xl border bg-card p-5 shadow-sm">
@@ -68,16 +69,18 @@ export function TaxSavingsCard({
         </div>
       )}
 
-      {days <= 30 && setAside > 0 && (
+      {dueSoon && (
         <Link href="/taxes" className="mt-4 flex items-center gap-3 rounded-2xl border border-brand/40 bg-brand-soft px-3 py-3 text-sm">
           <CalendarClock className="size-5 shrink-0 text-brand" />
           <span className="min-w-0 flex-1">
             Q{q.n} estimated tax is due {q.due.toLocaleDateString("en-US", { month: "short", day: "numeric" })}
             {days === 0 ? " (today)" : ` (${days} day${days === 1 ? "" : "s"})`}. Set aside about{" "}
             <b className="font-mono">{formatCents(setAside)}</b>.
+            <span className="mt-1 block text-xs text-muted-foreground">{TAX_DISCLAIMER}</span>
           </span>
         </Link>
       )}
+      {!dueSoon && <p className="mt-3 text-xs text-muted-foreground">{TAX_DISCLAIMER}</p>}
     </section>
   )
 }

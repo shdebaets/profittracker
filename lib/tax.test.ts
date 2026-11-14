@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import {
-  estimatedTax, irsQuarters, mileageLog, nextQuarter, periodReport, reconcile, salePlatform, scheduleC,
+  estimatedTax, irsQuarters, taxReminderWindow, mileageLog, nextQuarter, periodReport, reconcile, salePlatform, scheduleC,
   taxSavings, yearPeriod, yearReport,
 } from "./tax"
 import type { Expense, Item, Listing, Subscription } from "./types"
@@ -134,5 +134,18 @@ describe("mileageLog", () => {
     expect(log).toHaveLength(2)
     expect(log[0]["Business purpose"]).toBe("Supply Run")
     expect(log[1]).toMatchObject({ "Start location": "Home", "End location": "Goodwill", Miles: "12.4", Deduction: "8.68" })
+  })
+})
+
+describe("taxReminderWindow", () => {
+  it("sends the week-before reminder anywhere from 7 to 2 days out, so a missed cron day still sends", () => {
+    for (const d of [7, 6, 5, 4, 3, 2]) expect(taxReminderWindow(d)).toBe(7)
+  })
+  it("sends the day-before reminder on the last day and the due date", () => {
+    expect(taxReminderWindow(1)).toBe(1)
+    expect(taxReminderWindow(0)).toBe(1)
+  })
+  it("stays quiet outside the window", () => {
+    for (const d of [8, 30, -1]) expect(taxReminderWindow(d)).toBeNull()
   })
 })

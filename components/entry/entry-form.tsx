@@ -185,6 +185,8 @@ export function EntryForm(props: Props) {
           purchasedAt: item && purchasedAt === init.purchasedAt ? item.purchased_at : dateInputToIso(purchasedAt),
           photoPaths: photos.map((p) => p.path),
           description: editsDescription && mode === "inventory" ? description : undefined,
+          // A new inventory item can carry the price it should sell for (Scan to Comp's "I bought it").
+          ...(!isSale && props.variant === "create" && toCents(price) > 0 ? { listPriceCents: toCents(price) } : {}),
           sale: isSale
             ? {
                 ...saleInput,
@@ -312,6 +314,12 @@ export function EntryForm(props: Props) {
         <div className="rounded-2xl border border-brand/40 bg-brand-soft p-4">
           <p className="font-bold text-brand">Inventory Item</p>
           <p className="text-sm text-muted-foreground">Sale price will be recorded when this item is marked as sold.</p>
+          {props.variant === "create" && props.prefill?.price && (
+            <div className="mt-3">
+              <FieldLabel htmlFor="list-price">Expected sale price</FieldLabel>
+              <MoneyInput id="list-price" value={price} onChange={setPrice} />
+            </div>
+          )}
         </div>
       )}
 

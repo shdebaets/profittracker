@@ -1,12 +1,12 @@
-// The daily email job: Sunday recaps and quarterly tax reminders (7 days and 1 day before each due
-// date). `email_log` makes every send idempotent, so re-running the cron never double-sends.
+// The daily email + push job: Sunday recaps and quarterly tax reminders (the week before and the day
+// before each due date). `email_log` makes every send idempotent, so re-running the cron never double-sends.
 import "server-only"
-import { recapPush } from "@/lib/push/messages"
+import { recapPush, taxPush } from "@/lib/push/messages"
 import { pushToUser } from "@/lib/push/send"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { DEFAULT_SETTINGS } from "@/lib/data-defaults"
-import { lastTwoWeeks, quietWeek, weekNumbers } from "@/lib/recap"
-import { daysBetween, estimatedTax, nextQuarter, periodReport } from "@/lib/tax"
+import { quietWeek, recapWeekKey, weekNumbers, weeksEnding } from "@/lib/recap"
+import { daysBetween, estimatedTax, nextQuarter, periodReport, taxReminderWindow } from "@/lib/tax"
 import type { Expense, Item, Settings, Subscription } from "@/lib/types"
 import { APP_URL, sendEmail, unsubscribeUrl } from "./send"
 import { recapEmail, recapSubject, taxReminderEmail } from "./templates"
@@ -41,36 +41,97 @@ async function logSent(admin: SupabaseClient, userId: string, kind: string, key:
   await admin.from("email_log").upsert({ user_id: userId, kind, period_key: key })
 }
 
-/** Returns true if an email went out. `force` (the Settings test button) skips the quiet-week and once-only checks. */
-export async function sendRecap(admin: SupabaseClient, user: { id: string; email: string }, data: UserData, now: Date, force = false) {
-  const { week, prev } = lastTwoWeeks(now)
-  const key = week.to.toISOString().slice(0, 10)
-  if (!force && (await alreadySent(admin, user.id, "recap", key))) return false
-  const n = weekNumbers(data.items, data.expenses, week)
-  const p = weekNumbers(data.items, data.expenses, prev)
-  if (!force && quietWeek(n, p)) return false
-  await sendEmail(user.email, recapSubject(n), recapEmail(n, p, `${APP_URL}/recap`, unsubscribeUrl(user.id, "recap")), unsubscribeUrl(user.id, "recap"))
-  // Same recap as a push on every device that turned notifications on. A push failure never blocks the email.
-  await pushToUser(admin, user.id, recapPush(n)).catch((e) => console.error("[recap push]", user.id, e))
-  if (!force) await logSent(admin, user.id, "recap", key)
-  return true
+export type Channels = { email: boolean; push: boolean }
+type Sent = { email: boolean; push: boolean }
+
+/**
+ * Sends each channel that's switched on and hasn't gone out yet, each logged on its own in `email_log`
+ * (`<kind>` for the email, `<kind>-push` for the push), so a failed email never holds back the push
+ * or the other way round. A push to a seller with no devices isn't logged. An email failure is thrown
+ * after the push has had its turn, so the cron still counts it.
+ */
+async function sendBoth(
+  admin: SupabaseClient,
+  userId: string,
+  kind: string,
+  key: string,
+  channels: Channels,
+  force: boolean,
+  send: { email: () => Promise<void>; push: () => Promise<number> },
+): Promise<Sent> {
+  const sent: Sent = { email: false, push: false }
+  let emailError: unknown = null
+  if (channels.email && (force || !(await alreadySent(admin, userId, kind, key)))) {
+    try {
+      await send.email()
+      sent.email = true
+      if (!force) await logSent(admin, userId, kind, key)
+    } catch (e) {
+      emailError = e
+    }
+  }
+  if (channels.push && (force || !(await alreadySent(admin, userId, `${kind}-push`, key)))) {
+    try {
+      if ((await send.push()) > 0) {
+        sent.push = true
+        if (!force) await logSent(admin, userId, `${kind}-push`, key)
+      }
+    } catch (e) {
+      console.error(`[${kind} push]`, userId, e)
+    }
+  }
+  if (emailError) throw emailError
+  return sent
 }
 
-export const TAX_REMINDER_DAYS = [7, 1]
+/**
+ * The Sunday recap for the week ending at the latest week end (`recapWeekKey`). `force` (the Settings
+ * test button) skips the quiet-week and once-only checks.
+ */
+export async function sendRecap(
+  admin: SupabaseClient,
+  user: { id: string; email: string },
+  data: UserData,
+  now: Date,
+  channels: Channels,
+  force = false,
+): Promise<Sent> {
+  const key = recapWeekKey(now)
+  const { week, prev } = weeksEnding(key)!
+  const n = weekNumbers(data.items, data.expenses, week)
+  const p = weekNumbers(data.items, data.expenses, prev)
+  if (!force && quietWeek(n, p)) return { email: false, push: false }
+  const url = `${APP_URL}/recap?week=${key}`
+  return sendBoth(admin, user.id, "recap", key, channels, force, {
+    email: () => sendEmail(user.email, recapSubject(n), recapEmail(n, p, url, unsubscribeUrl(user.id, "recap")), unsubscribeUrl(user.id, "recap")),
+    push: () => pushToUser(admin, user.id, recapPush(n, key)),
+  })
+}
 
-export async function sendTaxReminder(admin: SupabaseClient, user: { id: string; email: string }, data: UserData, now: Date, force = false) {
+export async function sendTaxReminder(
+  admin: SupabaseClient,
+  user: { id: string; email: string },
+  data: UserData,
+  now: Date,
+  channels: Channels,
+  force = false,
+): Promise<Sent> {
   const q = nextQuarter(now)
   const days = daysBetween(now, q.due)
-  if (!force && !TAX_REMINDER_DAYS.includes(days)) return false
-  const key = `${q.year}-Q${q.n}-${days}`
-  if (!force && (await alreadySent(admin, user.id, "tax", key))) return false
+  const window = taxReminderWindow(days)
+  if (!force && !window) return { email: false, push: false }
   const r = periodReport(data.items, data.expenses, data.subs, q.period, now)
   const setAside = estimatedTax(r.netProfit, data.settings.tax_bracket).total
-  if (!force && setAside <= 0) return false
-  const mail = taxReminderEmail(q, r.netProfit, setAside, days, `${APP_URL}/taxes`, unsubscribeUrl(user.id, "tax"))
-  await sendEmail(user.email, mail.subject, mail.html, unsubscribeUrl(user.id, "tax"))
-  if (!force) await logSent(admin, user.id, "tax", key)
-  return true
+  if (!force && setAside <= 0) return { email: false, push: false }
+  // One key per window, so the week-before and day-before reminders each go out once.
+  const key = `${q.year}-Q${q.n}-${window ?? days}`
+  return sendBoth(admin, user.id, "tax", key, channels, force, {
+    email: async () => {
+      const mail = taxReminderEmail(q, r.netProfit, setAside, days, `${APP_URL}/taxes`, unsubscribeUrl(user.id, "tax"))
+      await sendEmail(user.email, mail.subject, mail.html, unsubscribeUrl(user.id, "tax"))
+    },
+    push: () => pushToUser(admin, user.id, taxPush(q, setAside, days)),
+  })
 }
 
 /** Every user, paged. */
@@ -85,16 +146,23 @@ async function* allUsers(admin: SupabaseClient) {
 
 export async function runDailyEmails(admin: SupabaseClient, now = new Date()) {
   const sunday = now.getUTCDay() === 0
-  let recaps = 0, reminders = 0, failures = 0
+  let recaps = 0, reminders = 0, recapPushes = 0, taxPushes = 0, failures = 0
   for await (const user of allUsers(admin)) {
     try {
       const data = await loadUserData(admin, user.id)
-      if (sunday && data.settings.email_recap && (await sendRecap(admin, user, data, now))) recaps++
-      if (data.settings.email_tax_reminders && (await sendTaxReminder(admin, user, data, now))) reminders++
+      const st = data.settings
+      if (sunday) {
+        const r = await sendRecap(admin, user, data, now, { email: st.email_recap, push: st.push_recap })
+        if (r.email) recaps++
+        if (r.push) recapPushes++
+      }
+      const t = await sendTaxReminder(admin, user, data, now, { email: st.email_tax_reminders, push: st.push_tax_reminders })
+      if (t.email) reminders++
+      if (t.push) taxPushes++
     } catch (e) {
       failures++
       console.error("[daily emails] failed for", user.id, e)
     }
   }
-  return { recaps, reminders, failures }
+  return { recaps, reminders, recapPushes, taxPushes, failures }
 }

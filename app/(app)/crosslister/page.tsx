@@ -4,7 +4,8 @@ import { PageTitle } from "@/components/app-header"
 import { formatDate } from "@/lib/dates"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { canCrosslist, requireUser } from "@/lib/supabase/server"
-import { billingState } from "@/lib/whop/billing"
+import { YearlyPlanBanner } from "@/components/yearly-plan-banner"
+import { billingState, showYearlyBanner } from "@/lib/whop/billing"
 import { MANAGE_BILLING_URL, whopConfig } from "@/lib/whop/config"
 import { RecheckButton } from "./recheck-button"
 import { ResumeButton } from "./resume-button"
@@ -44,6 +45,7 @@ export default async function CrosslisterPage({ searchParams }: PageProps<"/cros
           {whopError}
         </p>
       )}
+      {showYearlyBanner(billing, annualUrl, new Date()) && <YearlyPlanBanner annualUrl={annualUrl} />}
       <div className="flex flex-col gap-4 rounded-3xl border bg-card p-5">
         <span className="flex size-11 items-center justify-center rounded-2xl bg-brand-soft">
           <Share2 className="size-5 text-brand" />

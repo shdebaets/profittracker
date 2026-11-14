@@ -3,6 +3,7 @@ import { BottomNav } from "@/components/bottom-nav"
 import { AutoSync } from "@/components/crosslist/auto-sync"
 import { ExtensionBridge } from "@/components/crosslist/extension-bridge"
 import { EntryProvider } from "@/components/entry/entry-provider"
+import { TaxBracketOnboarding } from "@/components/tax-bracket-onboarding"
 import { canCrosslist, requireUser } from "@/lib/supabase/server"
 import { getSettings } from "@/lib/data"
 
@@ -22,6 +23,7 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
         {children}
       </div>
       {/* Sales sync, auto-delist and the extension are Cross-Lister features. */}
+      {!settings.tax_bracket_set && <TaxBracketOnboarding />}
       {crosslist && <AutoSync />}
       {crosslist && <ExtensionBridge />}
       <BottomNav inventoryCount={inv.count ?? 0} expenseCount={exp.count ?? 0} />
