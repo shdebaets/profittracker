@@ -15,7 +15,15 @@ import { inPhoneApp, readSoldInApp } from "@/lib/native-ebay"
 
 export type SoldSource = "extension" | "app" | null
 
+/**
+ * Off: Nick wants one source for every member, the paid provider, so numbers don't change
+ * depending on who has the extension (mixing reads made counts jump: 0, then 200, then 30).
+ * Flip to true to let the extension and phone app read eBay again.
+ */
+export const BROWSER_SOLD_READS = false
+
 export function soldSource(extensionReady: boolean): SoldSource {
+  if (!BROWSER_SOLD_READS) return null
   if (inPhoneApp()) return "app"
   if (extensionReady && extensionCanCollectComps()) return "extension"
   return null
