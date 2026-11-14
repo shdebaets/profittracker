@@ -18,8 +18,15 @@ const PERKS = [
 
 const PLAN_LABEL = { monthly: "Monthly plan", yearly: "Yearly plan", other: "Cross-Lister plan" } as const
 
-export default async function CrosslisterPage() {
-  const [{ userId }, unlocked] = await Promise.all([requireUser(), canCrosslist()])
+const WHOP_ERRORS: Record<string, string> = {
+  whop: "Connecting your Whop account didn't work. Try again.",
+  "whop-email": "Verify your email on Whop first, then try again.",
+  "whop-linked": "This FlipLedger account is already linked to a different Whop account.",
+}
+
+export default async function CrosslisterPage({ searchParams }: PageProps<"/crosslister">) {
+  const [{ userId }, unlocked, { whop_error }] = await Promise.all([requireUser(), canCrosslist(), searchParams])
+  const whopError = typeof whop_error === "string" ? (WHOP_ERRORS[whop_error] ?? WHOP_ERRORS.whop) : null
   const { checkoutUrl, annualUrl, clientId } = whopConfig()
   // whop_links is service-role only; scoped to this user.
   const { data: link } = await createAdminClient()
@@ -32,6 +39,11 @@ export default async function CrosslisterPage() {
   return (
     <>
       <PageTitle title="Cross-Lister" subtitle="List once, sell everywhere" />
+      {whopError && (
+        <p role="alert" className="rounded-2xl border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">
+          {whopError}
+        </p>
+      )}
       <div className="flex flex-col gap-4 rounded-3xl border bg-card p-5">
         <span className="flex size-11 items-center justify-center rounded-2xl bg-brand-soft">
           <Share2 className="size-5 text-brand" />
