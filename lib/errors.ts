@@ -68,6 +68,12 @@ function fromEbay(e: Obj): string {
   if (/create a seller'?s account|register as a seller|seller registration|before you can list this item/i.test(text))
     return "Your eBay account isn't set up to sell yet. On ebay.com, start a listing or open Seller Hub and finish eBay's seller setup (usually adding payout details), then try again."
   if (/picture|image|photo/i.test(text)) return "eBay couldn't use this item's photos. Try again, or remove and re-add the photos."
+  // eBay's monthly selling limits ("You can list up to USD 500.00 more in total sales this month").
+  const limit = text.match(/list up to (USD|US \$|\$)\s?([\d,.]+) more/i)
+  if (limit || /exceed the (amount|number) (of items )?you can list|selling limit/i.test(text))
+    return limit
+      ? `This would go over your eBay selling limit. eBay lets this account list $${limit[2].replace(/\.00$/, "")} more this month. Lower the price, or ask eBay to raise your limit in Seller Hub.`
+      : "This would go over your eBay selling limit for the month. Lower the price, or ask eBay to raise your limit in Seller Hub."
   if (/business polic|fulfillment polic|payment polic|return polic|not opted in/i.test(text))
     return "Check your eBay shipping, payment and return policies in Settings → Marketplaces."
   if (/location/i.test(text)) return "eBay needs your ship-from ZIP code. Add it in Settings → Marketplaces."

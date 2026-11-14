@@ -48,6 +48,12 @@ describe("friendlyError", () => {
       expect(friendlyError(ebay(400, "Fulfillment policy is not valid."))).toMatch(/policies/)
       expect(friendlyError(ebay(400, "Condition is not supported for this category."))).toMatch(/condition/)
     })
+    it("selling limits say so instead of blaming the price", () => {
+      const msg = "A user error has occurred. This listing would cause you to exceed the amount you can list. You can list up to USD 500.00 more in total sales this month. Please consider reducing the starting price or request to list more."
+      expect(friendlyError(ebay(400, msg, 25002))).toBe(
+        "This would go over your eBay selling limit. eBay lets this account list $500 more this month. Lower the price, or ask eBay to raise your limit in Seller Hub.",
+      )
+    })
     it("promotion problems say the listing isn't promoted", () => {
       const promo = (status: number, longMessage: string) =>
         new EbayError(`Promoted listing: ${longMessage}`, status, [{ errorId: 35001, message: longMessage, longMessage }])
