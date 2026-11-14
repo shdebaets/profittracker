@@ -8,7 +8,9 @@ import { useSyncExternalStore } from "react"
  * localStorage so a reload or accidental tab switch resumes the same trip.
  */
 
-export type Trip = { startedAt: number; meters: number }
+/** start/end are the first and latest good fixes, for the IRS mileage log. */
+export type Trip = { startedAt: number; meters: number; start?: Coord; end?: Coord }
+type Coord = { lat: number; lon: number }
 
 const KEY = "flipledger.gpsTrip"
 const METERS_PER_MILE = 1609.344
@@ -60,6 +62,8 @@ function onPosition(pos: GeolocationPosition) {
   const here = { lat, lon, t: pos.timestamp }
   if (!last) {
     last = here
+    trip = { ...trip, start: trip.start ?? { lat, lon }, end: { lat, lon } }
+    emit()
     return
   }
   const d = haversine(last, here)
@@ -68,7 +72,7 @@ function onPosition(pos: GeolocationPosition) {
   const secs = Math.max(1, (here.t - last.t) / 1000)
   last = here
   if (d / secs > MAX_SPEED_MS) return
-  trip = { ...trip, meters: trip.meters + d }
+  trip = { ...trip, meters: trip.meters + d, end: { lat, lon } }
   if (error) error = null
   emit()
 }
@@ -132,6 +136,11 @@ export function endTrip(): Trip | null {
 /** Re-attach the GPS watch to a trip restored from storage (after reload). */
 export function resumeTrip() {
   if (trip && gpsSupported()) startWatch()
+}
+
+/** "lat, lon" to 4 decimals (about 11 m), for the mileage log. */
+export function coordLabel(c: Coord | undefined) {
+  return c ? `${c.lat.toFixed(4)}, ${c.lon.toFixed(4)}` : undefined
 }
 
 export function tripMiles(t: Trip) {

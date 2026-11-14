@@ -12,12 +12,15 @@ import { formatDateAt, RANGE_LABELS, type Range } from "@/lib/dates"
 import { formatCents, formatPct, formatSignedCents } from "@/lib/money"
 import { expenseTotals, subscriptionCost } from "@/lib/overhead"
 import { summarize } from "@/lib/profit"
-import type { Expense, Item, Subscription } from "@/lib/types"
+import { TaxSavingsCard } from "@/components/tax-savings-card"
+import type { Expense, Item, Settings, Subscription } from "@/lib/types"
 import { cn } from "@/lib/utils"
 
 const SHORT_RANGE: Record<Range, string> = { all: "All Time", today: "Today", week: "Week", month: "Month" }
 
-export function Dashboard({ items, expenses, subs }: { items: Item[]; expenses: Expense[]; subs: Subscription[] }) {
+export function Dashboard({
+  items, expenses, subs, settings,
+}: { items: Item[]; expenses: Expense[]; subs: Subscription[]; settings: Settings }) {
   const [range, setRange] = useState<Range>("all")
   const { openEntry, openItem } = useEntry()
   useSyncItems(items)
@@ -108,6 +111,8 @@ export function Dashboard({ items, expenses, subs }: { items: Item[]; expenses: 
           </span>
         </p>
       </section>
+
+      <TaxSavingsCard items={items} expenses={expenses} subs={subs} settings={settings} />
 
       <div className="grid grid-cols-2 gap-3">
         <StatCard

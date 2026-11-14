@@ -64,6 +64,18 @@ Local QA logins live in `.env.example` (`qa-a@flipledger.test`, `qa-b@flipledger
   - Crashed pages are handled by `app/(app)/error.tsx` and `app/global-error.tsx`.
 - **Admin client:** `lib/supabase/admin.ts` uses the service role and bypasses RLS. It's only for cron, webhooks, the photo-link route, `marketplace_accounts` tokens and `marketplace_sales` writes (that table has no insert policy). Always scope by user yourself.
 
+### Taxes
+
+- `lib/tax.ts` (pure, tested) and the `/taxes` page. Every figure is an estimate; always show `TAX_DISCLAIMER`.
+- **Tax bracket:** `settings.tax_bracket` (fraction, default 0.22) and `tax_bracket_set` (false until the seller picks one; the dashboard's `TaxSavingsCard` asks until then).
+- **Tax savings** (dashboard and `/taxes`) = (COGS + mileage + expenses + subscriptions) × bracket for the calendar year.
+- **Platform of a sale** (`salePlatform`): its sold cross-listing's marketplace, else the fee preset (`mercari_depop` counts as Mercari, `cash` as local).
+- **1099-K Reconciler:** we don't get real 1099-K numbers or sales tax from marketplaces, so the seller types each form's gross into `tax_forms` (per year and platform). The difference from logged gross is shown as "sales tax or sales not logged here".
+- **Schedule C:** expense categories map to lines in `SCHEDULE_C_EXPENSE_LINES`; meals are halved; labels and subscriptions go to 27a.
+- **Quarterly estimates** use IRS periods (Jan–Mar, Apr–May, Jun–Aug, Sep–Dec; Q4 due Jan 15) and `estimatedTax` = 15.3% SE tax on 92.35% of net + bracket × (net − half SE).
+- **PDF:** `/tax-report/[year]` is a plain printable page outside the `(app)` layout; the browser's "Save as PDF" makes the file.
+- **Mileage log:** `expenses.start_location`/`end_location`. GPS trips save their first and last fix as "lat, lon"; manual trips take typed places.
+
 ### Cross-listing
 
 - **Registry:** `lib/marketplaces/registry.ts` lists each marketplace's mode (`api` / `assisted`), sell URL, fee preset and photo limit.

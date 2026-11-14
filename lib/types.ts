@@ -90,6 +90,8 @@ export type Expense = {
   spent_at: string
   miles: number | null
   rate_cents: number | null
+  start_location: string | null
+  end_location: string | null
 }
 
 export type Subscription = {
@@ -103,6 +105,10 @@ export type Subscription = {
 export type Settings = {
   mileage_rate_cents: number
   default_return_days: number
+  /** Estimated federal bracket as a fraction, e.g. 0.22. */
+  tax_bracket: number
+  /** False until the seller picks a bracket (we default to 22%). */
+  tax_bracket_set: boolean
 }
 
 export const EXPENSE_CATEGORIES = [

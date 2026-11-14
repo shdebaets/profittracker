@@ -47,6 +47,8 @@ const mileageSchema = z.object({
   miles: z.number().positive("Enter miles driven").max(10_000),
   rateCents: z.number().int().min(0).max(1000),
   spentAt: z.string().min(1),
+  startLocation: z.string().trim().max(200).optional(),
+  endLocation: z.string().trim().max(200).optional(),
 })
 export type MileageInput = z.input<typeof mileageSchema>
 
@@ -62,6 +64,8 @@ export async function logMileage(input: MileageInput): Promise<ActionResult> {
       rate_cents: m.rateCents,
       amount_cents: mileageDeduction(m.miles, m.rateCents),
       spent_at: new Date(m.spentAt).toISOString(),
+      start_location: m.startLocation || null,
+      end_location: m.endLocation || null,
     })
     if (error) throw error
     return done()
@@ -120,9 +124,12 @@ export async function deleteSubscription(id: string): Promise<ActionResult> {
   }
 }
 
+const bracket = z.number().min(0).max(0.5)
+
 const settingsSchema = z.object({
   mileageRateCents: z.number().int().min(0).max(1000),
   defaultReturnDays: z.number().int().min(0).max(365),
+  taxBracket: bracket,
 })
 
 export async function saveSettings(input: z.input<typeof settingsSchema>): Promise<ActionResult> {
@@ -133,7 +140,54 @@ export async function saveSettings(input: z.input<typeof settingsSchema>): Promi
       user_id: userId,
       mileage_rate_cents: s.mileageRateCents,
       default_return_days: s.defaultReturnDays,
+      tax_bracket: s.taxBracket,
+      tax_bracket_set: true,
     })
+    if (error) throw error
+    return done()
+  } catch (e) {
+    return fail(e)
+  }
+}
+
+/** Set just the tax bracket (the dashboard's quick picker). */
+export async function saveTaxBracket(value: number): Promise<ActionResult> {
+  try {
+    const b = bracket.parse(value)
+    const { supabase, userId } = await requireUser()
+    const { data: existing } = await supabase.from("settings").select("user_id").maybeSingle()
+    const { error } = existing
+      ? await supabase.from("settings").update({ tax_bracket: b, tax_bracket_set: true }).eq("user_id", userId)
+      : await supabase.from("settings").insert({ user_id: userId, tax_bracket: b, tax_bracket_set: true })
+    if (error) throw error
+    return done()
+  } catch (e) {
+    return fail(e)
+  }
+}
+
+const taxFormSchema = z.object({
+  year: z.number().int().min(2000).max(2100),
+  platform: z.enum(["ebay", "mercari", "poshmark", "facebook", "depop", "local", "other"]),
+  /** null clears it. */
+  grossCents: z.number().int().min(0).max(10_000_000_000).nullable(),
+})
+
+/** Save (or clear) the gross a marketplace's 1099-K reported. */
+export async function saveTaxForm(input: z.input<typeof taxFormSchema>): Promise<ActionResult> {
+  try {
+    const f = taxFormSchema.parse(input)
+    const { supabase, userId } = await requireUser()
+    const { error } =
+      f.grossCents === null
+        ? await supabase.from("tax_forms").delete().eq("tax_year", f.year).eq("platform", f.platform)
+        : await supabase.from("tax_forms").upsert({
+            user_id: userId,
+            tax_year: f.year,
+            platform: f.platform,
+            gross_cents: f.grossCents,
+            updated_at: new Date().toISOString(),
+          })
     if (error) throw error
     return done()
   } catch (e) {
