@@ -8,7 +8,8 @@ import { createAdminClient } from "@/lib/supabase/admin"
 import { queryKey } from "./stats"
 
 const MAX_PER_CALL = 80
-const hash = (t: string) => createHash("sha256").update(t.trim().toLowerCase()).digest("base64url").slice(0, 22)
+// v2 in the hash: verdicts from the stricter prompt (designs, multi-packs) replace the old ones.
+const hash = (t: string) => createHash("sha256").update("v2|" + t.trim().toLowerCase()).digest("base64url").slice(0, 22)
 
 const TOOL = {
   name: "verdicts",
@@ -25,6 +26,9 @@ const TOOL = {
 const SYSTEM = `You check eBay listing titles for a reseller pricing one exact product.
 Keep a listing only if it is that product itself, sold as one unit, in working condition.
 Reject: accessories or cases sold alone, empty boxes, manuals, parts or "for repair", broken, lots or bundles of several units, other models, sizes, editions or generations, graded items when the product isn't graded, and anything you can't tell is the product.
+Different designs are different products: another print, character, artwork, colorway, scent, flavor or title in the same line is NOT the product (a "Velaris" throw is not a "Stars Who Listen" or "Bat Boys" throw; a "Night" box is not a "Day" box).
+Titles that name two or more designs, or say x2, x3, set of, all 3, are several units: reject them.
+Wording differences for the same item are fine ("Royal Plush" vs "Plush", "Throw" vs "Throw Blanket", spelling mistakes).
 Condition differences (new, used, open box) are fine. Missing accessories are fine unless the title says it's only part of the product.`
 
 async function askClaude(product: string, titles: string[]): Promise<{ keep: Set<number>; usage: { input: number; output: number } } | null> {
@@ -65,17 +69,22 @@ async function askClaude(product: string, titles: string[]): Promise<{ keep: Set
  * kept, so comps still work, just unfiltered. `userId` is only for the spend log.
  */
 /**
- * Titles that are plainly several units or a mix (lot, bundle, case, "x2", "Day & Night"), unless
- * the product itself is named that way. The AI misses some of these. Pure.
+ * Titles that are plainly several units or a mix ("lot", "bundle", "x3", "set of 2", "all 3",
+ * "Bat Boys & Velaris"), unless the product itself is named that way. The AI misses some. Pure.
  */
 export function obviousMulti(title: string, product: string): boolean {
-  const multi = /\b(lot|lots|bundle|case|combo|set of \d|\d+\s?x\b|x\s?\d+\b|\d+\s?(box|boxes|pack|packs)\b|both)\b|&|\band\b.*\b(night|day)\b/i
-  const words = (t: string) => t.toLowerCase().match(/[a-z0-9]+/g) ?? []
-  if (!multi.test(title)) return false
-  // "Day & Night" in the title is fine if the product is the Day & Night combo itself.
-  const p = new Set(words(product))
-  const flagged = words(title).filter((w) => ["lot", "lots", "bundle", "case", "combo", "both", "and"].includes(w))
-  return flagged.length === 0 ? !/&/.test(product) && /&/.test(title) && /day|night|\+/i.test(title) : flagged.some((w) => !p.has(w))
+  const t = title.toLowerCase()
+  const p = product.toLowerCase()
+  const has = (re: RegExp) => re.test(t) && !re.test(p)
+  // Counts: "x3", "3x", "x 2" (but not sizes like "50 x 60" or "50x60").
+  if (/(?<![\d.]\s?)\bx\s?\d+\b(?!\s?(x|\d|"|in\b|cm\b|mm\b))/.test(t)) return true
+  if (/\b\d+\s?x\b(?!\s?\d)/.test(t)) return true
+  if (has(/\b(lot|lots|bundle|bundles|case|combo|both|bulk|wholesale)\b/)) return true
+  if (has(/\b(set|pack|lot) of \d+\b|\ball \d+\b|\b\d+\s?(pc|pcs|pack|packs|box|boxes|count|ct)\b/)) return true
+  // Two products joined: "Bat Boys & Velaris", "Day + Night". Words like "M&M's" have no spaces.
+  if (has(/\s(&|\+)\s/)) return true
+  if (has(/\band\b.*\b(night|day)\b/)) return true
+  return false
 }
 
 export async function judgeTitles(product: string, titles: string[], userId: string | null): Promise<{ keep: (t: string) => boolean; judged: boolean }> {
