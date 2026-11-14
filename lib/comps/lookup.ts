@@ -56,7 +56,15 @@ export async function lookupComps(
       live = await liveSearch({ q: searchPhrase(product) })
     }
   }
-  // A barcode's product is its own listing title.
+  // A barcode names one product, but its first listing's title can be odd ("…NO DOCK", "lot of 2").
+  // Ask for the clean product name from all its listings (cached a day per barcode).
+  if (gtin && !product && live.comps.length > 1) {
+    const [top] = await cached(`id:gtin:${gtin}`, IDENTIFY_TTL_MS, () => identifyProducts(`barcode ${gtin}`, live.comps)).catch((e) => {
+      console.error("[comp identify]", e)
+      return [] as ProductCandidate[]
+    })
+    product = top?.name ?? null
+  }
   product ??= (gtin ? live.title : null) ?? raw
   const query = searchPhrase(product)
 
