@@ -95,7 +95,7 @@ Local QA logins live in `.env.example` (`qa-a@flipledger.test`, `qa-b@flipledger
 
 ### Emails (Resend)
 
-- `lib/email/`: `sendEmail` posts to Resend with `RESEND_API_KEY`, from `RESEND_FROM` (default `FlipLedger <noreply@emoneydeals.com>`; the domain must be verified in Resend). Templates are inline-styled and left-aligned.
+- `lib/email/`: `sendEmail` posts to Resend with `RESEND_API_KEY`, from `RESEND_FROM` (default `FlipLedger <noreply@mail.emoneydeals.com>`; `mail.emoneydeals.com` is the domain verified in Resend, the bare `emoneydeals.com` is not). Templates are inline-styled and left-aligned.
 - Daily cron `/api/cron/daily-emails` (14:00 UTC = 9am ET): on Sundays the weekly recap (`lib/recap.ts`, skipped for quiet weeks), every day the quarterly tax reminder 7 days and 1 day before a due date (skipped when there's nothing to set aside). `email_log` (service role only) makes each send happen once.
 - Opt-outs: `settings.email_recap`, `settings.email_tax_reminders`, toggled in Settings, or one-click from the signed link `/api/email/unsubscribe?u&k&s` (HMAC with `CRON_SECRET`; public path in `proxy.ts`; also sent as `List-Unsubscribe`).
 - Settings → "Email me this week's recap now" sends a recap immediately (good for checking Resend). `/recap` is the in-app recap screen.
