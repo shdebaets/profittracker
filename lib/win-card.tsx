@@ -12,11 +12,11 @@ export function winCard(opts: { name: string; month: string; profit: number; ite
         <div style={{ display: "flex", flexDirection: "column", flexGrow: 1, justifyContent: "center" }}>
           <div style={{ fontSize: 48, color: "#a8a29e" }}>{opts.name}</div>
           <div style={{ fontSize: 150, fontWeight: 800, color: "#22c55e", lineHeight: 1.1 }}>{formatCents(opts.profit)}</div>
-          <div style={{ fontSize: 56, fontWeight: 700 }}>profit in {opts.month}</div>
+          <div style={{ display: "flex", fontSize: 56, fontWeight: 700 }}>{`profit in ${opts.month}`}</div>
         </div>
         <div style={{ display: "flex", gap: 60, fontSize: 40, color: "#d6d3d1" }}>
-          <span>{opts.itemsSold} sold</span>
-          <span>{opts.miles} mi logged</span>
+          <span>{`${opts.itemsSold} sold`}</span>
+          <span>{`${opts.miles} mi logged`}</span>
         </div>
       </div>
     ),
