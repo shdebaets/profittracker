@@ -26,7 +26,7 @@ export async function GET(request: NextRequest) {
   const code = params.get("code")
   if (params.get("error") === "access_denied") return current ? go("/crosslister") : go("/login")
   if (!code || !pkce || params.get("state") !== pkce.state) {
-    console.error("[whop sign-in] bad callback", { hasCode: !!code, hasCookie: !!pkce, error: params.get("error") })
+    console.error("[whop sign-in] bad callback", { hasCode: !!code, hasCookie: !!pkce, error: params.get("error"), description: params.get("error_description") })
     return failTo("whop")
   }
 

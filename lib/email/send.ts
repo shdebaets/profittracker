@@ -3,7 +3,7 @@
 import "server-only"
 import { createHmac, timingSafeEqual } from "node:crypto"
 
-export const DEFAULT_FROM = "FlipLedger <noreply@emoneydeals.com>"
+export const DEFAULT_FROM = "FlipLedger <noreply@mail.emoneydeals.com>"
 export const APP_URL = `https://${process.env.CANONICAL_HOST?.trim() || "profit.emoneydeals.com"}`
 
 export class EmailError extends Error {}

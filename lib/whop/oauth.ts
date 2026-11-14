@@ -20,6 +20,8 @@ export function authorizeUrl(clientId: string, redirectUri: string, pkce: PkceSt
     redirect_uri: redirectUri,
     scope: "openid profile email",
     state: pkce.state,
+    // Whop's OpenID flow expects a nonce with the openid scope (docs.whop.com/developer/guides/oauth).
+    nonce: randomBytes(16).toString("base64url"),
     code_challenge: challengeFor(pkce.verifier),
     code_challenge_method: "S256",
   })
