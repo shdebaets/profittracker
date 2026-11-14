@@ -59,7 +59,7 @@ export type Listing = {
   sync_status: "synced" | "pending" | "failed"
   sync_error: string | null
   /** Changes still to make on the site (pending/failed). */
-  pending_changes: { priceCents?: number; quantity?: number; title?: string; description?: string } | null
+  pending_changes: { priceCents?: number; quantity?: number; title?: string; description?: string; photoPaths?: string[] } | null
 }
 
 export type MarketplaceConnection = {

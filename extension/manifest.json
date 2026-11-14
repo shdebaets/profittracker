@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "FlipLedger Lister",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "description": "Fills in your Facebook Marketplace, Poshmark and Mercari listings from FlipLedger, keeps your cross-listings in sync, and reads eBay sold prices for your comps.",
   "minimum_chrome_version": "116",
   "icons": {

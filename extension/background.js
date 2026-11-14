@@ -51,7 +51,7 @@ function tellApp(job, payload) {
 async function startJob(msg, sender) {
   const site = SITES[msg.marketplace]
   if (!site) throw new Error(`${msg.marketplace} isn't supported by this extension yet`)
-  const kind = { LIST: "list", DELIST: "delist", IMPORT: "import", IMPORT_SALES: "sales" }[msg.type]
+  const kind = { LIST: "list", DELIST: "delist", EDIT: "edit", OFFER: "offer", IMPORT: "import", IMPORT_SALES: "sales" }[msg.type]
   if ((kind === "import" || kind === "sales") && msg.marketplace !== "mercari") throw new Error(`Importing from ${msg.marketplace} isn't supported yet`)
   const job = {
     kind,
@@ -63,6 +63,8 @@ async function startJob(msg, sender) {
     itemId: msg.itemId ?? msg.listing?.itemId ?? null,
     title: msg.title ?? msg.listing?.title ?? "",
     url: msg.url ?? null,
+    changes: msg.type === "EDIT" ? msg.changes ?? {} : null,
+    offerCents: msg.type === "OFFER" ? msg.offerCents : null,
     auto: msg.type === "DELIST" && msg.auto === true,
     autoPublish: msg.type === "LIST" && msg.autoPublish === true,
     state: "opened",
@@ -71,6 +73,8 @@ async function startJob(msg, sender) {
     urls: [],
   }
   if (job.auto && !job.url) throw new Error("Auto-delist needs the listing's link")
+  if ((kind === "edit" || kind === "offer") && !job.url) throw new Error("This needs the listing's link. Add it in FlipLedger first.")
+  if (kind === "offer" && !(Number.isInteger(job.offerCents) && job.offerCents > 0)) throw new Error("No offer price")
   const target = job.kind === "list" ? site.create : job.kind === "import" ? site.manage : job.kind === "sales" ? site.sold[0] : job.url || site.manage
   // Import stays in front: Chrome doesn't render background tabs, so their lists never load more on scroll.
   const tab = await chrome.tabs.create({ url: target, active: !job.auto })
@@ -235,6 +239,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     }
     if (msg?.type === "DONE") {
       if (job.kind === "list") tellApp(job, { type: "LISTED", itemId: job.itemId, url: msg.url ?? null })
+      else if (job.kind === "offer") tellApp(job, { type: "OFFERED", listingId: job.listingId, itemId: job.itemId, offerCents: job.offerCents })
+      else if (job.kind === "edit") tellApp(job, { type: "EDITED", listingId: job.listingId, itemId: job.itemId })
       else tellApp(job, { type: "DELISTED", listingId: job.listingId, itemId: job.itemId })
       await dropJob(tabId)
       if (job.auto) chrome.tabs.remove(tabId).catch(() => {})

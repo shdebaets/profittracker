@@ -1,6 +1,7 @@
 // Smart Offers on eBay (Negotiation API): send offers to watchers of the seller's listings,
 // within their rules. Runs from the daily cron. eBay only: Poshmark and Mercari have no API and
-// automating offers there is the kind of bot activity their terms ban.
+// automating offers there is the kind of bot activity their terms ban (those are assisted, see
+// lib/offers-assisted.ts).
 import "server-only"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { offerPrice, type OfferRule } from "@/lib/offers"
@@ -19,6 +20,7 @@ export async function runSmartOffers(admin: SupabaseClient, userId: string, now 
     .from("smart_offers")
     .select("sent_at")
     .eq("user_id", userId)
+    .eq("marketplace", "ebay")
     .order("sent_at", { ascending: false })
     .limit(1)
     .maybeSingle<{ sent_at: string }>()

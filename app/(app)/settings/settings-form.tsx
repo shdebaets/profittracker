@@ -4,6 +4,7 @@ import { useState, useTransition } from "react"
 import { toast } from "sonner"
 import { saveSettings, sendTestRecap } from "@/app/(app)/actions/expenses"
 import { FieldLabel, MoneyInput, NativeSelect, Toggle } from "@/components/fields"
+import { PushToggle } from "@/components/push-toggle"
 import { centsToInput, toCents } from "@/lib/money"
 import { STALE_DAY_OPTIONS } from "@/lib/stale"
 import { TAX_BRACKETS } from "@/lib/tax"
@@ -64,7 +65,8 @@ export function SettingsForm({ settings }: { settings: Settings }) {
         </NativeSelect>
       </div>
       <div className="flex flex-col gap-3 rounded-2xl bg-muted/60 p-4">
-        <p className="text-sm font-semibold">Emails</p>
+        <p className="text-sm font-semibold">Emails and notifications</p>
+        <PushToggle />
         <label className="flex items-center justify-between gap-3 text-sm">
           <span>Sunday profit recap</span>
           <Toggle checked={recap} onChange={setRecap} label="Sunday profit recap" />

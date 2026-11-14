@@ -129,6 +129,11 @@ export function CompView({ tracked, initialQuery }: { tracked: Tracked[]; initia
                 <p className="text-xs font-bold tracking-wide text-muted-foreground uppercase">Sells for about</p>
                 <p className="font-mono text-3xl font-extrabold">{formatCents(s.estimate)}</p>
                 <p className="text-xs text-muted-foreground">From the {SOURCE_LABEL[s.estimateSource!]}</p>
+                {result.filteredOut > 0 && (
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Left out {result.filteredOut} {result.filteredOut === 1 ? "listing" : "listings"} that weren&apos;t this exact item (cases, lots, parts, other models).
+                  </p>
+                )}
               </div>
               <div>
                 <label className="text-xs font-semibold text-muted-foreground">Price on the shelf</label>

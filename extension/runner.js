@@ -3,6 +3,8 @@
 //  - list:   fills the create-listing form, then stops so the seller checks it and
 //            publishes (or, if the seller turned on auto-publish, publishes after a
 //            countdown when everything got filled); reports the listing back to FlipLedger.
+//  - edit:   opens the listing's edit form and fills in what changed in FlipLedger; the seller saves.
+//  - offer:  opens the offer-to-likers form and fills the Smart Offers price; the seller sends it.
 //  - delist: highlights the button that takes the listing down and reports back once
 //            it's gone (or the seller clicks Done).
 // It only publishes or deletes by itself when the seller turned that on in FlipLedger.
@@ -230,6 +232,107 @@
     return send({ type: "DONE", urls: [...links()] })
   }
 
+  // ---------- edit (edit once, update everywhere) ----------
+  // Opens the listing's edit form, fills only what changed in FlipLedger, and leaves Save to the
+  // seller. Updating in place keeps the listing's likes, watchers and search rank.
+
+  let editing = false
+  async function fillEdit(job) {
+    if (editing || !site.edit) return
+    editing = true
+    try {
+      const c = job.changes || {}
+      const { fields } = site.edit
+      await D.waitFor(() => D.findField(fields.title) || D.findField(fields.price), 20000)
+      const done = []
+      const todo = []
+      const put = (labels, value, label) => {
+        const box = labels && D.findField(labels)
+        ;(box && D.setValue(box, value) ? done : todo).push(label)
+      }
+      if (c.title != null) put(fields.title, String(c.title).slice(0, 80), "Title")
+      if (c.description != null) put(fields.description, String(c.description).slice(0, 1500), "Description")
+      if (c.priceCents != null) put(fields.price, FL.wholeDollars(c.priceCents), "Price")
+      if (c.quantity != null) todo.push(`Quantity (set it to ${c.quantity})`)
+      if (c.photoPaths?.length) todo.push("Photos (match them to FlipLedger)")
+      await send({ type: "UPDATE", patch: { state: "filled" } })
+      D.panel({
+        title: "Changes filled in",
+        lines: [
+          `Updated: ${done.join(", ") || "nothing"}.`,
+          ...(todo.length ? [`Your turn: ${todo.join(", ")}.`] : []),
+          `Check it, then ${site.edit.saveHint}. FlipLedger marks this listing up to date.`,
+        ],
+        buttons: [
+          { label: "I saved it", primary: true, onClick: () => finishEdit() },
+          { label: "Cancel", onClick: () => cancel(`You cancelled the ${site.name} update`) },
+        ],
+      })
+    } catch (e) {
+      D.panel({
+        title: "Couldn't fill the changes",
+        lines: [String(e?.message ?? e), "You can still make them by hand."],
+        buttons: [{ label: "I saved it", primary: true, onClick: () => finishEdit() }, { label: "Cancel", onClick: () => cancel(String(e)) }],
+      })
+    } finally {
+      editing = false
+    }
+  }
+
+  async function openEdit(job) {
+    if (site.edit.isEditPage(location.pathname)) return fillEdit(job)
+    // Clicking Edit only opens the form; nothing changes until the seller saves.
+    const btn = await D.waitFor(() => D.findButton(site.edit.open), 10000)
+    if (btn) return btn.click()
+    D.panel({
+      title: `Update this ${site.name} listing`,
+      lines: ["Open the listing's edit page, and FlipLedger fills in the changes."],
+      buttons: [{ label: "Cancel", onClick: () => cancel(`You cancelled the ${site.name} update`) }],
+    })
+  }
+
+  async function finishEdit() {
+    await send({ type: "DONE" })
+    D.panel({ title: "Done", lines: ["FlipLedger has it as up to date. You can close this tab."], buttons: [{ label: "Close", onClick: D.closePanel }] })
+  }
+
+  // ---------- offer (Smart Offers on sites without an API) ----------
+  // Opens the listing's offer-to-likers form and fills FlipLedger's price. The seller sends it:
+  // these sites ban automated offers.
+
+  let offering = false
+  async function fillOffer(job) {
+    if (offering || !site.offer) return
+    offering = true
+    try {
+      let box = D.findField(site.offer.fields)
+      if (!box) {
+        const btn = await D.waitFor(() => D.findButton(site.offer.open), 10000)
+        if (btn) btn.click() // opens the form; nothing is sent until the seller submits
+        box = await D.waitFor(() => D.findField(site.offer.fields), 8000)
+      }
+      const filled = !!box && D.setValue(box, FL.wholeDollars(job.offerCents))
+      D.panel({
+        title: filled ? "Offer filled in" : "Send this offer",
+        lines: [
+          `Offer: $${FL.wholeDollars(job.offerCents)} for "${job.title}".`,
+          filled ? `Check it, then ${site.offer.submitHint}.` : `Open the offer to likers form and enter $${FL.wholeDollars(job.offerCents)}, then ${site.offer.submitHint}.`,
+        ],
+        buttons: [
+          { label: "I sent it", primary: true, onClick: () => finishOffer() },
+          { label: "Cancel", onClick: () => cancel("You didn't send the offer") },
+        ],
+      })
+    } finally {
+      offering = false
+    }
+  }
+
+  async function finishOffer() {
+    await send({ type: "DONE" })
+    D.panel({ title: "Logged", lines: ["FlipLedger saved the offer. You can close this tab."], buttons: [{ label: "Close", onClick: D.closePanel }] })
+  }
+
   // ---------- routing (these sites are single-page apps, so watch the URL) ----------
 
   let lastPath = ""
@@ -240,6 +343,13 @@
     const { job, photos } = (await send({ type: "GET_JOB", withPhotos: onCreate })) ?? {}
     if (!job) return
     if (job.kind === "import" || job.kind === "sales") return collectListings(job)
+    if (job.kind === "offer") return site.offer ? fillOffer(job) : cancel(`${site.name} offers aren't supported`)
+    if (job.kind === "edit") {
+      if (!site.edit) return cancel(`${site.name} updates aren't supported yet`)
+      // Left the edit form after filling it: the site saved it (or the seller backed out on purpose).
+      if (job.state === "filled" && !site.edit.isEditPage(location.pathname)) return finishEdit()
+      return openEdit(job)
+    }
     if (job.kind === "list") {
       if (onCreate) return fillListing(job, (photos ?? []).slice(0, site.photoLimit))
       // The site lands on the new listing (or your listings) after publishing.

@@ -2,7 +2,8 @@
 
 import { revalidatePath } from "next/cache"
 import { z } from "zod"
-import { requireUser } from "@/lib/supabase/server"
+import { canCrosslist, requireUser } from "@/lib/supabase/server"
+import { hasChanges, propagateToListings, type ListingChanges } from "@/lib/crosslist/edit"
 import { recordSale, takeDown, type SaleOutcome } from "@/lib/crosslist/engine"
 import { adapters, supabaseStore } from "@/lib/crosslist/store"
 import type { SaleColumns } from "@/lib/items/sell"
@@ -102,7 +103,7 @@ export async function updateItem(id: string, input: ItemInput): Promise<ActionRe
   try {
     const i = itemSchema.parse(input)
     const { supabase } = await requireUser()
-    const { data: before } = await supabase.from("items").select("photo_paths, cost_unknown").eq("id", id).single()
+    const { data: before } = await supabase.from("items").select("photo_paths, cost_unknown, title, quantity, status").eq("id", id).single()
     const { error } = await supabase
       .from("items")
       .update({
@@ -113,7 +114,16 @@ export async function updateItem(id: string, input: ItemInput): Promise<ActionRe
       })
       .eq("id", id)
     if (error) throw error
-    const dropped = ((before?.photo_paths as string[] | undefined) ?? []).filter((p) => !i.photoPaths.includes(p))
+    const oldPhotos = (before?.photo_paths as string[] | undefined) ?? []
+    // Edit once, update everywhere: title, quantity and photo changes go to the live listings.
+    if (before?.status === "inventory" && i.mode === "inventory") {
+      const changes: ListingChanges = {}
+      if (i.title && i.title !== before.title) changes.title = i.title
+      if (i.quantity !== before.quantity) changes.quantity = i.quantity
+      if (i.photoPaths.length && i.photoPaths.join() !== oldPhotos.join()) changes.photoPaths = i.photoPaths
+      if (hasChanges(changes)) await propagateToListings(supabase, id, changes, { canUseApi: await canCrosslist() })
+    }
+    const dropped = oldPhotos.filter((p) => !i.photoPaths.includes(p))
     await removeUnreferencedPhotos(supabase, dropped)
     return done()
   } catch (e) {

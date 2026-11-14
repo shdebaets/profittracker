@@ -44,6 +44,21 @@
       return { done, todo }
     },
 
+    // Edit once, update everywhere: the listing page's "Edit Listing" opens /edit-listing/<id>.
+    edit: {
+      open: /^edit listing$/i,
+      isEditPage: (path) => path.startsWith("/edit-listing"),
+      saveHint: 'click "Update" at the bottom',
+      fields: { title: TITLE, description: ["Description", "Describe it!"], price: ["Listing Price"] },
+    },
+
+    // Smart Offers (assisted): the listing's "Offer to Likers" opens a form; the seller submits it.
+    offer: {
+      open: /^offer( to likers)?$/i,
+      fields: ["Offer Price", "Offer price", "Your Offer"],
+      submitHint: 'pick a shipping discount if you want one, then click "Submit"',
+    },
+
     delist: {
       // The listing page has "Edit Listing"; the edit page has "Delete Listing" at the bottom.
       buttons: [/^delete listing$/i, /^edit listing$/i],

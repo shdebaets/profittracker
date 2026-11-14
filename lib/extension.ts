@@ -24,6 +24,8 @@ export type ExtListing = {
 export type ExtResult =
   | { type: "LISTED"; jobId: string; marketplace: MarketplaceId; itemId: string; url: string | null }
   | { type: "DELISTED"; jobId: string; marketplace: MarketplaceId; listingId: string; itemId: string }
+  | { type: "EDITED"; jobId: string; marketplace: MarketplaceId; listingId: string; itemId: string }
+  | { type: "OFFERED"; jobId: string; marketplace: MarketplaceId; listingId: string; itemId: string; offerCents: number }
   | { type: "ERROR"; jobId?: string; marketplace?: MarketplaceId; error: string }
 
 type ExtInfo = { version: string; marketplaces: MarketplaceId[] }
@@ -64,11 +66,33 @@ export function delistWithExtension(
   window.postMessage({ source: APP_SOURCE, type: "DELIST", jobId: crypto.randomUUID(), marketplace, ...job }, location.origin)
 }
 
+/** Edit once, update everywhere on a site with no API: the extension fills the changes on its edit page. */
+export function editWithExtension(
+  marketplace: MarketplaceId,
+  job: { listingId: string; itemId: string; url: string; title: string; changes: { title?: string; description?: string; priceCents?: number; quantity?: number } },
+) {
+  window.postMessage({ source: APP_SOURCE, type: "EDIT", jobId: crypto.randomUUID(), marketplace, ...job }, location.origin)
+}
+
+/** Smart Offers on Poshmark/Mercari: the extension opens the listing and fills the offer form; the seller sends it. */
+export function offerWithExtension(
+  marketplace: MarketplaceId,
+  job: { listingId: string; itemId: string; url: string; title: string; offerCents: number },
+) {
+  window.postMessage({ source: APP_SOURCE, type: "OFFER", jobId: crypto.randomUUID(), marketplace, ...job }, location.origin)
+}
+
+/** Filling offers arrived in extension 0.9.0, with edits. */
+export const extensionCanOffer = () => extensionAtLeast(9)
+
+/** Filling edits on Poshmark, Mercari and Facebook arrived in extension 0.9.0. */
+export const extensionCanEdit = () => extensionAtLeast(9)
+
 export function onExtensionResult(handler: (r: ExtResult) => void) {
   const onMsg = (e: MessageEvent) => {
     if (e.source !== window || e.origin !== location.origin) return
     const d = e.data
-    if (d?.source !== EXT_SOURCE || !["LISTED", "DELISTED", "ERROR"].includes(d.type)) return
+    if (d?.source !== EXT_SOURCE || !["LISTED", "DELISTED", "EDITED", "OFFERED", "ERROR"].includes(d.type)) return
     handler(d as ExtResult)
   }
   window.addEventListener("message", onMsg)

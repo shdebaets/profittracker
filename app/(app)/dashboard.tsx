@@ -155,7 +155,10 @@ export function Dashboard({
             <p className="flex items-center gap-2 font-bold whitespace-nowrap text-brand">
               <Award className="size-5" /> Best Performing Sale
             </p>
-            <p className="font-mono text-xs whitespace-nowrap text-muted-foreground">{formatDateAt(s.best.item.sold_at!)}</p>
+            {/* Local time differs between the server (UTC) and the browser; the browser value wins. */}
+            <p suppressHydrationWarning className="font-mono text-xs whitespace-nowrap text-muted-foreground">
+              {formatDateAt(s.best.item.sold_at!)}
+            </p>
           </div>
           <div className="mt-3 flex items-end justify-between gap-3">
             <div className="min-w-0">

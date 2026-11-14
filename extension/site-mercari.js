@@ -47,6 +47,21 @@
       return { done, todo }
     },
 
+    // Edit once, update everywhere: the item page's "Edit" opens the same form as selling.
+    edit: {
+      open: /^edit( item| listing)?$/i,
+      isEditPage: (path) => /\/edit\b/.test(path),
+      saveHint: 'click "Update" or "Save changes"',
+      fields: { title: TITLE, description: ["Description", "Describe your item"], price: ["Price", "Listing price"] },
+    },
+
+    // Smart Offers (assisted): "Send offer" to likers on the item page; the seller sends it.
+    offer: {
+      open: /^(send( an)? offer|offer to likers|send offer to likers)$/i,
+      fields: ["Offer price", "Your offer", "Price"],
+      submitHint: 'click "Send offer"',
+    },
+
     delist: {
       // The item page has "Edit"; the edit page has "Deactivate" and "Delete".
       buttons: [/^delete( item| listing)?$/i, /^deactivate( item| listing)?$/i, /^edit( item| listing)?$/i],

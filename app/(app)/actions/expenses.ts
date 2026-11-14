@@ -8,6 +8,8 @@ import { reportError, UserError } from "@/lib/errors"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { requireUser } from "@/lib/supabase/server"
 import { mileageDeduction } from "@/lib/profit"
+import { tripPush } from "@/lib/push/messages"
+import { pushToUser } from "@/lib/push/send"
 import { fail, type ActionResult } from "./result"
 
 const cents = z.number().int().min(0).max(100_000_000)
@@ -59,19 +61,22 @@ export type MileageInput = z.input<typeof mileageSchema>
 export async function logMileage(input: MileageInput): Promise<ActionResult> {
   try {
     const m = mileageSchema.parse(input)
-    const { supabase } = await requireUser()
+    const { supabase, userId } = await requireUser()
+    const deduction = mileageDeduction(m.miles, m.rateCents)
     const { error } = await supabase.from("expenses").insert({
       kind: "mileage",
       title: `Mileage: ${m.purpose}`,
       category: "Travel",
       miles: m.miles,
       rate_cents: m.rateCents,
-      amount_cents: mileageDeduction(m.miles, m.rateCents),
+      amount_cents: deduction,
       spent_at: new Date(m.spentAt).toISOString(),
       start_location: m.startLocation || null,
       end_location: m.endLocation || null,
     })
     if (error) throw error
+    // "12.4 mi logged, $8.68 write-off" on their devices. Never fails the save.
+    await pushToUser(createAdminClient(), userId, tripPush(m.miles, deduction)).catch((e) => reportError(e, "trip push"))
     return done()
   } catch (e) {
     return fail(e)
