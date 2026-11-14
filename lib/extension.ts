@@ -19,6 +19,10 @@ export type ExtListing = {
   brand: string
   size: string
   photoUrls: string[]
+  /** The AI's category menu path per site (extension 0.11.0+ tries it before its own guess). */
+  categoryPaths?: { mercari?: string[]; poshmark?: string[] }
+  /** The AI's short Facebook title (0.11.0+). */
+  facebookTitle?: string
 }
 
 export type ExtResult =

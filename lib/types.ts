@@ -33,6 +33,8 @@ export type Item = {
   brand: string | null
   size: string | null
   list_price_cents: number | null
+  /** "Write it from photos" suggestions (eBay category/specifics, other sites' categories); read with readHints. */
+  ai_hints?: unknown
   /** Cross-listings for this item (filled in by getItems). */
   listings: Listing[]
   created_at: string

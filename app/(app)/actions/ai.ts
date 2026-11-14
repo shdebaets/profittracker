@@ -1,7 +1,9 @@
 "use server"
 
 import { z } from "zod"
-import { AI_DAILY_LIMIT, AiError, draftListingFromPhotos, type ListingDraft } from "@/lib/ai/listing"
+import { AiError, draftListingFromPhotos, type ListingDraft } from "@/lib/ai/listing"
+import { aiHintsFrom } from "@/lib/ai/hints"
+import { AI_DAILY_LIMIT, FAIR_USE_MESSAGE, LISTING_KIND, listingCallsToday } from "@/lib/ai/usage"
 import { reportError, UserError } from "@/lib/errors"
 import { signPaths } from "@/lib/photos"
 import { createAdminClient } from "@/lib/supabase/admin"
@@ -20,17 +22,16 @@ export async function aiDraftListing(itemId: string): Promise<AiDraftResult> {
     const paths = (item.photo_paths as string[] | null) ?? []
     if (!paths.length) throw new UserError("Add at least one photo first. The AI writes the listing from your photos.")
 
-    // ai_usage is service-role only, scoped to this user.
+    // ai_usage is service-role only, scoped to this user. Silent abuse cap: no count shown until it's hit.
     const admin = createAdminClient()
-    const since = new Date(Date.now() - 86_400_000).toISOString()
-    const { count } = await admin.from("ai_usage").select("id", { count: "exact", head: true }).eq("user_id", userId).gte("created_at", since)
-    if ((count ?? 0) >= AI_DAILY_LIMIT) {
-      throw new UserError(`You've used AI listings ${AI_DAILY_LIMIT} times today. It resets in 24 hours.`)
-    }
+    if ((await listingCallsToday(admin, userId)) >= AI_DAILY_LIMIT) throw new UserError(FAIR_USE_MESSAGE)
 
     const urls = await signPaths(supabase, paths.slice(0, 4), 600)
     const { draft, usage } = await draftListingFromPhotos(paths.slice(0, 4).map((p) => urls.get(p)!).filter(Boolean), item.title)
-    await admin.from("ai_usage").insert({ user_id: userId, kind: "listing", input_tokens: usage.input, output_tokens: usage.output })
+    await admin.from("ai_usage").insert({ user_id: userId, kind: LISTING_KIND, input_tokens: usage.input, output_tokens: usage.output })
+    // Category and platform suggestions stay on the item for the eBay form and the extension.
+    // Only suggestions, never the listing itself (the seller saves that from the form).
+    await supabase.from("items").update({ ai_hints: aiHintsFrom(draft) }).eq("id", id)
     return { ok: true, draft }
   } catch (e) {
     if (e instanceof AiError) {

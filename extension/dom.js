@@ -174,8 +174,14 @@
    * its size (exact match) if the category brought up a Size field. Fills `done`/`todo`.
    */
   async function pickCategory(marketplace, labels, listing, done, todo) {
-    const path = FL.categoryPath(marketplace, FL.guessCategory(listing))
-    const picked = path ? await choosePath(labels, path) : []
+    // The AI's path first (when FlipLedger sent one); if its first level isn't on the menu, the title guess.
+    let path = null
+    let picked = []
+    for (const p of FL.categoryPaths(marketplace, listing)) {
+      path = p
+      picked = await choosePath(labels, p)
+      if (picked.length) break
+    }
     if (picked.length) done.push(`Category (${picked.join(" › ")})`)
     if (!path || picked.length < path.length) todo.push(picked.length ? "finish Category" : "pick a Category")
     if (picked.length && listing.size) {

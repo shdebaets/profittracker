@@ -228,6 +228,22 @@
       return rest ? [top, ...rest] : null
     },
 
+    /**
+     * The category paths to try for a listing, best first: the AI's path for this site
+     * (FlipLedger's "Write it from photos", one menu text per level), then the guess from the title.
+     */
+    categoryPaths(marketplace, listing) {
+      const ai = (listing?.categoryPaths?.[marketplace] ?? []).filter((x) => typeof x === "string" && x.trim())
+      const guess = FL.categoryPath(marketplace, FL.guessCategory(listing ?? {}))
+      return [ai.length ? ai.slice(0, 5).map((x) => [x.trim()]) : null, guess].filter(Boolean)
+    },
+
+    /** The title to put on a site: the AI's short Facebook title there, else the listing title. */
+    siteTitle(marketplace, listing) {
+      const fb = marketplace === "facebook" && typeof listing?.facebookTitle === "string" ? listing.facebookTitle.trim() : ""
+      return fb || String(listing?.title ?? "")
+    },
+
     /** The listing's ID in a marketplace link, or null. Auto-delist only acts on pages carrying this ID. */
     listingId(marketplace, url) {
       const pattern = { facebook: /\/marketplace\/item\/(\d+)/, poshmark: /-([0-9a-f]{24})(?:[/?#]|$)/, mercari: /\/item\/(m\d+)/ }[marketplace]
