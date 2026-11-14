@@ -7,7 +7,7 @@ const NOW = new Date("2026-11-12T12:00:00Z")
 const order = (o: Partial<Order>): Order => ({
   id: "i", seq: 1, title: "t", status: "sold", quantity: 1, cost_cents: 0, cost_unknown: false,
   purchased_at: "2026-10-01T00:00:00Z", store: null, link_url: null, haul_id: null,
-  sale_price_cents: 1000, buyer_shipping_cents: 0, label_cost_cents: 0, fee_pct: 0, fee_fixed_cents: 0,
+  sale_price_cents: 1000, buyer_shipping_cents: 0, label_cost_cents: 0, fee_pct: 0, fee_fixed_cents: 0, sales_tax_cents: 0, refund_cents: 0,
   platform: "ebay", sold_at: "2026-11-10T00:00:00Z", returnable: false, return_deadline: null,
   photo_paths: [], photo_urls: [], description: null, condition: null, brand: null, size: null,
   list_price_cents: null, category: null, sold_on: null, shipped_at: null, listings: [],

@@ -9,7 +9,7 @@ function item(p: Partial<Item>): Item {
   return {
     id: Math.random().toString(36), seq: 1, title: "Thing", status: "sold", quantity: 1, cost_cents: 0,
     cost_unknown: false, purchased_at: "2026-01-01T12:00:00Z", store: null, link_url: null, haul_id: null,
-    sale_price_cents: 0, buyer_shipping_cents: 0, label_cost_cents: 0, fee_pct: 0, fee_fixed_cents: 0, sales_tax_cents: 0, refund_cents: 0,
+    sale_price_cents: 0, buyer_shipping_cents: 0, label_cost_cents: 0, fee_pct: 0, fee_fixed_cents: 0, sales_tax_cents: 0, refund_cents: 0, category: null, sold_on: null, shipped_at: null,
     platform: "ebay", sold_at: "2026-03-10T12:00:00", returnable: false, return_deadline: null, photo_paths: [],
     photo_urls: [], description: null, condition: null, brand: null, size: null, list_price_cents: null,
     listings: [], created_at: "2026-01-01T12:00:00Z", ...p,

@@ -10,7 +10,8 @@ export function HeaderActions() {
   const { openEntry } = useEntry()
   return (
     <div className="flex gap-1.5 sm:gap-2">
-      <Link href="/comp" aria-label="Scan to comp" className={btn}>
+      {/* Phones reach Comp from the bottom bar; five header icons don't fit beside the wordmark at 375px. */}
+      <Link href="/comp" aria-label="Scan to comp" className={btn.replace("grid ", "hidden sm:grid ")}>
         <ScanBarcode className="size-5 text-brand" />
       </Link>
       <Link href="/inventory?search=1" aria-label="Search items" className={btn}>
