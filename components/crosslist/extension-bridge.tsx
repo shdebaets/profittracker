@@ -4,10 +4,11 @@ import { useEffect } from "react"
 import { toast } from "sonner"
 import { endListing, markAssistedListed } from "@/app/(app)/actions/crosslist"
 import { markListingSynced } from "@/app/(app)/actions/edit"
+import { logAssistedOffer } from "@/app/(app)/actions/offers"
 import { onExtensionResult, pendingJobs } from "@/lib/extension"
 import { marketplace } from "@/lib/marketplaces/registry"
 
-/** Saves what the Chrome extension reports back (listing published, listing ended). */
+/** Saves what the Chrome extension reports back (listing published, edited, ended, offer sent). */
 export function ExtensionBridge() {
   useEffect(
     () =>
@@ -29,7 +30,10 @@ export function ExtensionBridge() {
           if (res.ok) toast.success(`Updated on ${name}`)
           else toast.error(res.error)
         } else if (r.type === "OFFERED") {
-          // Logged by Settings → Smart Offers, which started it.
+          // Logged here, on any page, so it counts even if the seller left Settings meanwhile.
+          const res = await logAssistedOffer({ listingId: r.listingId, offerCents: r.offerCents })
+          if (res.ok) toast.success(`Offer logged on ${name}`)
+          else toast.error(res.error)
         } else {
           const res = await endListing(r.listingId, { manual: true })
           if (res.ok) toast.success(`Ended on ${name}`)

@@ -39,10 +39,11 @@ export function saleCheckStore(db: SupabaseClient, admin: SupabaseClient): SaleC
       const { data } = await db.from("items").select("status").eq("id", itemId).maybeSingle()
       return (data?.status as ItemStatus | undefined) ?? null
     },
-    async claimSale(l) {
-      const { error } = await admin
-        .from("marketplace_sales")
-        .insert({ marketplace: l.marketplace, external_line_id: l.id, user_id: l.user_id, item_id: l.item_id })
+    async claimSale(l, sale) {
+      const { error } = await admin.from("marketplace_sales").insert({
+        marketplace: l.marketplace, external_line_id: l.id, user_id: l.user_id, item_id: l.item_id,
+        sale_cents: sale?.unitCents ?? null, quantity: 1, sold_at: sale?.soldAt ?? null,
+      })
       return !error
     },
     async releaseSale(l) {

@@ -8,6 +8,7 @@ import { AssistedOffers } from "./assisted-offers"
 import { FieldLabel, Toggle } from "@/components/fields"
 import { relativeTime } from "@/lib/dates"
 import { formatCents } from "@/lib/money"
+import type { OfferReport } from "@/lib/offers-settle"
 
 export type OfferRuleRow = {
   enabled: boolean
@@ -17,7 +18,10 @@ export type OfferRuleRow = {
   min_age_days: number
   every_days: number
 }
-export type OfferLog = { id: string; title: string | null; list_price_cents: number; offer_cents: number; sent_at: string; outcome: string | null; error: string | null }
+export type OfferLog = {
+  id: string; title: string | null; marketplace: string; list_price_cents: number; offer_cents: number; sent_at: string
+  outcome: string | null; error: string | null; sale_cents: number | null
+}
 
 const DEFAULTS: OfferRuleRow = { enabled: false, discount_pct: 10, max_discount_pct: 20, floor_margin_pct: 20, min_age_days: 7, every_days: 3 }
 
@@ -37,12 +41,22 @@ function Num({ id, label, value, onChange, suffix }: { id: string; label: string
   )
 }
 
-export function SmartOffers({ rule, log, ebayConnected }: { rule: OfferRuleRow | null; log: OfferLog[]; ebayConnected: boolean }) {
+function Stat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-2xl bg-muted/60 p-3">
+      <p className="font-mono text-lg font-bold">{value}</p>
+      <p className="text-xs text-muted-foreground">{label}</p>
+    </div>
+  )
+}
+
+const outcomeText = (o: OfferLog) =>
+  o.error ? "failed" : o.outcome === "sold" ? `sold ${o.sale_cents != null ? formatCents(o.sale_cents) : ""}`.trim() : o.outcome === "expired" ? "no sale" : "sent"
+
+export function SmartOffers({ rule, log, report, ebayConnected }: { rule: OfferRuleRow | null; log: OfferLog[]; report: OfferReport; ebayConnected: boolean }) {
   const [r, setR] = useState<OfferRuleRow>(rule ?? DEFAULTS)
   const [pending, start] = useTransition()
   const set = <K extends keyof OfferRuleRow>(k: K, v: OfferRuleRow[K]) => setR((x) => ({ ...x, [k]: v }))
-  const sold = log.filter((o) => o.outcome === "sold")
-  const soldValue = sold.reduce((a, o) => a + o.offer_cents, 0)
 
   return (
     <section className="flex flex-col gap-4 rounded-3xl border bg-card p-5 shadow-sm">
@@ -65,7 +79,7 @@ export function SmartOffers({ rule, log, ebayConnected }: { rule: OfferRuleRow |
         <Num id="so-every" label="Send every" value={r.every_days} onChange={(n) => set("every_days", n)} suffix="days" />
       </div>
       <p className="text-xs text-muted-foreground">
-        The discount grows 1% a week past the starting age, up to your max. eBay offers last 2 days. Poshmark and Mercari ban automated offers, so FlipLedger lines those up below and you send them.
+        The discount grows 1% a week past the starting age, up to your max. eBay offers last 2 days. Poshmark and Mercari ban automated offers, so FlipLedger lines those up below and you send them. Facebook Marketplace has no offer-to-likers, so it isn’t included.
       </p>
       <button
         disabled={pending}
@@ -86,16 +100,20 @@ export function SmartOffers({ rule, log, ebayConnected }: { rule: OfferRuleRow |
 
       <AssistedOffers enabled={!!rule?.enabled} />
 
-      {log.length > 0 && (
+      {report.sent > 0 && (
         <div className="flex flex-col gap-2 border-t pt-3">
-          <p className="text-sm">
-            <b>{log.filter((o) => !o.error).length}</b> offers sent · <b>{sold.length}</b> sold ({formatCents(soldValue)})
-          </p>
+          <p className="text-sm font-semibold">Offers report</p>
+          <div className="grid grid-cols-3 gap-2">
+            <Stat label="Sent" value={String(report.sent)} />
+            <Stat label={report.acceptRate ? `Sold (${report.acceptRate}%)` : "Sold"} value={String(report.accepted)} />
+            <Stat label="Revenue" value={formatCents(report.revenueCents)} />
+          </div>
+          <p className="text-xs text-muted-foreground">Sold means the item sold within 3 days of the offer, at or near the offer price. Revenue is what those buyers paid.</p>
           {log.slice(0, 8).map((o) => (
-            <div key={o.id} className="flex items-center justify-between gap-2 text-xs">
-              <span className="min-w-0 truncate">{o.title ?? "Listing"}</span>
-              <span className="shrink-0 font-mono text-muted-foreground">
-                {formatCents(o.list_price_cents)} → {formatCents(o.offer_cents)} · {o.error ? "failed" : o.outcome ?? "sent"} · {relativeTime(o.sent_at)}
+            <div key={o.id} className="flex flex-col text-xs">
+              <span className="truncate">{o.title ?? "Listing"}</span>
+              <span className="font-mono text-muted-foreground">
+                {formatCents(o.list_price_cents)} → {formatCents(o.offer_cents)} · {outcomeText(o)} · {relativeTime(o.sent_at)}
               </span>
             </div>
           ))}

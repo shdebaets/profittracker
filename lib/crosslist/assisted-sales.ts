@@ -16,7 +16,7 @@ export type SaleCheckStore = CrosslistStore & {
   listing(id: string): Promise<Listing | null>
   itemStatus(itemId: string): Promise<ItemStatus | null>
   /** Record that this listing's sale was processed. False if it already was. */
-  claimSale(listing: Listing): Promise<boolean>
+  claimSale(listing: Listing, sale?: { unitCents: number; soldAt: string }): Promise<boolean>
   releaseSale(listing: Listing): Promise<void>
 }
 
@@ -41,7 +41,8 @@ export async function applySaleChecks(
     }
 
     if (l.status !== "active" || c.state !== "sold") continue
-    if (!(await store.claimSale(l))) continue // already recorded
+    const priceCents = c.priceCents ?? l.price_cents ?? 0
+    if (!(await store.claimSale(l, { unitCents: priceCents, soldAt: now.toISOString() }))) continue // already recorded
     if ((await store.itemStatus(l.item_id)) !== "inventory") continue // seller already marked it sold by hand
 
     const fee = presetFor(marketplace(l.marketplace).feePreset)
@@ -53,7 +54,7 @@ export async function applySaleChecks(
         soldOn: l.marketplace,
         now,
         sale: {
-          sale_price_cents: c.priceCents ?? l.price_cents ?? 0,
+          sale_price_cents: priceCents,
           buyer_shipping_cents: 0,
           label_cost_cents: 0,
           fee_pct: fee.pct,
