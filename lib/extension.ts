@@ -193,3 +193,133 @@ export function importSalesWithExtension(marketplace: "mercari"): Promise<{ ok: 
     window.postMessage({ source: APP_SOURCE, type: "IMPORT_SALES", jobId, marketplace }, location.origin)
   })
 }
+
+// ---------- Poshmark Assistant (extension 0.8.0+) ----------
+// Opt-in jobs the extension runs in the seller's own logged-in Poshmark tab: share the closet,
+// share to the live party, Offer to Likers. Settings are per computer, like the switches above.
+// The extension enforces the safety rules itself (random waits, daily caps, stop on pushback).
+
+export type PoshTask = "SHARE_CLOSET" | "SHARE_PARTY" | "OFFER_LIKERS"
+export type PoshSettings = {
+  username: string
+  shareCloset: boolean
+  shareParty: boolean
+  offerLikers: boolean
+  /** Percent off the listing price for Offer to Likers (Poshmark needs at least 10). */
+  offerPercent: number
+  /** Never offer under this, in cents. */
+  floorCents: number
+  /** Daily caps; the extension never goes over 300 shares or 50 offers whatever these say. */
+  shareCap: number
+  offerCap: number
+}
+export type PoshSummary = { shared: number; offered: number; skipped: number; note?: string }
+export type PoshEvent =
+  | { type: "POSH_PROGRESS"; kind: string; text: string; summary: PoshSummary }
+  | { type: "POSH_DONE"; kind: string; summary: PoshSummary; last: boolean }
+  | { type: "ERROR"; kind?: string; error: string; summary?: PoshSummary }
+
+export const POSH_MAX_SHARES = 300
+export const POSH_MAX_OFFERS = 50
+export const POSH_DEFAULTS: PoshSettings = {
+  username: "",
+  shareCloset: false,
+  shareParty: false,
+  offerLikers: false,
+  offerPercent: 10,
+  floorCents: 0,
+  shareCap: POSH_MAX_SHARES,
+  offerCap: POSH_MAX_OFFERS,
+}
+
+const POSH_KEY = "flipledger-posh-assistant"
+
+function readJson(key: string): string | null {
+  try {
+    return localStorage.getItem(key)
+  } catch {
+    return null
+  }
+}
+function writeJson(key: string, value: unknown) {
+  try {
+    localStorage.setItem(key, JSON.stringify(value))
+  } catch {
+    // Blocked storage: the settings just don't stick.
+  }
+}
+
+/** The raw stored settings (a string, so React can compare snapshots). */
+export const poshSettingsRaw = () => readJson(POSH_KEY)
+
+/** Stored settings over the defaults; anything malformed falls back to the default (all off). */
+export function parsePoshSettings(raw: string | null): PoshSettings {
+  let v: Partial<Record<keyof PoshSettings, unknown>> = {}
+  try {
+    v = raw ? JSON.parse(raw) : {}
+  } catch {
+    // Keep the defaults.
+  }
+  const num = (x: unknown, min: number, max: number, d: number) =>
+    typeof x === "number" && Number.isFinite(x) ? Math.min(max, Math.max(min, Math.round(x))) : d
+  return {
+    username: typeof v.username === "string" ? v.username : "",
+    shareCloset: v.shareCloset === true,
+    shareParty: v.shareParty === true,
+    offerLikers: v.offerLikers === true,
+    offerPercent: num(v.offerPercent, 10, 80, POSH_DEFAULTS.offerPercent),
+    floorCents: num(v.floorCents, 0, 10_000_00, 0),
+    shareCap: num(v.shareCap, 0, POSH_MAX_SHARES, POSH_MAX_SHARES),
+    offerCap: num(v.offerCap, 0, POSH_MAX_OFFERS, POSH_MAX_OFFERS),
+  }
+}
+export const setPoshSettings = (s: PoshSettings) => writeJson(POSH_KEY, s)
+
+/** A Poshmark username as typed ("@name", a closet link) → "name", or "" if it isn't one. Same rule as the extension's FL.posh.username. */
+export function poshUsername(input: string) {
+  const s = input.trim().replace(/^https?:\/\/(www\.)?poshmark\.com\/closet\//i, "").replace(/^@/, "").replace(/[/?#].*$/, "")
+  return /^[A-Za-z0-9_.-]{1,40}$/.test(s) ? s : ""
+}
+
+/** The Poshmark Assistant arrived in extension 0.8.0. */
+export const extensionCanPoshAssist = () => extensionAtLeast(8)
+
+/** The jobs Run now does, in order, from the switches the seller turned on. */
+export function poshTasks(s: PoshSettings): PoshTask[] {
+  return [
+    ...(s.shareCloset ? (["SHARE_CLOSET"] as const) : []),
+    ...(s.shareParty ? (["SHARE_PARTY"] as const) : []),
+    ...(s.offerLikers ? (["OFFER_LIKERS"] as const) : []),
+  ]
+}
+
+/**
+ * Start the Poshmark Assistant: the extension opens the seller's closet in a new tab and runs
+ * `tasks` one after another there. `onEvent` gets progress and results; the returned function
+ * stops listening. The run ends with a POSH_DONE whose `last` is true, or an ERROR.
+ */
+export function runPoshAssistant(tasks: PoshTask[], s: PoshSettings, onEvent: (e: PoshEvent) => void) {
+  const jobId = crypto.randomUUID()
+  const onMsg = (e: MessageEvent) => {
+    if (e.source !== window || e.origin !== location.origin) return
+    const d = e.data
+    if (d?.source !== EXT_SOURCE || d.jobId !== jobId || !["POSH_PROGRESS", "POSH_DONE", "ERROR"].includes(d.type)) return
+    onEvent(d as PoshEvent)
+  }
+  window.addEventListener("message", onMsg)
+  const [first, ...then] = tasks
+  window.postMessage(
+    {
+      source: APP_SOURCE,
+      type: first,
+      jobId,
+      marketplace: "poshmark",
+      username: s.username,
+      options: { percent: s.offerPercent, floorCents: s.floorCents },
+      caps: { shares: s.shareCap, offers: s.offerCap },
+      then,
+    },
+    location.origin,
+  )
+  return () => window.removeEventListener("message", onMsg)
+}

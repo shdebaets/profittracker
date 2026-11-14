@@ -238,7 +238,8 @@
     lastPath = location.pathname
     const onCreate = site.isCreatePage(location.pathname)
     const { job, photos } = (await send({ type: "GET_JOB", withPhotos: onCreate })) ?? {}
-    if (!job) return
+    // The Poshmark Assistant's jobs belong to posh-assistant.js.
+    if (!job || ["share_closet", "share_party", "offer_likers"].includes(job.kind)) return
     if (job.kind === "import" || job.kind === "sales") return collectListings(job)
     if (job.kind === "list") {
       if (onCreate) return fillListing(job, (photos ?? []).slice(0, site.photoLimit))
