@@ -22,6 +22,8 @@ export type SoldRow = {
   condition: string | null
   /** Item located outside the US (from the provider's location field). */
   overseas: boolean
+  /** Sold at auction (one unit, never looked up for more). */
+  auction: boolean
 }
 
 /** "Shenzhen, China" / "from United Kingdom" → true; "United States", "Brooklyn, NY, USA", unknown → false. Pure. */
@@ -95,6 +97,7 @@ export function toSoldRow(raw: unknown): SoldRow | null {
       /best offer accepted/i.test(String(pick(p, "price_raw") ?? "")),
     condition: (pick(p, "condition", "item_condition") as string | null)?.toString().slice(0, 60) ?? null,
     overseas: isOverseas(pick(p, "location", "item_location", "ships_from")),
+    auction: /auction|\bbids?\b/i.test(format) || /\b\d+\s+bids?\b/i.test(String(pick(p, "bids", "bid_count", "caption") ?? "")),
   }
 }
 
@@ -117,11 +120,13 @@ async function fetchPage(query: string, page: number): Promise<{ items: unknown[
 
 export { soldPhrase }
 
-const MAX_PAGES = () => Number(process.env.SOLD_DATA_MAX_PAGES) || 4
+const MAX_PAGES = () => Number(process.env.SOLD_DATA_MAX_PAGES) || 10
+/** Requests one product's read may use across all its searches (the first search goes deepest). */
+const MAX_REQUESTS = () => Number(process.env.SOLD_DATA_MAX_REQUESTS_PER_PRODUCT) || 30
 
 /** comp_cache key for the last sold read of a search (paid API or a browser read). */
-// v8: binary search for the 30-day line in eBay's results. v7: item location. v6: reads every AI search for the product (lib/comps/variants.ts), not just one phrase.
-export const soldKey = (query: string) => `sold8:${queryKey(query)}`
+// v9: 6-10 profile keywords, each paged while it finds new sales (lib/comps/profile.ts). v8: binary search for the 30-day line in eBay's results. v7: item location. v6: reads every AI search for the product (lib/comps/variants.ts), not just one phrase.
+export const soldKey = (query: string) => `sold9:${queryKey(query)}`
 
 /** What the last sold read found: when it ran and eBay's own count of matching sold listings. */
 export async function lastSoldRead(query: string): Promise<{ at: string; total: number | null; within30: number | null } | null> {
@@ -166,15 +171,20 @@ export async function refreshSoldFromApi(query: string, searches?: string[]): Pr
     let total: number | null = null
     const monthAgo = new Date(Date.now() - 30 * 86_400_000).toISOString().slice(0, 10)
     const phrases = searches?.length ? searches : [soldPhrase(query)]
-    // The first search pages deep (busy products); the others read one page each, to catch sales
-    // titled differently. eBay's count per search overlaps, so the biggest one is kept.
+    // Every search is read: the first pages deepest (busy products), the others page on while
+    // they keep finding sales the earlier searches didn't (sales titled differently), within the
+    // per-product request budget. eBay's count per search overlaps, so the biggest one is kept.
     let oldest: string | null = null
     // eBay results (before the AI judge) sold in the last 30 days, when the read could tell.
     let within30: number | null = null
+    const seen = new Set<string>()
     for (const [n, phrase] of phrases.entries()) {
       let lastRead = 0
       let phraseTotal: number | null = null
-      for (let page = 1; page <= (n === 0 ? MAX_PAGES() : 1); page++) {
+      // Keep a request for each search still to come, and 5 for the 30-day probe.
+      const reserve = phrases.length - n - 1 + (n === 0 ? 5 : 0)
+      for (let page = 1; page <= (n === 0 ? MAX_PAGES() : 4); page++) {
+        if (page > 1 && requests >= MAX_REQUESTS() - reserve) break
         const res = await fetchPage(phrase, page)
         requests++
         lastRead = page
@@ -182,6 +192,9 @@ export async function refreshSoldFromApi(query: string, searches?: string[]): Pr
         if (res.total != null) total = Math.max(total ?? 0, res.total)
         const got = res.items.map(toSoldRow).filter((r): r is SoldRow => !!r)
         rows.push(...got)
+        const fresh = got.filter((r) => !seen.has(r.external_id))
+        for (const r of got) seen.add(r.external_id)
+        if (n > 0 && !fresh.length) break
         if (page === 1 && n === 0 && res.items[0] && typeof res.items[0] === "object")
           console.log("[sold data] fields", Object.keys(res.items[0] as object).join(","))
         if (page === 1 && n === 0)

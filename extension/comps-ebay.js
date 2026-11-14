@@ -44,11 +44,18 @@
         sold_on: soldOn,
         best_offer: !!(priceEl?.matches(".strikethrough") || priceEl?.querySelector(".strikethrough")),
         condition: card.querySelector(".s-card__subtitle, .s-item__subtitle")?.textContent?.trim()?.slice(0, 80) ?? null,
+        // "3 bids": an auction, always one unit.
+        auction: leaves.some((s) => /^\d+\s+bids?$/i.test(s)),
       })
     }
     return rows
   }
   globalThis.FLcollectSoldCards = collectSoldCards
+  // Result cards on the page, sold or not: under 200 of 240 means this was eBay's last page.
+  const countCards = (doc) => {
+    const modern = doc.querySelectorAll("ul.srp-results > li.s-card")
+    return (modern.length ? modern : doc.querySelectorAll(".s-card, .s-item")).length
+  }
 
   async function run() {
     const res = await chrome.runtime.sendMessage({ type: "GET_JOB" }).catch(() => null)
@@ -61,7 +68,7 @@
     // "1,113 results": eBay's count of matching sold listings, so the app can cap its 30-day estimate.
     const heading = document.querySelector(".srp-controls__count-heading")?.textContent ?? ""
     const total = Number(heading.match(/([\d,]+)\s+results?/i)?.[1]?.replace(/,/g, "")) || null
-    chrome.runtime.sendMessage({ type: "DONE", rows, challenged, total }).catch(() => {})
+    chrome.runtime.sendMessage({ type: "DONE", rows, challenged, total, cards: countCards(document) }).catch(() => {})
   }
   if (typeof chrome !== "undefined" && chrome.runtime?.id) run()
 })()

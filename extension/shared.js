@@ -145,7 +145,8 @@
   }
 
   const FL = {
-    VERSION: "0.9.0",
+    // The manifest's version, so the app's feature checks (extensionAtLeast) see the real one.
+    VERSION: (typeof chrome !== "undefined" && chrome.runtime?.getManifest?.().version) || "0.13.0",
     /** Marketplaces this extension can drive. */
     MARKETPLACES: ["facebook", "poshmark", "mercari"],
     APP_SOURCE: "flipledger-app",

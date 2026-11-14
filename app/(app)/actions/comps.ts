@@ -76,17 +76,25 @@ const soldRow = z.object({
   sold_on: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   best_offer: z.boolean().default(false),
   condition: z.string().max(80).nullable().optional(),
+  auction: z.boolean().default(false),
 })
 
 /** Sold listings the extension read from eBay's public sold search for `query`. Shared market data. */
-export async function saveSoldComps(query: string, rows: unknown, total?: number | null): Promise<ActionResult & { saved?: number }> {
+export async function saveSoldComps(
+  query: string,
+  rows: unknown,
+  total?: number | null,
+  /** One read saved in several batches shares this timestamp (must be within the last 10 minutes). */
+  readAtInput?: string,
+): Promise<ActionResult & { saved?: number }> {
   try {
     await requireMember()
     const q = z.string().min(2).max(120).parse(query)
     const key = queryKey(q)
     const ebayTotal = z.number().int().min(0).max(10_000_000).nullable().optional().parse(total) ?? null
     // One timestamp for the rows and the read marker, so stats can use this read on its own.
-    const readAt = new Date().toISOString()
+    const given = z.iso.datetime().optional().parse(readAtInput)
+    const readAt = given && Math.abs(Date.now() - Date.parse(given)) < 10 * 60_000 ? given : new Date().toISOString()
     const parsed = z.array(z.unknown()).max(5000).parse(rows).flatMap((r) => {
       const p = soldRow.safeParse(r)
       return p.success ? [p.data] : []
@@ -105,6 +113,7 @@ export async function saveSoldComps(query: string, rows: unknown, total?: number
           sold_on: r.sold_on,
           best_offer: r.best_offer,
           condition: r.condition ?? null,
+          auction: r.auction,
           collected_at: readAt,
         })),
         { onConflict: "query_key,external_id" },

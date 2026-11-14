@@ -6,6 +6,8 @@ import { getAppToken } from "@/lib/marketplaces/ebay/oauth"
 import type { ActiveComp } from "./stats"
 
 type Summary = {
+  itemId?: string
+  legacyItemId?: string
   title?: string
   price?: { value?: string; currency?: string }
   shippingOptions?: { shippingCost?: { value?: string } }[]
@@ -19,13 +21,13 @@ const cents = (v: string | undefined) => (v ? Math.round(Number(v) * 100) : NaN)
 export type LiveSearch = { comps: ActiveComp[]; title: string | null; image: string | null; total: number }
 
 /**
- * One Browse API call (eBay's default quota is 5,000 a day for the whole app), reading up to 100
- * listings. Callers go through the comp_cache (lib/comps/cache.ts) so a product costs at most one
+ * One Browse API call (eBay's default quota is 5,000 a day for the whole app), reading up to 200
+ * listings. Callers go through the comp_cache (lib/comps/cache.ts) so a search costs at most one
  * call per cache window no matter how many people scan it.
  */
 export async function searchActive(input: { gtin?: string; q?: string }): Promise<LiveSearch> {
   const token = await getAppToken()
-  const params = new URLSearchParams({ limit: "100", filter: "buyingOptions:{FIXED_PRICE|AUCTION},deliveryCountry:US,priceCurrency:USD" })
+  const params = new URLSearchParams({ limit: "200", filter: "buyingOptions:{FIXED_PRICE|AUCTION},deliveryCountry:US,priceCurrency:USD" })
   if (input.gtin) params.set("gtin", input.gtin)
   else params.set("q", (input.q ?? "").slice(0, 100))
   const res = await ebayFetch<{ itemSummaries?: Summary[]; total?: number }>(token, `/buy/browse/v1/item_summary/search?${params}`)
@@ -35,6 +37,8 @@ export async function searchActive(input: { gtin?: string; q?: string }): Promis
     .map((i) => {
       const ship = i.shippingOptions?.[0]?.shippingCost?.value
       return {
+        // eBay's item number ("v1|123456789012|0" → 123456789012), the same id sold rows carry.
+        itemId: i.legacyItemId ?? i.itemId?.match(/\|(\d{9,15})\|/)?.[1] ?? null,
         priceCents: cents(i.price!.value),
         shippingCents: ship != null ? cents(ship) : null,
         title: i.title ?? "",

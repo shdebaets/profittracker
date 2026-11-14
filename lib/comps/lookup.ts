@@ -6,9 +6,10 @@ import { searchActive, type LiveSearch } from "./ebay-browse"
 import { buildHistory, type HistoryDay } from "./history"
 import { identifyProducts, type ProductCandidate } from "./identify"
 import { judgeTitles } from "./judge"
-import { searchVariants } from "./variants"
+import { buildProfile, cleanProfile, type CompProfile } from "./profile"
 import { lastSoldRead, refreshSoldFromApi } from "./sold-api"
-import { compStats, isGtin, queryKey, soldPhrase, type CompStats, type SoldComp } from "./stats"
+import { compStats, isGtin, queryKey, type ActiveComp, type CompStats, type SoldComp } from "./stats"
+import { loadUnits } from "./units"
 
 export type CompLookup = {
   /** What sold history is filed under (and what the extension searches eBay for). */
@@ -28,8 +29,10 @@ export type CompLookup = {
   droppedSales: { title: string; priceCents: number; soldOn: string }[]
   /** Last 90 days, one row per day: sales, sold median, live listings and lowest price (for the charts). */
   history: HistoryDay[]
-  /** The eBay searches sold prices are read from (AI-written, up to 3), for the extension and phone app. */
+  /** The eBay searches sold prices are read from (AI-written, 6 to 10), for the extension and phone app. */
   searches: string[]
+  /** Other editions the numbers leave out (e.g. "Day"), so the seller can see which one this is. */
+  otherEditions: string[]
 }
 
 /** A loose search matched several products: the seller picks one first. */
@@ -39,8 +42,22 @@ export type CompPick = { query: string; candidates: ProductCandidate[] }
 export const searchPhrase = (title: string) =>
   title.replace(/\b(new|sealed|brand|free shipping|fast|nib|nwt|authentic|look|rare|l@@k)\b/gi, " ").replace(/\s+/g, " ").trim().split(" ").slice(0, 8).join(" ")
 
+// live2: 200 a search, with item ids (for units and merging searches).
 const liveSearch = (input: { gtin?: string; q?: string }) =>
-  cached<LiveSearch>(input.gtin ? `live:gtin:${input.gtin}` : `live:q:${queryKey(input.q ?? "")}`, LIVE_TTL_MS, () => searchActive(input))
+  cached<LiveSearch>(input.gtin ? `live2:gtin:${input.gtin}` : `live2:q:${queryKey(input.q ?? "")}`, LIVE_TTL_MS, () => searchActive(input))
+
+/** Live listings from every keyword, one per item id; eBay's biggest match count. */
+async function liveAcross(first: LiveSearch, keywords: string[]): Promise<{ comps: ActiveComp[]; total: number }> {
+  const all = [first, ...(await Promise.all(keywords.map((q) => liveSearch({ q }).catch(() => null))))].filter((x): x is LiveSearch => !!x)
+  const byId = new Map<string, ActiveComp>()
+  const noId: ActiveComp[] = []
+  for (const s of all)
+    for (const c of s.comps) {
+      if (c.itemId) byId.set(c.itemId, c)
+      else noId.push(c)
+    }
+  return { comps: [...byId.values(), ...noId], total: Math.max(...all.map((s) => s.total)) }
+}
 
 /**
  * Comps for a barcode, or for typed words. Typed words that cover several products (as judged by
@@ -80,34 +97,63 @@ export async function lookupComps(
   product ??= (gtin ? live.title : null) ?? raw
   const query = searchPhrase(product)
 
-  // Sold prices from the data provider when nobody has read this product in 12 hours (no-op without a key).
-  // Up to 3 searches worded the way different sellers title this product (cached a week).
-  const searches = await cached(`var:${queryKey(query)}`, 7 * 24 * 60 * 60_000, () => searchVariants(product, live.comps.map((c) => c.title))).catch((e) => {
-    console.error("[comp searches]", e)
-    return [soldPhrase(query)]
+  // The product's search profile: 6 to 10 keywords worded the way different sellers title it, and
+  // the words that mark other editions and junk (one bigger AI call, cached a week).
+  const profile: CompProfile = await cached(`prof1:${queryKey(query)}`, 7 * 24 * 60 * 60_000, () => buildProfile(product, live.comps.map((c) => c.title))).catch((e) => {
+    console.error("[comp profile]", e)
+    return cleanProfile(product, {})
   })
+  const searches = profile.keywords
+  // Live listings from every keyword (each cached 2 hours), merged by item id.
+  const market = gtin ? { comps: live.comps, total: live.total } : await liveAcross(live, searches)
+  // Sold prices from the data provider when nobody has read this product in 12 hours (no-op without a key).
   if (!opts.skipPaidSold) await refreshSoldFromApi(query, searches)
   const read = await lastSoldRead(query).catch(() => null)
   const since = new Date(now.getTime() - 90 * 86_400_000).toISOString().slice(0, 10)
-  const { data } = await supabase
-    .from("comp_sales")
-    .select("title, price_cents, shipping_cents, sold_on, best_offer, condition, collected_at, overseas")
-    .eq("query_key", queryKey(query))
-    .gte("sold_on", since)
-    .limit(1000)
-  const judge = await judgeTitles(product, [...live.comps.map((c) => c.title), ...(data ?? []).map((r) => r.title)], opts.userId ?? null)
-  const active = live.comps.filter((c) => judge.keep(c.title))
-  const rows = (data ?? []).filter((r) => judge.keep(r.title))
-  const filteredOut = live.comps.length - active.length + ((data?.length ?? 0) - rows.length)
+  // Every sale on file for the product in 90 days, from any reader (extension, phone app, paid
+  // provider), one row per listing. PostgREST returns 1,000 rows a request, so page.
+  type Row = { external_id: string; title: string; price_cents: number; shipping_cents: number | null; sold_on: string; best_offer: boolean; condition: string | null; collected_at: string; overseas: boolean; auction: boolean }
+  const data: Row[] = []
+  for (let from = 0; from < 6000; from += 1000) {
+    const { data: page } = await supabase
+      .from("comp_sales")
+      .select("external_id, title, price_cents, shipping_cents, sold_on, best_offer, condition, collected_at, overseas, auction")
+      .eq("query_key", queryKey(query))
+      .gte("sold_on", since)
+      .order("sold_on", { ascending: false })
+      .range(from, from + 999)
+    data.push(...((page ?? []) as Row[]))
+    if ((page?.length ?? 0) < 1000) break
+  }
+  const judge = await judgeTitles(product, [...market.comps.map((c) => c.title), ...data.map((r) => r.title)], opts.userId ?? null, profile)
+  const keptLive = market.comps.filter((c) => judge.keep(c.title))
+  const rows = data.filter((r) => judge.keep(r.title))
+  const filteredOut = market.comps.length - keptLive.length + (data.length - rows.length)
   // eBay's total counts every match; scale it by the share of the sample that was really this product.
-  const liveTotal = live.comps.length ? Math.round((live.total * active.length) / live.comps.length) : 0
-  const sold: SoldComp[] = rows.map((r) => ({ priceCents: r.price_cents, shippingCents: r.shipping_cents, soldOn: r.sold_on, bestOffer: r.best_offer, condition: r.condition, overseas: r.overseas }))
+  const liveTotal = market.comps.length ? Math.max(keptLive.length, Math.round((market.total * keptLive.length) / market.comps.length)) : 0
+  // Units per listing (Browse API, cached per listing): live ones and non-auction sales from the last 90 days.
+  const units = await loadUnits(
+    [...keptLive.flatMap((c) => (c.itemId ? [c.itemId] : [])), ...rows.filter((r) => !r.auction).map((r) => r.external_id)],
+    new Set(keptLive.flatMap((c) => (c.itemId ? [c.itemId] : []))),
+  )
+  const active: ActiveComp[] = keptLive.map((c) => {
+    const u = c.itemId ? units.get(c.itemId) : undefined
+    return { ...c, soldQty: u?.soldQty ?? null, createdOn: u?.createdOn ?? null }
+  })
+  const toSold = (r: Row): SoldComp => {
+    const u = units.get(r.external_id)
+    return {
+      priceCents: r.price_cents, shippingCents: r.shipping_cents, soldOn: r.sold_on, bestOffer: r.best_offer, condition: r.condition, overseas: r.overseas,
+      title: r.title, itemId: r.external_id, auction: r.auction, units: u?.soldQty ?? null, createdOn: u?.createdOn ?? null,
+    }
+  }
+  const sold: SoldComp[] = rows.map(toSold)
   // The latest read on its own (older reads can be patchy), and eBay's sold count scaled like liveTotal.
-  const readRows = read ? (data ?? []).filter((r) => Math.abs(Date.parse(r.collected_at) - Date.parse(read.at)) < 1000) : []
+  const readRows = read ? data.filter((r) => Math.abs(Date.parse(r.collected_at) - Date.parse(read.at)) < 1000) : []
   const readKept = readRows.filter((r) => judge.keep(r.title))
   const soldRead = read
     ? {
-        latest: readKept.map((r) => ({ priceCents: r.price_cents, shippingCents: r.shipping_cents, soldOn: r.sold_on, bestOffer: r.best_offer, condition: r.condition, overseas: r.overseas })),
+        latest: readKept.map(toSold),
         // eBay's results inside 30 days, scaled by the share of this read's last-30-day sales the judge kept.
         within30: (() => {
           if (!read.within30) return null
@@ -125,7 +171,7 @@ export async function lookupComps(
   const recentSales = [...rows].sort(byDate).slice(0, 25).map((r) => ({
     title: r.title, priceCents: r.price_cents, shippingCents: r.shipping_cents, soldOn: r.sold_on, bestOffer: r.best_offer, condition: r.condition,
   }))
-  const droppedSales = (data ?? []).filter((r) => !judge.keep(r.title)).sort(byDate).slice(0, 10).map((r) => ({ title: r.title, priceCents: r.price_cents, soldOn: r.sold_on }))
+  const droppedSales = data.filter((r) => !judge.keep(r.title)).sort(byDate).slice(0, 10).map((r) => ({ title: r.title, priceCents: r.price_cents, soldOn: r.sold_on }))
   const stats = compStats(active, sold, now, liveTotal, soldRead)
   const history = await recordAndReadHistory(queryKey(query), stats, sold, now).catch((e) => {
     console.error("[comp history]", e)
@@ -133,6 +179,7 @@ export async function lookupComps(
   })
   return {
     searches,
+    otherEditions: profile.otherEditions.map((e) => e.name),
     history,
     recentSales,
     droppedSales,
@@ -140,7 +187,7 @@ export async function lookupComps(
     gtin,
     product,
     title: gtin ? product : shown?.title ?? product,
-    image: shown?.image ?? live.image,
+    image: shown?.image ?? live.image ?? null,
     stats,
     soldCollectedAt: latest,
     filteredOut,

@@ -30,7 +30,7 @@ nicknames, abbreviations (UPC, ETB, PSA), with or without the brand. Don't add w
 Don't make a search so loose it mostly finds other products: an AI checks every result, but each search reads at most 240 sales.`
 
 /** Merges the AI's searches with the plain cut-down phrase, cleaned and de-duplicated. Pure. */
-export function mergeSearches(product: string, ai: unknown): string[] {
+export function mergeSearches(product: string, ai: unknown, max = 3): string[] {
   const out: string[] = []
   const seen = new Set<string>()
   const add = (s: string) => {
@@ -44,7 +44,7 @@ export function mergeSearches(product: string, ai: unknown): string[] {
   }
   add(soldPhrase(product))
   if (Array.isArray(ai)) for (const s of ai) if (typeof s === "string") add(s)
-  return out.slice(0, 3)
+  return out.slice(0, max)
 }
 
 export async function searchVariants(product: string, liveTitles: string[]): Promise<string[]> {
