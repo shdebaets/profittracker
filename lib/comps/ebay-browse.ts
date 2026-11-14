@@ -16,12 +16,19 @@ type Summary = {
 
 const cents = (v: string | undefined) => (v ? Math.round(Number(v) * 100) : NaN)
 
-export async function searchActive(input: { gtin?: string; q?: string }): Promise<{ comps: ActiveComp[]; title: string | null; image: string | null }> {
+export type LiveSearch = { comps: ActiveComp[]; title: string | null; image: string | null; total: number }
+
+/**
+ * One Browse API call (eBay's default quota is 5,000 a day for the whole app), reading up to 100
+ * listings. Callers go through the comp_cache (lib/comps/cache.ts) so a product costs at most one
+ * call per cache window no matter how many people scan it.
+ */
+export async function searchActive(input: { gtin?: string; q?: string }): Promise<LiveSearch> {
   const token = await getAppToken()
-  const params = new URLSearchParams({ limit: "50", filter: "buyingOptions:{FIXED_PRICE|AUCTION},deliveryCountry:US,priceCurrency:USD" })
+  const params = new URLSearchParams({ limit: "100", filter: "buyingOptions:{FIXED_PRICE|AUCTION},deliveryCountry:US,priceCurrency:USD" })
   if (input.gtin) params.set("gtin", input.gtin)
   else params.set("q", (input.q ?? "").slice(0, 100))
-  const res = await ebayFetch<{ itemSummaries?: Summary[] }>(token, `/buy/browse/v1/item_summary/search?${params}`)
+  const res = await ebayFetch<{ itemSummaries?: Summary[]; total?: number }>(token, `/buy/browse/v1/item_summary/search?${params}`)
   const items = res.itemSummaries ?? []
   const comps: ActiveComp[] = items
     .filter((i) => i.price?.currency === "USD" && Number.isFinite(cents(i.price.value)))
@@ -33,7 +40,8 @@ export async function searchActive(input: { gtin?: string; q?: string }): Promis
         title: i.title ?? "",
         condition: i.condition ?? null,
         buyItNow: (i.buyingOptions ?? []).includes("FIXED_PRICE"),
+        image: i.image?.imageUrl ?? null,
       }
     })
-  return { comps, title: items[0]?.title ?? null, image: items[0]?.image?.imageUrl ?? null }
+  return { comps, title: items[0]?.title ?? null, image: items[0]?.image?.imageUrl ?? null, total: res.total ?? comps.length }
 }

@@ -6,7 +6,7 @@ import { toast } from "sonner"
 import { compLookup, refreshTracked, saveSoldComps, trackProduct, untrackProduct } from "@/app/(app)/actions/comps"
 import { useEntry } from "@/components/entry/entry-provider"
 import { MoneyInput } from "@/components/fields"
-import type { CompLookup } from "@/lib/comps/lookup"
+import type { CompLookup, CompPick } from "@/lib/comps/lookup"
 import { buyProfit, type CompStats } from "@/lib/comps/stats"
 import { relativeTime } from "@/lib/dates"
 import { collectSoldWithExtension, extensionCanCollectComps, useExtension } from "@/lib/extension"
@@ -19,6 +19,7 @@ export type Tracked = {
   query: string
   gtin: string | null
   title: string | null
+  product: string | null
   image_url: string | null
   target_cost_cents: number | null
   stats: CompStats | null
@@ -31,18 +32,25 @@ export function CompView({ tracked, initialQuery }: { tracked: Tracked[]; initia
   const [query, setQuery] = useState(initialQuery)
   const [scanning, setScanning] = useState(false)
   const [result, setResult] = useState<CompLookup | null>(null)
+  const [pick, setPick] = useState<CompPick | null>(null)
   const [cost, setCost] = useState("")
   const [pending, start] = useTransition()
   const [collecting, setCollecting] = useState(false)
   const ext = useExtension()
   const { openEntry } = useEntry()
 
-  const lookup = useCallback((q: string) => {
+  const lookup = useCallback((q: string, product?: string | null) => {
     if (q.trim().length < 2) return
     start(async () => {
-      const res = await compLookup(q)
+      const res = await compLookup(q, product)
       if (!res.ok) return void toast.error(res.error)
-      setResult(res.lookup)
+      if ("pick" in res) {
+        setResult(null)
+        setPick(res.pick)
+      } else {
+        setPick(null)
+        setResult(res.lookup)
+      }
     })
   }, [])
 
@@ -63,7 +71,7 @@ export function CompView({ tracked, initialQuery }: { tracked: Tracked[]; initia
       const saved = await saveSoldComps(q, res.rows)
       if (!saved.ok) return void toast.error(saved.error)
       toast.success(`Read ${res.rows.length} sold listing${res.rows.length === 1 ? "" : "s"} from eBay`)
-      lookup(result?.gtin ?? q)
+      lookup(result?.gtin ?? q, result?.gtin ? null : result?.product)
     } finally {
       setCollecting(false)
     }
@@ -108,6 +116,35 @@ export function CompView({ tracked, initialQuery }: { tracked: Tracked[]; initia
         </button>
       </form>
 
+      {pick && !result && (
+        <section className="flex flex-col gap-2 rounded-3xl border bg-card p-4 shadow-sm">
+          <p className="font-bold">Which one is it?</p>
+          <p className="text-xs text-muted-foreground">&ldquo;{pick.query}&rdquo; matches a few different products. Pick yours so the price is for that exact item.</p>
+          {pick.candidates.map((c) => (
+            <button
+              key={c.name}
+              disabled={pending}
+              onClick={() => lookup(pick.query, c.name)}
+              className="flex items-center gap-3 rounded-2xl bg-muted/60 p-3 text-left disabled:opacity-60"
+            >
+              {c.image ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={c.image} alt="" className="size-12 shrink-0 rounded-xl object-cover" />
+              ) : (
+                <span className="size-12 shrink-0 rounded-xl bg-muted" />
+              )}
+              <span className="min-w-0 flex-1">
+                <span className="block font-semibold">{c.name}</span>
+                <span className="block font-mono text-xs text-muted-foreground">
+                  {c.lowCents != null ? `${formatCents(c.lowCents)}${c.highCents && c.highCents !== c.lowCents ? `–${formatCents(c.highCents)}` : ""} · ` : ""}
+                  {c.count} listed
+                </span>
+              </span>
+            </button>
+          ))}
+        </section>
+      )}
+
       {result && s && (
         <section className="flex flex-col gap-4 rounded-3xl border bg-card p-5 shadow-sm">
           <div className="flex gap-3">
@@ -116,8 +153,18 @@ export function CompView({ tracked, initialQuery }: { tracked: Tracked[]; initia
               <img src={result.image} alt="" className="size-16 shrink-0 rounded-xl object-cover" />
             )}
             <div className="min-w-0">
-              <p className="line-clamp-2 font-bold">{result.title ?? result.query}</p>
-              <p className="text-xs text-muted-foreground">Searching eBay for &quot;{result.query}&quot;</p>
+              <p className="line-clamp-2 font-bold">{result.product}</p>
+              <p className="text-xs text-muted-foreground">
+                Searching eBay for &quot;{result.query}&quot;
+                {!result.gtin && (
+                  <>
+                    {" · "}
+                    <button type="button" onClick={() => lookup(query)} className="font-semibold text-brand">
+                      Not it?
+                    </button>
+                  </>
+                )}
+              </p>
             </div>
           </div>
 
@@ -129,6 +176,13 @@ export function CompView({ tracked, initialQuery }: { tracked: Tracked[]; initia
                 <p className="text-xs font-bold tracking-wide text-muted-foreground uppercase">Sells for about</p>
                 <p className="font-mono text-3xl font-extrabold">{formatCents(s.estimate)}</p>
                 <p className="text-xs text-muted-foreground">From the {SOURCE_LABEL[s.estimateSource!]}</p>
+                {(s.newEstimate != null || s.usedEstimate != null) && (
+                  <p className="mt-1 font-mono text-xs">
+                    {s.newEstimate != null && <>New ~{formatCents(s.newEstimate)}</>}
+                    {s.newEstimate != null && s.usedEstimate != null && " · "}
+                    {s.usedEstimate != null && <>Used/open box ~{formatCents(s.usedEstimate)}</>}
+                  </p>
+                )}
                 {result.filteredOut > 0 && (
                   <p className="mt-1 text-xs text-muted-foreground">
                     Left out {result.filteredOut} {result.filteredOut === 1 ? "listing" : "listings"} that weren&apos;t this exact item (cases, lots, parts, other models).
@@ -175,7 +229,7 @@ export function CompView({ tracked, initialQuery }: { tracked: Tracked[]; initia
             <button
               onClick={() =>
                 openEntry("inventory", {
-                  title: result.title ?? result.query,
+                  title: result.product,
                   cost: cost || "",
                 })
               }
@@ -189,7 +243,8 @@ export function CompView({ tracked, initialQuery }: { tracked: Tracked[]; initia
                   const res = await trackProduct({
                     query: result.query,
                     gtin: result.gtin,
-                    title: result.title,
+                    title: result.product,
+                    product: result.gtin ? null : result.product,
                     image: result.image,
                     targetCostCents: costCents || null,
                   })
@@ -205,7 +260,7 @@ export function CompView({ tracked, initialQuery }: { tracked: Tracked[]; initia
         </section>
       )}
 
-      {tracked.length > 0 && <TrackedList tracked={tracked} onOpen={(t) => { setQuery(t.gtin ?? t.query); lookup(t.gtin ?? t.query); if (t.target_cost_cents) setCost(centsToInput(t.target_cost_cents)) }} />}
+      {tracked.length > 0 && <TrackedList tracked={tracked} onOpen={(t) => { setQuery(t.gtin ?? t.query); lookup(t.gtin ?? t.query, t.gtin ? null : t.product ?? t.query); if (t.target_cost_cents) setCost(centsToInput(t.target_cost_cents)) }} />}
     </>
   )
 }

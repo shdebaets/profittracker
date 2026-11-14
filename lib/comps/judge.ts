@@ -78,7 +78,7 @@ export async function judgeTitles(product: string, titles: string[], userId: str
   }
 
   let judged = true
-  const todo = unique.filter((t) => !verdicts.has(hash(t))).slice(0, MAX_PER_CALL * 2)
+  const todo = unique.filter((t) => !verdicts.has(hash(t))).slice(0, MAX_PER_CALL * 5)
   for (let i = 0; i < todo.length; i += MAX_PER_CALL) {
     const batch = todo.slice(i, i + MAX_PER_CALL)
     try {
