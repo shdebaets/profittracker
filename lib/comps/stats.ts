@@ -45,12 +45,29 @@ export const isNewCondition = (c: string | null | undefined) =>
   !!c && /^(brand )?new\b/i.test(c.trim()) && !/other|open box|used|pre-?owned|refurb/i.test(c)
 
 /**
- * What a US buyer paid: price plus shipping. Shipping over $25 is left out: on eBay that's almost
- * always an overseas buyer or freight (seen: +$48, +$75, +$182 on a $450 box) and it isn't money the seller keeps.
+ * What a US buyer paid: price plus shipping, or null for a sale that shipped from overseas. Shipping
+ * over $25 on a box like this means an international seller: its price is converted and runs high
+ * (seen on UPC Night: $464-$494 with +$44 to +$70 shipping, while US sales were $345-$396).
  */
 export const MAX_SHIPPING_CENTS = 2500
-export const landed = (x: { priceCents: number; shippingCents: number | null }) =>
-  x.priceCents + (x.shippingCents != null && x.shippingCents <= MAX_SHIPPING_CENTS ? x.shippingCents : 0)
+export const landed = (x: { priceCents: number; shippingCents: number | null }): number | null =>
+  x.shippingCents != null && x.shippingCents > MAX_SHIPPING_CENTS ? null : x.priceCents + (x.shippingCents ?? 0)
+const prices = (xs: { priceCents: number; shippingCents: number | null }[]) =>
+  xs.map(landed).filter((p): p is number => p != null)
+
+/**
+ * Sales per 30 days from how fast the newest reads came in, when they don't reach back 25 days
+ * (a busy product: a few hundred sales can be a couple of days). Uses the 90th-percentile age, so
+ * one stray old sale in the list doesn't stretch the window. Null when the read already covers it.
+ */
+export function soldPace(sold: { soldOn: string }[], now: Date): number | null {
+  const ages = sold.map((x) => Math.max(daysAgo(x.soldOn, now), 0)).sort((a, b) => a - b)
+  if (ages.length < 20) return null
+  const i = Math.floor(ages.length * 0.9) - 1
+  const span = Math.max(ages[i], 1)
+  if (span >= 25) return null
+  return Math.round((ages.filter((a) => a <= span).length / span) * 30)
+}
 
 const daysAgo = (iso: string, now: Date) => (now.getTime() - new Date(iso + "T12:00:00Z").getTime()) / 86_400_000
 
@@ -58,17 +75,25 @@ const daysAgo = (iso: string, now: Date) => (now.getTime() - new Date(iso + "T12
  * `liveTotal`: how many live listings eBay says match (the search reads at most a page of them),
  * already scaled down for look-alikes the AI judge dropped. Defaults to the ones passed in.
  */
-export function compStats(active: ActiveComp[], sold: SoldComp[], now = new Date(), liveTotal?: number): CompStats {
-  const bins = active.filter((a) => a.buyItNow).map(landed)
+export function compStats(
+  active: ActiveComp[],
+  sold: SoldComp[],
+  now = new Date(),
+  liveTotal?: number,
+  /** From the latest sold read: its rows (so older, patchier reads don't stretch the span) and eBay's own match count, already scaled by the share that was this product. */
+  soldRead?: { latest: SoldComp[]; total: number | null },
+): CompStats {
+  const bins = prices(active.filter((a) => a.buyItNow))
   // Best-offer sales show the list price, not what it sold for, so they're left out of prices.
-  const priced = (days: number) => sold.filter((s) => daysAgo(s.soldOn, now) <= days && !s.bestOffer).map(landed)
+  const priced = (days: number) => prices(sold.filter((s) => daysAgo(s.soldOn, now) <= days && !s.bestOffer))
   // How far back the sales we have go. If they don't cover 30 days (a busy product: the newest few
   // hundred sales can be a couple of days), the 30-day count comes from the pace instead.
-  const ages = sold.map((x) => daysAgo(x.soldOn, now)).filter((d) => d >= 0)
-  const span = ages.length ? Math.max(...ages) : 0
   const counted30 = sold.filter((x) => daysAgo(x.soldOn, now) <= 30).length
-  const sold30Estimated = ages.length >= 20 && span < 25
-  const sold30 = sold30Estimated ? Math.round((counted30 / Math.max(span, 1)) * 30) : counted30
+  const pace = soldPace(soldRead?.latest.length ? soldRead.latest : sold, now)
+  const sold30Estimated = pace != null && pace > counted30
+  let sold30 = sold30Estimated ? pace : counted30
+  // eBay's sold count covers ~90 days, so the 30-day number can't be higher than it.
+  if (soldRead?.total && soldRead.total >= counted30) sold30 = Math.min(sold30, soldRead.total)
   const sold90 = Math.max(sold.filter((x) => daysAgo(x.soldOn, now) <= 90).length, sold30Estimated ? sold30 : 0)
   const soldMedian30 = median(priced(30))
   const soldMedian90 = median(priced(90))
@@ -77,20 +102,21 @@ export function compStats(active: ActiveComp[], sold: SoldComp[], now = new Date
   // Prices more than 1.3x their median are dropped first: on eBay those are mostly best-offer sales
   // showing the asking price, which the data can't tell apart (seen on UPC Night: real sales $345-$396,
   // best offers showing $540-$650).
-  const newest = sold
-    .filter((x) => !x.bestOffer && daysAgo(x.soldOn, now) <= 7)
-    .sort((a, b) => b.soldOn.localeCompare(a.soldOn))
-    .slice(0, 20)
-    .map(landed)
+  const newest = prices(
+    sold
+      .filter((x) => !x.bestOffer && daysAgo(x.soldOn, now) <= 7 && landed(x) != null)
+      .sort((a, b) => b.soldOn.localeCompare(a.soldOn))
+      .slice(0, 20),
+  )
   const rough = median(newest)
   const recentMedian = newest.length >= 8 && rough != null ? median(newest.filter((p) => p <= rough * 1.3)) : null
   const estimate = recentMedian ?? soldMedian30 ?? soldMedian90 ?? activeMedian
   const liveCount = Math.max(active.length, liveTotal ?? 0)
   // Per condition: needs 3+ prices so one odd listing doesn't set it.
   const bucket = (wantNew: boolean) => {
-    const soldP = sold.filter((x) => daysAgo(x.soldOn, now) <= (recentMedian != null ? 7 : 90) && !x.bestOffer && isNewCondition(x.condition) === wantNew).map(landed)
+    const soldP = prices(sold.filter((x) => daysAgo(x.soldOn, now) <= (recentMedian != null ? 7 : 90) && !x.bestOffer && isNewCondition(x.condition) === wantNew))
     if (soldP.length >= 3) return median(soldP)
-    const liveP = active.filter((a) => a.buyItNow && isNewCondition(a.condition) === wantNew).map(landed)
+    const liveP = prices(active.filter((a) => a.buyItNow && isNewCondition(a.condition) === wantNew))
     return liveP.length >= 3 ? median(liveP) : null
   }
   return {

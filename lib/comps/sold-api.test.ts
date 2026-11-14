@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest"
 vi.mock("server-only", () => ({}))
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => ({}) }))
-import { moneyCents, shippingCents, soldDate, toSoldRow } from "./sold-api"
+import { moneyCents, shippingCents, soldDate, toSoldRow, soldPhrase } from "./sold-api"
 
 describe("sold data parsing", () => {
   it("reads sold dates", () => {
@@ -44,5 +44,12 @@ describe("sold data parsing", () => {
     const a = toSoldRow({ title: "x", price: 10, caption: "Sold Jul 1, 2026" })!
     expect(a.external_id).toMatch(/^h[0-9a-f]{14}$/)
     expect(toSoldRow({ title: "x", price: 10, caption: "Sold Jul 1, 2026" })!.external_id).toBe(a.external_id)
+  })
+})
+
+describe("soldPhrase", () => {
+  it("cuts a product name to the words every sale title shares", () => {
+    expect(soldPhrase("Pokémon TCG 30th Celebration Ultra Premium Collection Night (Umbreon)")).toBe("Pokemon 30th Ultra Premium Collection Night")
+    expect(soldPhrase("Nintendo Switch OLED")).toBe("Nintendo Switch OLED")
   })
 })
