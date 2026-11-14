@@ -52,6 +52,9 @@ Local QA logins live in `.env.example` (`qa-a@flipledger.test`, `qa-b@flipledger
   - If a buyer's Whop email differs from their old FlipLedger email they get a new empty account; fix by pointing `whop_links.user_id` at the old user.
 - **Money** is always stored as integer cents. Profit math lives in `lib/profit.ts`.
 - **Items:** `status` is `inventory | sold | returned`. A partial sale splits the row (`lib/items/sell.ts`). "Listed" isn't a status; it's derived from active `marketplace_listings` rows.
+  - `platform` is only a fee preset (several sites share one). Which marketplace it sold on is `sold_on`, written by every sale path through `recordSale`'s `soldOn`; null means in person, or an old sale that couldn't be backfilled.
+  - `shipped_at` null on a sold item means it's still to ship. Manual sales without a marketplace count as handed over.
+- **Orders** (`/orders`, `lib/orders.ts`, `getOrders()`): sold items joined to `marketplace_sales`, which now carries eBay's `buyer` (username only, never the address), `ship_by` and `order_status`. A partial eBay sale repoints its `marketplace_sales.item_id` to the new sold row. Poshmark and Mercari pages give no buyer or ship-by.
 - **Photos:**
   - Up to 12 per item, compressed in the browser (`lib/image.ts`, 1600px JPEG).
   - Uploaded by direct PUT to signed upload URLs.
@@ -84,7 +87,7 @@ Local QA logins live in `.env.example` (`qa-a@flipledger.test`, `qa-b@flipledger
   - **One eBay developer app** (the client's), and **each user connects their own seller account** via OAuth.
   - Tokens are AES-GCM encrypted (`lib/crypto.ts`, `TOKEN_ENCRYPTION_KEY`) in `marketplace_accounts`. That table has no RLS policies; clients read the `marketplace_connections` view.
   - Publishing: Inventory API `inventory_item` → `offer` → `publish`. SKU = item id.
-  - Sales: Fulfillment `getOrders`, synced on app open (`AutoSync`, at most every 5 minutes), via "Sync now", and by a daily cron at `/api/cron/sync-sales`. `marketplace_sales` makes it idempotent.
+  - Sales: Fulfillment `getOrders`, synced on app open (`AutoSync`, at most every 5 minutes), via "Sync now", and by a daily cron at `/api/cron/sync-sales`. `marketplace_sales` makes it idempotent. `fetchOrders` only returns an order once (by creation date), so `refreshShipping` re-reads unshipped eBay orders from the last 60 days by ID and sets `shipped_at` when eBay says `FULFILLED`.
   - A line whose SKU isn't one of the seller's item ids (listed straight on eBay, or the seller's own SKU) becomes a new sold item with `cost_unknown = true` (`ebaySoldItem` in `lib/sales/untracked.ts`): title, quantity, price, buyer shipping and eBay's real fee from the order, no ad fee. Only orders since the account connected are read, so older sales don't come in.
   - `/api/marketplaces/ebay/account-deletion` is required by eBay for production keys.
   - **Business policies** (shipping, payment, returns) are required to list. Settings can create starter ones through the Account API (`createEbayPolicies` → `createPolicies`, `sell.account` scope) named "FlipLedger shipping/payment/returns", or link to eBay's page (`businessPoliciesUrl`). They're normal policies the seller can edit on eBay. USPS Ground Advantage's service code is `USPSParcel`.
@@ -139,7 +142,7 @@ A Capacitor app could put the same fill-in scripts in an in-app web view for pho
 ## Git workflow
 
 - **Start every session from the latest `main`:** run `git fetch origin` first and branch from `origin/main`. This checkout is often many commits behind.
-- **Work in your own git worktree for every task**, never in the shared checkout or on a branch another session has checked out, so changes don't get mixed up: `git worktree add ../profit-tracking-app-<task> -b <branch> origin/main`. Other Claude sessions often share this folder, and uncommitted changes there are usually someone else's work in progress, so leave them alone. Symlink `node_modules` into the worktree; Turbopack builds fail through the symlink, so rely on the Vercel preview build (or run `npm ci` in the worktree to use `next dev`).
+- **Work in your own git worktree for every task**, never in the shared checkout or on a branch another session has checked out, so changes don't get mixed up: `git worktree add ../profit-tracking-app-<task> -b <branch> origin/main`. Other Claude sessions often share this folder, and uncommitted changes there are usually someone else's work in progress, so leave them alone. Symlink `node_modules` into the worktree; Turbopack builds fail through the symlink, so rely on the Vercel preview build (or run `npm ci` in the worktree and use `next dev --webpack`; Turbopack's `next/font` fails in a worktree even with its own `node_modules`).
 - Work on a branch, open a PR to `main`, and let the user merge. Auto mode won't merge unreviewed PRs.
 - **Before pushing more commits to a PR branch, check the PR isn't already merged.** Commits pushed after a merge never reach `main`; that happened once with PR #7.
 - **Run tests before `git push`**, chained with `&&`, never `;`.

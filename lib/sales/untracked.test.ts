@@ -16,6 +16,9 @@ const line: EbaySaleLine = {
   buyerShippingCents: 800,
   feeCents: 760,
   soldAt: "2026-11-01T15:30:00.000Z",
+  buyer: "buyer_1",
+  shipBy: null,
+  fulfillment: "NOT_STARTED",
 }
 
 describe("isItemId", () => {
@@ -44,6 +47,7 @@ describe("ebaySoldItem", () => {
       fee_fixed_cents: 760,
       platform: "ebay",
       sold_at: line.soldAt,
+      sold_on: "ebay",
     })
   })
 
