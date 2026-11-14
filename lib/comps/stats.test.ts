@@ -121,20 +121,14 @@ describe("30-day count with eBay's total", () => {
   })
 })
 
-describe("30-day count from eBay's last page", () => {
+describe("30-day count from eBay's own results", () => {
   const now = new Date("2026-11-14T20:00:00Z")
   const sale = (d: string, overseas = false) => ({ priceCents: 36000, shippingCents: 0, soldOn: d, bestOffer: false, overseas })
-  it("a new release: every sale eBay counts is inside 30 days", () => {
+  it("uses eBay's 30-day count when the read found it", () => {
     const latest = Array.from({ length: 240 }, () => sale("2026-11-14"))
-    const st = compStats([], latest, now, undefined, { latest, total: 994, oldest: "2026-11-06" })
+    const st = compStats([], latest, now, undefined, { latest, total: 1117, within30: 994 })
     expect(st.sold30).toBe(994)
     expect(st.sold30Estimated).toBe(false)
-  })
-  it("an older product: eBay's ~90 days are spread over 30", () => {
-    const latest = Array.from({ length: 60 }, () => sale("2026-11-14"))
-    const st = compStats([], latest, now, undefined, { latest, total: 900, oldest: "2026-08-16" })
-    expect(st.sold30).toBe(299) // 900 × 30 / 90.3 days
-    expect(st.sold30Estimated).toBe(true)
   })
   it("leaves overseas sellers out of the price", () => {
     const st = compStats([], [...Array.from({ length: 10 }, () => sale("2026-11-14")), ...Array.from({ length: 9 }, () => ({ ...sale("2026-11-14", true), priceCents: 48000 }))], now)
