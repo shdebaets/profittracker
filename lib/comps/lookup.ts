@@ -4,6 +4,7 @@ import { cached, IDENTIFY_TTL_MS, LIVE_TTL_MS } from "./cache"
 import { searchActive, type LiveSearch } from "./ebay-browse"
 import { identifyProducts, type ProductCandidate } from "./identify"
 import { judgeTitles } from "./judge"
+import { refreshSoldFromApi } from "./sold-api"
 import { compStats, isGtin, queryKey, type CompStats, type SoldComp } from "./stats"
 
 export type CompLookup = {
@@ -68,6 +69,8 @@ export async function lookupComps(
   product ??= (gtin ? live.title : null) ?? raw
   const query = searchPhrase(product)
 
+  // Sold prices from the data provider when nobody has read this product in 12 hours (no-op without a key).
+  await refreshSoldFromApi(query)
   const since = new Date(now.getTime() - 90 * 86_400_000).toISOString().slice(0, 10)
   const { data } = await supabase
     .from("comp_sales")
