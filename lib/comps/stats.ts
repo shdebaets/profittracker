@@ -44,6 +44,14 @@ export type CompStats = {
 export const isNewCondition = (c: string | null | undefined) =>
   !!c && /^(brand )?new\b/i.test(c.trim()) && !/other|open box|used|pre-?owned|refurb/i.test(c)
 
+/**
+ * What a US buyer paid: price plus shipping. Shipping over $25 is left out: on eBay that's almost
+ * always an overseas buyer or freight (seen: +$48, +$75, +$182 on a $450 box) and it isn't money the seller keeps.
+ */
+export const MAX_SHIPPING_CENTS = 2500
+export const landed = (x: { priceCents: number; shippingCents: number | null }) =>
+  x.priceCents + (x.shippingCents != null && x.shippingCents <= MAX_SHIPPING_CENTS ? x.shippingCents : 0)
+
 const daysAgo = (iso: string, now: Date) => (now.getTime() - new Date(iso + "T12:00:00Z").getTime()) / 86_400_000
 
 /**
@@ -51,9 +59,9 @@ const daysAgo = (iso: string, now: Date) => (now.getTime() - new Date(iso + "T12
  * already scaled down for look-alikes the AI judge dropped. Defaults to the ones passed in.
  */
 export function compStats(active: ActiveComp[], sold: SoldComp[], now = new Date(), liveTotal?: number): CompStats {
-  const bins = active.filter((a) => a.buyItNow).map((a) => a.priceCents + (a.shippingCents ?? 0))
+  const bins = active.filter((a) => a.buyItNow).map(landed)
   // Best-offer sales show the list price, not what it sold for, so they're left out of prices.
-  const priced = (days: number) => sold.filter((s) => daysAgo(s.soldOn, now) <= days && !s.bestOffer).map((s) => s.priceCents + (s.shippingCents ?? 0))
+  const priced = (days: number) => sold.filter((s) => daysAgo(s.soldOn, now) <= days && !s.bestOffer).map(landed)
   // How far back the sales we have go. If they don't cover 30 days (a busy product: the newest few
   // hundred sales can be a couple of days), the 30-day count comes from the pace instead.
   const ages = sold.map((x) => daysAgo(x.soldOn, now)).filter((d) => d >= 0)
@@ -72,16 +80,16 @@ export function compStats(active: ActiveComp[], sold: SoldComp[], now = new Date
     .filter((x) => !x.bestOffer && daysAgo(x.soldOn, now) <= 7)
     .sort((a, b) => b.soldOn.localeCompare(a.soldOn))
     .slice(0, 20)
-    .map((x) => x.priceCents + (x.shippingCents ?? 0))
+    .map(landed)
   const rough = median(newest)
   const recentMedian = newest.length >= 8 && rough != null ? median(newest.filter((p) => p <= rough * 1.5)) : null
   const estimate = recentMedian ?? soldMedian30 ?? soldMedian90 ?? activeMedian
   const liveCount = Math.max(active.length, liveTotal ?? 0)
   // Per condition: needs 3+ prices so one odd listing doesn't set it.
   const bucket = (wantNew: boolean) => {
-    const soldP = sold.filter((x) => daysAgo(x.soldOn, now) <= (recentMedian != null ? 7 : 90) && !x.bestOffer && isNewCondition(x.condition) === wantNew).map((x) => x.priceCents + (x.shippingCents ?? 0))
+    const soldP = sold.filter((x) => daysAgo(x.soldOn, now) <= (recentMedian != null ? 7 : 90) && !x.bestOffer && isNewCondition(x.condition) === wantNew).map(landed)
     if (soldP.length >= 3) return median(soldP)
-    const liveP = active.filter((a) => a.buyItNow && isNewCondition(a.condition) === wantNew).map((a) => a.priceCents + (a.shippingCents ?? 0))
+    const liveP = active.filter((a) => a.buyItNow && isNewCondition(a.condition) === wantNew).map(landed)
     return liveP.length >= 3 ? median(liveP) : null
   }
   return {
@@ -89,8 +97,8 @@ export function compStats(active: ActiveComp[], sold: SoldComp[], now = new Date
     usedEstimate: bucket(false),
     activeCount: liveCount,
     activeMedian,
-    // Under half the median is almost always a scam, a pre-order or a mislabeled part, not a real buy.
-    activeLowest: bins.length ? Math.min(...bins.filter((p) => !activeMedian || p >= activeMedian * 0.5)) : null,
+    // Under 60% of the median is almost always a scam, a pre-order or a mislabeled part, not a real buy.
+    activeLowest: bins.length ? Math.min(...bins.filter((p) => !activeMedian || p >= activeMedian * 0.6)) : null,
     sold30,
     sold90,
     soldMedian30,

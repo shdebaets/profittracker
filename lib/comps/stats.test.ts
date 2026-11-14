@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { buyProfit, compStats, isGtin, isNewCondition, median, queryKey } from "./stats"
+import { buyProfit, compStats, landed, isGtin, isNewCondition, median, queryKey } from "./stats"
 
 const now = new Date("2026-11-13T12:00:00Z")
 const sold = (days: number, priceCents: number, bestOffer = false) => ({
@@ -71,5 +71,14 @@ describe("comps", () => {
     expect(st.estimate).toBe(38000)
     expect(st.sold30Estimated).toBe(true)
     expect(st.sold30).toBe(900) // 60 sales over 2 days → ~30/day
+  })
+})
+
+describe("landed price", () => {
+  it("adds normal shipping and leaves out overseas or freight shipping", () => {
+    expect(landed({ priceCents: 36000, shippingCents: 800 })).toBe(36800)
+    expect(landed({ priceCents: 46412, shippingCents: 18229 })).toBe(46412)
+    expect(landed({ priceCents: 49377, shippingCents: 4856 })).toBe(49377)
+    expect(landed({ priceCents: 33999, shippingCents: null })).toBe(33999)
   })
 })
