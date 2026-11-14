@@ -247,7 +247,7 @@ export function collectSoldWithExtension(query: string): Promise<{ ok: true; row
       if (d.type === "SOLD_COMPS") finish({ ok: true, rows: Array.isArray(d.rows) ? d.rows : [] })
       else if (d.type === "ERROR") finish({ ok: false, error: d.error })
     }
-    const timer = setTimeout(() => finish({ ok: false, error: "eBay took too long to answer. Try again." }), 60_000)
+    const timer = setTimeout(() => finish({ ok: false, error: "eBay didn't show its sold listings. Since July 2026 eBay only shows them to signed-in members: sign in at ebay.com in this Chrome, then try again." }), 45_000)
     window.addEventListener("message", onMsg)
     window.postMessage({ source: APP_SOURCE, type: "COMPS", jobId, query }, location.origin)
   })
