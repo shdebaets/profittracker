@@ -12,7 +12,7 @@ import { relativeTime } from "@/lib/dates"
 import { CompDetails } from "@/components/comp-details"
 import { useExtension } from "@/lib/extension"
 import { EXTENSION_STORE_URL } from "@/lib/marketplaces/registry"
-import { pullSoldHere, soldIsStale, soldSource } from "@/lib/sold-browser"
+import { BROWSER_SOLD_READS, pullSoldHere, soldIsStale, soldSource } from "@/lib/sold-browser"
 import { centsToInput, formatCents, toCents } from "@/lib/money"
 import { cn } from "@/lib/utils"
 import { Scanner } from "./scanner"
@@ -251,7 +251,7 @@ export function CompView({ tracked, initialQuery }: { tracked: Tracked[]; initia
           )}
 
           <CompDetails history={result.history} />
-          {!canCollect && <ExtensionNudge outdated={!!ext.info} />}
+          {BROWSER_SOLD_READS && !canCollect && <ExtensionNudge outdated={!!ext.info} />}
           <p className="text-xs text-muted-foreground">
             {result.soldCollectedAt ? `Sold prices read ${relativeTime(result.soldCollectedAt)}.` : "No sold prices for this yet."}{" "}
             {canCollect
@@ -260,7 +260,7 @@ export function CompView({ tracked, initialQuery }: { tracked: Tracked[]; initia
                 : ""
               : result.soldCollectedAt
                 ? ""
-                : "eBay had no recent sales we could read for this one. The FlipLedger Chrome extension or phone app can read more."}
+                : "eBay had no recent sales we could read for this one."}
           </p>
           {result.recentSales.length > 0 && (
             <details className="rounded-2xl bg-muted/60 p-3 text-xs">
