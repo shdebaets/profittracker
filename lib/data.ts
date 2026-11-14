@@ -1,17 +1,13 @@
 import "server-only"
 import { signPaths } from "@/lib/photos"
 import type { Haul } from "@/lib/lots"
-import { DEFAULT_TAX_BRACKET, type TaxPlatform } from "@/lib/tax"
+import type { TaxPlatform } from "@/lib/tax"
 import { requireUser } from "@/lib/supabase/server"
 import type { Expense, Item, MarketplaceConnection, Settings, Subscription } from "@/lib/types"
 
-export const DEFAULT_SETTINGS: Settings = {
-  mileage_rate_cents: 76,
-  default_return_days: 90,
-  tax_bracket: DEFAULT_TAX_BRACKET,
-  tax_bracket_set: false,
-  stale_days: 60,
-}
+import { DEFAULT_SETTINGS } from "@/lib/data-defaults"
+
+export { DEFAULT_SETTINGS }
 
 export async function getItems(): Promise<Item[]> {
   const { supabase } = await requireUser()
@@ -64,7 +60,7 @@ export async function getSettings(): Promise<Settings> {
   const { supabase } = await requireUser()
   const { data } = await supabase
     .from("settings")
-    .select("mileage_rate_cents, default_return_days, tax_bracket, tax_bracket_set, stale_days")
+    .select("mileage_rate_cents, default_return_days, tax_bracket, tax_bracket_set, stale_days, email_recap, email_tax_reminders")
     .maybeSingle()
   const row = data as Settings | null
   return row ? { ...row, tax_bracket: Number(row.tax_bracket) } : DEFAULT_SETTINGS

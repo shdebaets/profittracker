@@ -116,6 +116,10 @@ export type Settings = {
   tax_bracket_set: boolean
   /** Days before an unsold item counts as stale (30/45/60/90/120). */
   stale_days: number
+  /** Sunday profit recap email. */
+  email_recap: boolean
+  /** Quarterly estimated tax reminder emails. */
+  email_tax_reminders: boolean
 }
 
 export const EXPENSE_CATEGORIES = [

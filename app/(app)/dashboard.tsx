@@ -114,6 +114,7 @@ export function Dashboard({
       </section>
 
       <TaxSavingsCard items={items} expenses={expenses} subs={subs} settings={settings} />
+      <Link href="/recap" className="-mt-2 text-center text-sm font-semibold text-brand">See your week →</Link>
 
       {(() => {
         const stale = staleItems(items, settings.stale_days)

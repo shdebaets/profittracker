@@ -84,6 +84,14 @@ Local QA logins live in `.env.example` (`qa-a@flipledger.test`, `qa-b@flipledger
 - **Edit once, update everywhere** (`lib/crosslist/edit.ts`): `saveListingDetails` and `repriceItems` call `propagateToListings` with what changed. eBay is revised in place (`lib/marketplaces/ebay/revise.ts`: `bulk_update_price_quantity` for price/quantity, which answers 200 even when a line fails so check `responses[]`; title/description by GET + PUT of the inventory item, dropping read-only fields, plus the offer's `listingDescription`). Assisted sites get `marketplace_listings.sync_status = 'pending'` with `pending_changes`; failures get `failed` + `sync_error` and a Retry. The crosslist panel's `SyncNotice` shows each listing's state. Applying pending changes on assisted sites through the extension is not built yet; the seller opens the site and taps Done.
 - **Overpriced alerts** need sold comps, which come with the CompAmp merge.
 
+### Emails (Resend)
+
+- `lib/email/`: `sendEmail` posts to Resend with `RESEND_API_KEY`, from `RESEND_FROM` (default `FlipLedger <noreply@emoneydeals.com>`; the domain must be verified in Resend). Templates are inline-styled and left-aligned.
+- Daily cron `/api/cron/daily-emails` (14:00 UTC = 9am ET): on Sundays the weekly recap (`lib/recap.ts`, skipped for quiet weeks), every day the quarterly tax reminder 7 days and 1 day before a due date (skipped when there's nothing to set aside). `email_log` (service role only) makes each send happen once.
+- Opt-outs: `settings.email_recap`, `settings.email_tax_reminders`, toggled in Settings, or one-click from the signed link `/api/email/unsubscribe?u&k&s` (HMAC with `CRON_SECRET`; public path in `proxy.ts`; also sent as `List-Unsubscribe`).
+- Settings → "Email me this week's recap now" sends a recap immediately (good for checking Resend). `/recap` is the in-app recap screen.
+- Push notifications are not built: web push only works on iPhone once the app is on the home screen, and needs VAPID keys. The trip-saved toast covers the in-app part.
+
 ### Cross-listing
 
 - **Registry:** `lib/marketplaces/registry.ts` lists each marketplace's mode (`api` / `assisted`), sell URL, fee preset and photo limit.
