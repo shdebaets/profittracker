@@ -15,7 +15,7 @@ export function median(nums: number[]): number | null {
 }
 
 export type ActiveComp = { priceCents: number; shippingCents: number | null; title: string; condition: string | null; buyItNow: boolean; image?: string | null }
-export type SoldComp = { priceCents: number; shippingCents: number | null; soldOn: string; bestOffer: boolean; condition?: string | null }
+export type SoldComp = { priceCents: number; shippingCents: number | null; soldOn: string; bestOffer: boolean; condition?: string | null; overseas?: boolean }
 
 export type CompStats = {
   /** Every live listing of this exact product on eBay (not just the sample read). */
@@ -50,9 +50,9 @@ export const isNewCondition = (c: string | null | undefined) =>
  * (seen on UPC Night: $464-$494 with +$44 to +$70 shipping, while US sales were $345-$396).
  */
 export const MAX_SHIPPING_CENTS = 2500
-export const landed = (x: { priceCents: number; shippingCents: number | null }): number | null =>
-  x.shippingCents != null && x.shippingCents > MAX_SHIPPING_CENTS ? null : x.priceCents + (x.shippingCents ?? 0)
-const prices = (xs: { priceCents: number; shippingCents: number | null }[]) =>
+export const landed = (x: { priceCents: number; shippingCents: number | null; overseas?: boolean }): number | null =>
+  x.overseas || (x.shippingCents != null && x.shippingCents > MAX_SHIPPING_CENTS) ? null : x.priceCents + (x.shippingCents ?? 0)
+const prices = (xs: { priceCents: number; shippingCents: number | null; overseas?: boolean }[]) =>
   xs.map(landed).filter((p): p is number => p != null)
 
 /**
@@ -81,7 +81,7 @@ export function compStats(
   now = new Date(),
   liveTotal?: number,
   /** From the latest sold read: its rows (so older, patchier reads don't stretch the span) and eBay's own match count, already scaled by the share that was this product. */
-  soldRead?: { latest: SoldComp[]; total: number | null },
+  soldRead?: { latest: SoldComp[]; total: number | null; oldest?: string | null },
 ): CompStats {
   const bins = prices(active.filter((a) => a.buyItNow))
   // Best-offer sales show the list price, not what it sold for, so they're left out of prices.
@@ -89,14 +89,17 @@ export function compStats(
   // How far back the sales we have go. If they don't cover 30 days (a busy product: the newest few
   // hundred sales can be a couple of days), the 30-day count comes from the pace instead.
   const counted30 = sold.filter((x) => daysAgo(x.soldOn, now) <= 30).length
+  // Best case: the read reached eBay's last page, so we know how far back eBay's count goes.
+  // All of it inside 30 days (a new release) → the count is eBay's count. Otherwise spread it.
+  const counted = soldRead?.total && soldRead.oldest ? Math.round(soldRead.total * Math.min(1, 30 / Math.max(1, daysAgo(soldRead.oldest, now)))) : null
   // When the read already holds every sale eBay has for this search (Godzilla bucket: 111 read of
   // 110), there's nothing to project: the count is the count. Otherwise project from the pace.
   const readAll = !!soldRead?.total && soldRead.latest.length >= soldRead.total * 0.9
   const pace = readAll ? null : soldPace(soldRead?.latest.length ? soldRead.latest : sold, now)
-  const sold30Estimated = pace != null && pace > counted30
-  let sold30 = sold30Estimated ? pace : counted30
+  const sold30Estimated = counted != null ? daysAgo(soldRead!.oldest!, now) > 30 : pace != null && pace > counted30
+  let sold30: number = counted != null ? Math.max(counted, counted30) : sold30Estimated && pace != null ? pace : counted30
   // eBay's sold count covers ~90 days, so a projected 30-day number can't be higher than it.
-  if (sold30Estimated && soldRead?.total) sold30 = Math.max(counted30, Math.min(sold30, soldRead.total))
+  if (counted == null && sold30Estimated && soldRead?.total) sold30 = Math.max(counted30, Math.min(sold30, soldRead.total))
   const sold90 = Math.max(sold.filter((x) => daysAgo(x.soldOn, now) <= 90).length, sold30Estimated ? sold30 : 0)
   const soldMedian30 = median(priced(30))
   const soldMedian90 = median(priced(90))
