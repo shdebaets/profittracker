@@ -1,4 +1,5 @@
 import { PageTitle } from "@/components/app-header"
+import { CompCalcTabs } from "@/components/comp-calc-tabs"
 import type { CompStats } from "@/lib/comps/stats"
 import { requireUser } from "@/lib/supabase/server"
 import { CompView, type Tracked } from "./comp-view"
@@ -10,6 +11,7 @@ export default async function CompPage({ searchParams }: PageProps<"/comp">) {
   return (
     <>
       <PageTitle title="Scan to Comp" subtitle="Know what it sells for before you buy" />
+      <CompCalcTabs active="comp" />
       <CompView tracked={tracked} initialQuery={typeof params.q === "string" ? params.q : ""} />
     </>
   )

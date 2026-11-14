@@ -1,7 +1,7 @@
 "use client"
 
 import { BarChart3, Bookmark, Loader2, PackagePlus, RefreshCw, ScanBarcode, Search, Trash2 } from "lucide-react"
-import { useCallback, useState, useTransition } from "react"
+import { useCallback, useEffect, useRef, useState, useTransition } from "react"
 import { toast } from "sonner"
 import { compLookup, refreshTracked, saveSoldComps, trackProduct, untrackProduct } from "@/app/(app)/actions/comps"
 import { useEntry } from "@/components/entry/entry-provider"
@@ -53,6 +53,14 @@ export function CompView({ tracked, initialQuery }: { tracked: Tracked[]; initia
       }
     })
   }, [])
+
+  // Opened with ?q= (header search, the calculator's "Full comp"): run it right away.
+  const ranInitial = useRef(false)
+  useEffect(() => {
+    if (ranInitial.current || initialQuery.trim().length < 2) return
+    ranInitial.current = true
+    lookup(initialQuery)
+  }, [initialQuery, lookup])
 
   const onCode = useCallback(
     (code: string) => {

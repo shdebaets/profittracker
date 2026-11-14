@@ -1,23 +1,26 @@
 "use client"
 
-import { Calculator, LayoutGrid, Plus, Receipt, ShoppingBag } from "lucide-react"
+import { LayoutGrid, Plus, Receipt, ScanBarcode, ShoppingBag } from "lucide-react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { useEntry } from "@/components/entry/entry-provider"
 import { cn } from "@/lib/utils"
 
 const TABS = [
-  { href: "/", label: "Dashboard", icon: LayoutGrid },
-  { href: "/calculator", label: "Calculator", icon: Calculator },
+  { href: "/", label: "Dashboard", icon: LayoutGrid, also: null },
+  // Scan to Comp and the Profit Calculator share this tab (switch at the top of either page).
+  { href: "/comp", label: "Comp", icon: ScanBarcode, also: "/calculator" },
   null,
-  { href: "/inventory", label: "Inventory", icon: ShoppingBag },
-  { href: "/expenses", label: "Expenses", icon: Receipt },
+  { href: "/inventory", label: "Inventory", icon: ShoppingBag, also: null },
+  { href: "/expenses", label: "Expenses", icon: Receipt, also: null },
 ] as const
 
 export function BottomNav({ inventoryCount, expenseCount }: { inventoryCount: number; expenseCount: number }) {
   const pathname = usePathname()
   const { openEntry } = useEntry()
   const badges: Record<string, number> = { "/inventory": inventoryCount, "/expenses": expenseCount }
+  const isActive = (t: { href: string; also: string | null }) =>
+    t.href === "/" ? pathname === "/" : pathname.startsWith(t.href) || (!!t.also && pathname.startsWith(t.also))
 
   return (
     <nav className="fixed inset-x-0 bottom-0 z-40 border-t bg-card/95 backdrop-blur pb-safe">
@@ -39,7 +42,7 @@ export function BottomNav({ inventoryCount, expenseCount }: { inventoryCount: nu
               <span
                 className={cn(
                   "relative grid size-11 place-items-center rounded-2xl transition",
-                  (t.href === "/" ? pathname === "/" : pathname.startsWith(t.href))
+                  isActive(t)
                     ? "bg-brand text-ink"
                     : "text-muted-foreground",
                 )}
@@ -54,7 +57,7 @@ export function BottomNav({ inventoryCount, expenseCount }: { inventoryCount: nu
               <span
                 className={cn(
                   "text-xs font-semibold",
-                  (t.href === "/" ? pathname === "/" : pathname.startsWith(t.href)) ? "text-brand" : "text-muted-foreground",
+                  isActive(t) ? "text-brand" : "text-muted-foreground",
                 )}
               >
                 {t.label}

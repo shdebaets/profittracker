@@ -6,7 +6,9 @@ import { PageTitle } from "@/components/app-header"
 import { useEntry } from "@/components/entry/entry-provider"
 import { FeePresetGrid } from "@/components/fee-preset-grid"
 import { FieldLabel, MoneyInput, Stepper } from "@/components/fields"
-import { formatCents, formatPct, toCents } from "@/lib/money"
+import { centsToInput, formatCents, formatPct, toCents } from "@/lib/money"
+import { CompCalcTabs } from "@/components/comp-calc-tabs"
+import { CompFill } from "@/components/comp-fill"
 import { calcSale, presetFor } from "@/lib/profit"
 import type { Platform } from "@/lib/types"
 import { cn } from "@/lib/utils"
@@ -71,6 +73,13 @@ export default function CalculatorPage() {
   return (
     <>
       <PageTitle title="Profit Calculator" subtitle="Know your margin before you buy or list" />
+      <CompCalcTabs active="calc" />
+      <CompFill
+        onPrice={(cents) => {
+          setPrice(centsToInput(cents))
+          setPlatform("ebay")
+        }}
+      />
       <AmountCard
         id="calc-cost" label="Item Cost (COG)" labelClass="text-amber-900"
         hint="What you paid per unit" value={cost} onChange={setCost}
