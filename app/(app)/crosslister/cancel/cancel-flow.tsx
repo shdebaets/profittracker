@@ -43,9 +43,9 @@ export function CancelFlow({
 
   const tiles = [
     { icon: PiggyBank, label: `Taxes saved in ${stats.year}`, value: formatCents(stats.savings), tone: "text-profit" },
-    { icon: Car, label: "Miles logged", value: stats.miles.toLocaleString("en-US") },
-    { icon: Receipt, label: "Expenses logged", value: formatCents(stats.expenseCents) },
-    { icon: Package, label: "Items tracked", value: stats.items.toLocaleString("en-US") },
+    { icon: Car, label: `Miles logged in ${stats.year}`, value: stats.miles.toLocaleString("en-US") },
+    { icon: Receipt, label: `Expenses logged in ${stats.year}`, value: formatCents(stats.expenseCents) },
+    { icon: Package, label: `Items bought in ${stats.year}`, value: stats.items.toLocaleString("en-US") },
   ]
 
   return (
@@ -61,14 +61,20 @@ export function CancelFlow({
       </div>
 
       <div className="rounded-3xl border border-brand/40 bg-brand-soft p-5 text-sm">
-        <p className="font-semibold">If you cancel, on {ends}:</p>
+        <p className="font-semibold">If you cancel, on {ends} these stop:</p>
         <ul className="mt-2 flex list-disc flex-col gap-1 pl-5">
-          <li>Cross-listing turns off. No more listing to eBay or auto-filling other sites.</li>
+          <li>Cross-listing: no more listing to eBay or auto-filling Facebook, Poshmark and Mercari.</li>
           <li>
-            Sales stop syncing and nothing gets delisted for you
-            {stats.liveListings > 0 ? `. You have ${stats.liveListings} live listing${stats.liveListings === 1 ? "" : "s"}, so a sale on one site won't take it down on the others` : ""}.
+            Auto-delist: a sale on one site won&apos;t take the item down on the others
+            {stats.liveListings > 0 ? ` (you have ${stats.liveListings} live listing${stats.liveListings === 1 ? "" : "s"})` : ""}.
           </li>
-          <li>Your history stays. You can still view and export your sales, mileage and taxes.</li>
+          <li>Smart Offers: no more automatic offers to interested buyers.</li>
+          <li>AI listing: no more writing listings from your photos.</li>
+        </ul>
+        <p className="mt-3 font-semibold">These stay, free:</p>
+        <ul className="mt-2 flex list-disc flex-col gap-1 pl-5">
+          <li>All your history: items, sales, lots, mileage, expenses and taxes.</li>
+          <li>Profit tracking, mileage, expenses and tax reports, like today.</li>
         </ul>
       </div>
 

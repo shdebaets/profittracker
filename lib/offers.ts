@@ -29,3 +29,22 @@ export function offerPrice(
   if (cents > listPriceCents * 0.95 || listPriceCents - cents < 100) return null
   return { cents, pct: Math.round((1 - cents / listPriceCents) * 100) }
 }
+
+const DAY = 86_400_000
+// The cron runs once a day at about the same time; an hour of slack keeps "every 1 day" daily.
+const CRON_SLACK_MS = 3_600_000
+
+/** "How often" is per listing: due when this listing has no offer yet, or its last one is `every_days` old. */
+export function offerDue(lastSentAt: string | undefined, everyDays: number, now = new Date()) {
+  return !lastSentAt || now.getTime() - Date.parse(lastSentAt) >= everyDays * DAY - CRON_SLACK_MS
+}
+
+/** Newest sent_at per listing, from rows ordered newest first (or any order). */
+export function lastSentByListing(rows: { listing_id: string; sent_at: string }[]) {
+  const last = new Map<string, string>()
+  for (const r of rows) {
+    const prev = last.get(r.listing_id)
+    if (!prev || Date.parse(r.sent_at) > Date.parse(prev)) last.set(r.listing_id, r.sent_at)
+  }
+  return last
+}

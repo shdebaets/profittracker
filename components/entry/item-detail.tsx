@@ -1,9 +1,11 @@
 "use client"
 
-import { CircleDollarSign, ExternalLink, Pencil, RotateCcw, Share2, Trash2, DollarSign } from "lucide-react"
+import { ChevronRight, CircleDollarSign, ExternalLink, Layers, Pencil, RotateCcw, Share2, Trash2, DollarSign } from "lucide-react"
+import Link from "next/link"
 import { useState, useTransition } from "react"
 import { toast } from "sonner"
 import { deleteItem, markReturned, setItemCost } from "@/app/(app)/actions/items"
+import { RefundForm } from "@/components/entry/refund-form"
 import { MoneyInput } from "@/components/fields"
 import { daysUntil, formatDate, formatDateTime } from "@/lib/dates"
 import { formatCents, formatPct, toCents } from "@/lib/money"
@@ -55,6 +57,8 @@ export function ItemDetail({
       ["Fees", formatCents(sale.fees)],
       ["Label / shipping", formatCents(sale.shipping)],
     )
+    if (item.sales_tax_cents) rows.push(["Sales tax (marketplace collected)", formatCents(item.sales_tax_cents)])
+    if (item.refund_cents) rows.push(["Refunded to buyer", formatCents(item.refund_cents)])
   }
 
   return (
@@ -115,6 +119,18 @@ export function ItemDetail({
           </div>
         ))}
       </dl>
+      {sale && <RefundForm item={item} onDone={onDone} />}
+      {item.haul_id && (
+        <Link
+          href={`/lots?lot=${item.haul_id}#lot-${item.haul_id}`}
+          onClick={onDone}
+          className="flex items-center gap-3 rounded-2xl border bg-card px-4 py-3 text-sm"
+        >
+          <Layers className="size-4 shrink-0 text-brand" />
+          <span className="min-w-0 flex-1">Part of a lot. See what the whole lot cost and returned.</span>
+          <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
+        </Link>
+      )}
       {item.link_url && (
         <a href={item.link_url} target="_blank" rel="noopener noreferrer"
           className="flex items-center gap-2 truncate text-sm font-semibold text-profit">

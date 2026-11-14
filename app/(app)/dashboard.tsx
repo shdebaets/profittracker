@@ -20,8 +20,8 @@ import { cn } from "@/lib/utils"
 const SHORT_RANGE: Record<Range, string> = { all: "All Time", today: "Today", week: "Week", month: "Month" }
 
 export function Dashboard({
-  items, expenses, subs, settings,
-}: { items: Item[]; expenses: Expense[]; subs: Subscription[]; settings: Settings }) {
+  items, expenses, subs, settings, yearlyBanner,
+}: { items: Item[]; expenses: Expense[]; subs: Subscription[]; settings: Settings; yearlyBanner?: React.ReactNode }) {
   const [range, setRange] = useState<Range>("all")
   const { openEntry, openItem } = useEntry()
   useSyncItems(items)
@@ -45,6 +45,7 @@ export function Dashboard({
       </PageTitle>
 
       <DelistAlerts items={items} />
+      {yearlyBanner}
 
       <Segmented
         value={range}

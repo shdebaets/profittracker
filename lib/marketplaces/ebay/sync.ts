@@ -40,6 +40,10 @@ export async function syncEbaySales(admin: SupabaseClient, userId: string) {
       external_order_id: line.orderId,
       user_id: userId,
       item_id: item.id,
+      // What the buyer paid, so Smart Offers can credit an offer with the real sale.
+      sale_cents: line.salePriceCents,
+      quantity: line.quantity,
+      sold_at: new Date(line.soldAt).toISOString(),
     })
     if (claimErr) continue // already processed (unique violation)
 
@@ -63,6 +67,7 @@ export async function syncEbaySales(admin: SupabaseClient, userId: string) {
           label_cost_cents: 0,
           fee_pct: 0,
           fee_fixed_cents: line.feeCents + adFee,
+          sales_tax_cents: line.salesTaxCents,
           platform: "ebay",
           sold_at: new Date(line.soldAt).toISOString(),
         },

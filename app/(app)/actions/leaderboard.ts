@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache"
 import { z } from "zod"
 import { UserError } from "@/lib/errors"
 import { monthLabel, monthOf, prevMonth } from "@/lib/leaderboard"
-import { sellerMonth } from "@/lib/leaderboard-data"
+import { sellerMonth, cardBadges } from "@/lib/leaderboard-data"
 import { formatCents } from "@/lib/money"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { requireUser } from "@/lib/supabase/server"
@@ -48,7 +48,7 @@ export async function postWinToDiscord(which: "this" | "last"): Promise<ActionRe
     if (totals.profit <= 0) throw new UserError("Post a win once you've got profit this month.")
     const { data: profile } = await supabase.from("leaderboard_profiles").select("display_name").maybeSingle()
     const name = profile?.display_name ?? "A FlipLedger seller"
-    const png = await winCard({ name, month: monthLabel(m), ...totals }).arrayBuffer()
+    const png = await winCard({ name, month: monthLabel(m), badges: await cardBadges(supabase, m), ...totals }).arrayBuffer()
 
     const form = new FormData()
     form.append(

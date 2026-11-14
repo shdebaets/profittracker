@@ -2,7 +2,7 @@ import { getItems, getSettings } from "@/lib/data"
 import { requireUser } from "@/lib/supabase/server"
 import { InventoryView, type Chip } from "./inventory-view"
 
-const CHIPS: Chip[] = ["returns", "unlisted", "cost", "stale"]
+const CHIPS: Chip[] = ["returns", "unlisted", "cost", "stale", "sync"]
 
 export default async function InventoryPage({ searchParams }: PageProps<"/inventory">) {
   const [items, params, { email }, settings] = await Promise.all([getItems(), searchParams, requireUser(), getSettings()])

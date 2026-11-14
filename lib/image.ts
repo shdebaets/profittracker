@@ -12,11 +12,11 @@ export function fitWithin(w: number, h: number, max = MAX_PHOTO_EDGE): { width: 
  * Resize a picked photo to a ~300 KB JPEG in the browser. createImageBitmap
  * decodes iPhone HEIC (Safari) and honours EXIF orientation.
  */
-export async function compressImage(file: File, quality = 0.82): Promise<Blob> {
+export async function compressImage(file: File, quality = 0.82, maxEdge = MAX_PHOTO_EDGE): Promise<Blob> {
   const bitmap = await createImageBitmap(file, { imageOrientation: "from-image" }).catch(() => {
     throw new UserError(`"${file.name}" couldn't be read. Try a JPG or PNG, or take the photo again.`)
   })
-  const { width, height } = fitWithin(bitmap.width, bitmap.height)
+  const { width, height } = fitWithin(bitmap.width, bitmap.height, maxEdge)
   const canvas = document.createElement("canvas")
   canvas.width = width
   canvas.height = height

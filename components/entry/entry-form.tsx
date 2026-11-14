@@ -45,6 +45,7 @@ function initialFromItem(item: Item) {
     qty: item.quantity,
     buyerShip: centsToInput(item.buyer_shipping_cents),
     labelCost: centsToInput(item.label_cost_cents),
+    salesTax: item.sales_tax_cents ? centsToInput(item.sales_tax_cents) : "",
     platform: (item.platform ?? "cash") as Platform,
     customPct: isCustom ? String(+(Number(item.fee_pct) * 100).toFixed(3)) : "",
     returnable: item.returnable,
@@ -67,6 +68,7 @@ export function EntryForm(props: Props) {
         qty: props.variant === "create" ? (props.prefill?.qty ?? 1) : 1,
         buyerShip: props.variant === "create" ? (props.prefill?.buyerShip ?? "") : "",
         labelCost: props.variant === "create" ? (props.prefill?.labelCost ?? "") : "",
+        salesTax: "",
         platform: (props.variant === "create" ? props.prefill?.platform : undefined) ?? ("cash" as Platform),
         customPct: props.variant === "create" ? (props.prefill?.customPct ?? "") : "",
         returnable: false, returnDeadline: "", purchasedAt: toDateInput(new Date()),
@@ -77,6 +79,9 @@ export function EntryForm(props: Props) {
     props.variant === "create" ? (props.initialMode ?? "sold") : props.variant === "sell" ? "sold" : (item!.status === "sold" ? "sold" : "inventory"),
   )
   const [title, setTitle] = useState(init.title)
+  // Editing stock: the listing description, so a change reaches every live listing too.
+  const editsDescription = props.variant === "edit" && props.item.status === "inventory"
+  const [description, setDescription] = useState(item?.description ?? "")
   const [link, setLink] = useState(init.link)
   const [showLink, setShowLink] = useState(!!init.link)
   const [store, setStore] = useState(init.store)
@@ -85,9 +90,10 @@ export function EntryForm(props: Props) {
   const [qty, setQty] = useState(props.variant === "sell" ? 1 : init.qty)
   const [buyerShip, setBuyerShip] = useState(init.buyerShip)
   const [labelCost, setLabelCost] = useState(init.labelCost)
+  const [salesTax, setSalesTax] = useState(init.salesTax)
   const [platform, setPlatform] = useState<Platform>(init.platform)
   const [customPct, setCustomPct] = useState(init.customPct)
-  const [showMore, setShowMore] = useState(!!(init.buyerShip || init.labelCost || init.platform !== "cash"))
+  const [showMore, setShowMore] = useState(!!(init.buyerShip || init.labelCost || init.salesTax || init.platform !== "cash"))
   const [returnable, setReturnable] = useState(init.returnable)
   const [returnDeadline, setReturnDeadline] = useState(init.returnDeadline)
   const [purchasedAt, setPurchasedAt] = useState(init.purchasedAt)
@@ -149,6 +155,7 @@ export function EntryForm(props: Props) {
       salePriceCents: toCents(price),
       buyerShippingCents: toCents(buyerShip),
       labelCostCents: toCents(labelCost),
+      salesTaxCents: toCents(salesTax),
       feePct,
       feeFixedCents: feeFixed,
       platform,
@@ -181,6 +188,9 @@ export function EntryForm(props: Props) {
           returnDeadline: returnable ? returnDeadline || null : null,
           purchasedAt: item && purchasedAt === init.purchasedAt ? item.purchased_at : dateInputToIso(purchasedAt),
           photoPaths: photos.map((p) => p.path),
+          description: editsDescription && mode === "inventory" ? description : undefined,
+          // A new inventory item can carry the price it should sell for (Scan to Comp's "I bought it").
+          ...(!isSale && props.variant === "create" && toCents(price) > 0 ? { listPriceCents: toCents(price) } : {}),
           sale: isSale
             ? {
                 ...saleInput,
@@ -276,6 +286,19 @@ export function EntryForm(props: Props) {
               onUploadingChange={setUploading}
             />
           </div>
+          {editsDescription && mode === "inventory" && (
+            <div>
+              <FieldLabel htmlFor="description">Listing Description <span className="font-normal text-muted-foreground">(Optional)</span></FieldLabel>
+              <textarea
+                id="description" rows={3} value={description} onChange={(e) => setDescription(e.target.value)}
+                placeholder="Measurements, flaws, details buyers ask about"
+                className="w-full rounded-2xl border bg-muted/60 px-4 py-3 text-base outline-none focus:border-brand focus:bg-card focus:ring-2 focus:ring-brand/20"
+              />
+              {item!.listings.some((l) => l.status === "active") && (
+                <p className="mt-1 text-xs text-muted-foreground">Changes go to your live listings too.</p>
+              )}
+            </div>
+          )}
           <div>
             <FieldLabel htmlFor="cost">Purchase Cost (COG) {qty > 1 && <span className="font-normal text-muted-foreground">per unit</span>}</FieldLabel>
             <MoneyInput id="cost" big value={cost} onChange={setCost} />
@@ -295,6 +318,12 @@ export function EntryForm(props: Props) {
         <div className="rounded-2xl border border-brand/40 bg-brand-soft p-4">
           <p className="font-bold text-brand">Inventory Item</p>
           <p className="text-sm text-muted-foreground">Sale price will be recorded when this item is marked as sold.</p>
+          {props.variant === "create" && props.prefill?.price && (
+            <div className="mt-3">
+              <FieldLabel htmlFor="list-price">Expected sale price</FieldLabel>
+              <MoneyInput id="list-price" value={price} onChange={setPrice} />
+            </div>
+          )}
         </div>
       )}
 
@@ -362,6 +391,11 @@ export function EntryForm(props: Props) {
                   <FieldLabel>Your label cost</FieldLabel>
                   <MoneyInput value={labelCost} onChange={setLabelCost} placeholder="0" />
                 </div>
+              </div>
+              <div>
+                <FieldLabel>Sales tax the marketplace collected <span className="font-normal text-muted-foreground">(Optional)</span></FieldLabel>
+                <MoneyInput value={salesTax} onChange={setSalesTax} placeholder="0" />
+                <p className="mt-1 text-xs text-muted-foreground">Not your income, but it shows up on your 1099-K. eBay sales fill this in for you.</p>
               </div>
             </>
           )}

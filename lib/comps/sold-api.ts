@@ -132,6 +132,15 @@ export async function lastSoldRead(query: string): Promise<{ at: string; total: 
   return { at: data.fetched_at, total: Number.isFinite(total) && total > 0 ? total : null, within30: Number.isFinite(w) && w > 0 ? w : null }
 }
 
+export const soldDailyLimit = dailyLimit
+
+/** Paid sold-data requests made in the last 24 hours (browser reads count 0). */
+export async function soldRequestsToday(): Promise<number> {
+  const since = new Date(Date.now() - 86_400_000).toISOString()
+  const { data: today } = await createAdminClient().from("comp_cache").select("payload").like("key", "sold%").gte("fetched_at", since).limit(5000)
+  return (today ?? []).reduce((n, r) => n + (Number((r.payload as { requests?: number })?.requests ?? 1) || 0), 0)
+}
+
 /**
  * Reads sold listings for a search into comp_sales (shared) unless this search was read in the
  * last 12 hours or the daily cap is used up. Returns how many rows it saved (0 when skipped).
@@ -145,10 +154,7 @@ export async function refreshSoldFromApi(query: string, searches?: string[]): Pr
   const key = soldKey(query)
   const { data: last } = await admin.from("comp_cache").select("fetched_at").eq("key", key).maybeSingle()
   if (last && Date.now() - Date.parse(last.fetched_at) < SOLD_TTL_MS) return 0
-  const since = new Date(Date.now() - 86_400_000).toISOString()
-  const { data: today } = await admin.from("comp_cache").select("payload").like("key", "sold%").gte("fetched_at", since).limit(5000)
-  const used = (today ?? []).reduce((n, r) => n + (Number((r.payload as { requests?: number })?.requests) || 1), 0)
-  if (used >= dailyLimit()) {
+  if ((await soldRequestsToday()) >= dailyLimit()) {
     console.warn("[sold data] daily limit reached", dailyLimit())
     return 0
   }
@@ -176,6 +182,8 @@ export async function refreshSoldFromApi(query: string, searches?: string[]): Pr
         if (res.total != null) total = Math.max(total ?? 0, res.total)
         const got = res.items.map(toSoldRow).filter((r): r is SoldRow => !!r)
         rows.push(...got)
+        if (page === 1 && n === 0 && res.items[0] && typeof res.items[0] === "object")
+          console.log("[sold data] fields", Object.keys(res.items[0] as object).join(","))
         if (page === 1 && n === 0)
           console.log("[sold data] sample", JSON.stringify(res.items.slice(0, 8).map((x) => {
             const o = x as Record<string, unknown>

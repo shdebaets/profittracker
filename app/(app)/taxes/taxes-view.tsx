@@ -1,19 +1,21 @@
 "use client"
 
-import { Car, Download, FileText, Info, PiggyBank, Printer } from "lucide-react"
+import { Car, Download, FileText, Info, PiggyBank, Printer, Trash2 } from "lucide-react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useState, useTransition } from "react"
 import { toast } from "sonner"
 import { saveTaxForm } from "@/app/(app)/actions/expenses"
-import { MoneyInput, NativeSelect } from "@/components/fields"
-import { exportCsv } from "@/lib/csv"
+import { addCancelledSale, deleteCancelledSale } from "@/app/(app)/actions/tax"
+import { MoneyInput, NativeSelect, TextInput } from "@/components/fields"
+import { exportCsv, shareOrDownload } from "@/lib/csv"
 import { centsToInput, formatCents, toCents } from "@/lib/money"
 import {
-  estimatedTax, irsQuarters, ISSUES_1099K, mileageLog, periodReport, reconcile, scheduleC,
-  TAX_DISCLAIMER, TAX_PLATFORM_LABELS, taxSavings, yearReport, type ReconcileRow, type TaxPlatform,
+  estimatedTax, gapBreakdown, irsQuarters, ISSUES_1099K, mileageLog, periodReport, reconcile, scheduleC,
+  TAX_DISCLAIMER, TAX_PLATFORM_LABELS, taxSavings, yearPeriod, yearReport, type GapStep, type ReconcileRow, type TaxPlatform,
 } from "@/lib/tax"
-import type { Expense, Item, Settings, Subscription } from "@/lib/types"
+import { toDateInput } from "@/lib/dates"
+import type { CancelledSale, Expense, Item, Settings, Subscription } from "@/lib/types"
 import { cn } from "@/lib/utils"
 
 type Props = {
@@ -23,15 +25,21 @@ type Props = {
   subs: Subscription[]
   settings: Settings
   forms: Partial<Record<TaxPlatform, number>>
+  cancelled: CancelledSale[]
+  email: string
 }
 
 const usd = (c: number) => (c / 100).toFixed(2)
 
-export function TaxesView({ year, items, expenses, subs, settings, forms }: Props) {
+export function TaxesView({ year, items, expenses, subs, settings, forms, cancelled, email }: Props) {
   const router = useRouter()
+  const [making, startPdf] = useTransition()
   const now = new Date()
-  const report = yearReport(items, expenses, subs, year, now)
+  const report = yearReport(items, expenses, subs, year, now, cancelled)
   const rows = reconcile(report, forms)
+  const steps = gapBreakdown(report, rows)
+  const period = yearPeriod(year)
+  const yearCancelled = cancelled.filter((c) => new Date(c.cancelled_at) >= period.from && new Date(c.cancelled_at) < period.to)
   const lines = scheduleC(report)
   const { savings, deductions } = taxSavings(report, settings.tax_bracket)
   const reportedTotal = rows.reduce((a, r) => a + r.reported, 0)
@@ -92,6 +100,7 @@ export function TaxesView({ year, items, expenses, subs, settings, forms }: Prop
             <p className="text-xs text-muted-foreground">Net profit, all sales</p>
           </div>
         </div>
+        {(rows.length > 0 || report.totals.sales > 0) && <GapWaterfall steps={steps} />}
         {rows.length === 0 ? (
           <p className="text-sm text-muted-foreground">No marketplace sales logged for {year} yet.</p>
         ) : (
@@ -107,9 +116,7 @@ export function TaxesView({ year, items, expenses, subs, settings, forms }: Prop
             {report.unknownCostSales} sale{report.unknownCostSales === 1 ? " has" : "s have"} no cost entered, so your COGS is too low. Add costs →
           </Link>
         )}
-        <p className="text-xs text-muted-foreground">
-          Poshmark can count cancelled sales on your 1099-K. If yours is higher than what&apos;s logged here, that&apos;s a common reason.
-        </p>
+        <CancelledSales year={year} sales={yearCancelled} />
       </section>
 
       <Quarterly items={items} expenses={expenses} subs={subs} settings={settings} year={year} />
@@ -133,13 +140,24 @@ export function TaxesView({ year, items, expenses, subs, settings, forms }: Prop
           ))}
         </div>
         <div className="grid grid-cols-2 gap-2">
-          <Link
-            href={`/tax-report/${year}`}
-            target="_blank"
-            className="flex h-12 items-center justify-center gap-2 rounded-2xl bg-ink font-bold text-white"
+          <button
+            disabled={making}
+            onClick={() =>
+              startPdf(async () => {
+                try {
+                  const { buildTaxPdf } = await import("@/lib/tax-pdf")
+                  const bytes = await buildTaxPdf({ year, email, items, expenses, subs, bracket: settings.tax_bracket, forms, cancelled })
+                  await shareOrDownload(new Blob([bytes as BlobPart], { type: "application/pdf" }), `flipledger-tax-report-${year}.pdf`)
+                } catch (e) {
+                  console.error(e)
+                  toast.error("Couldn't make the PDF. Try the print view instead.")
+                }
+              })
+            }
+            className="flex h-12 items-center justify-center gap-2 rounded-2xl bg-ink font-bold text-white disabled:opacity-60"
           >
-            <Printer className="size-4" /> PDF report
-          </Link>
+            <FileText className="size-4" /> {making ? "Making PDF…" : "PDF report"}
+          </button>
           <button
             onClick={() =>
               exportCsv(`flipledger-schedule-c-${year}.csv`, lines.map((l) => ({ Line: l.line, Description: l.label, Amount: usd(l.cents) })))
@@ -165,6 +183,9 @@ export function TaxesView({ year, items, expenses, subs, settings, forms }: Prop
             <Car className="size-4" /> Mileage log
           </button>
         </div>
+        <Link href={`/tax-report/${year}`} target="_blank" className="flex items-center gap-1.5 self-center text-sm font-semibold text-muted-foreground">
+          <Printer className="size-4" /> Print view
+        </Link>
       </section>
     </>
   )
@@ -180,6 +201,7 @@ function PlatformRow({ row: r, year }: { row: ReconcileRow; year: number }) {
       else toast.success(grossCents === null ? "Cleared" : "1099-K total saved")
     })
   const gap: [string, number][] = [
+    ["Refunds to buyers", r.refunds],
     ["Platform fees", r.fees],
     ["Shipping labels", r.labels],
     ["Cost of goods sold", r.cogs],
@@ -207,14 +229,17 @@ function PlatformRow({ row: r, year }: { row: ReconcileRow; year: number }) {
         </button>
       </form>
       <div className="mt-3 flex flex-col gap-1 font-mono text-xs">
-        <Row label={r.reportedEntered ? "1099-K gross" : "Gross (logged, no 1099-K entered)"} cents={r.reported} />
+        <Row label={r.reportedEntered ? "1099-K gross" : "Expected 1099-K gross (none entered)"} cents={r.reported} />
+        {r.salesTax > 0 && <Row label="− Sales tax the marketplace collected" cents={-r.salesTax} muted />}
+        {r.cancelled > 0 && <Row label="− Cancelled sales" cents={-r.cancelled} muted />}
         {r.reportedEntered && r.unexplained !== 0 && (
           <Row
-            label={r.unexplained > 0 ? "Sales tax or sales not logged here" : "Logged here but not on the 1099-K"}
+            label={r.unexplained > 0 ? "− On the 1099-K but not logged here" : "+ Logged here but not on the 1099-K"}
             cents={-r.unexplained}
             muted
           />
         )}
+        <Row label="Gross sales logged" cents={r.trackedGross} />
         {r.shippingCollected > 0 && (
           <p className="text-muted-foreground">Includes {formatCents(r.shippingCollected)} shipping buyers paid, offset by your labels below</p>
         )}
@@ -237,7 +262,7 @@ function Row({ label, cents, muted }: { label: string; cents: number; muted?: bo
   )
 }
 
-function Quarterly({ items, expenses, subs, settings, year }: Omit<Props, "forms">) {
+function Quarterly({ items, expenses, subs, settings, year }: Omit<Props, "forms" | "cancelled" | "email">) {
   const now = new Date()
   const quarters = irsQuarters(year)
   return (
@@ -296,4 +321,107 @@ function salesRows(items: Item[], year: number) {
         Profit: usd(r.totals.net),
       }
     })
+}
+
+function GapWaterfall({ steps }: { steps: GapStep[] }) {
+  return (
+    <div className="rounded-2xl border">
+      <p className="border-b px-3 py-2 text-xs font-bold tracking-wide text-muted-foreground uppercase">Where the difference goes (estimate)</p>
+      <div className="divide-y font-mono text-xs">
+        {steps.map((s) => (
+          <div
+            key={s.label}
+            className={cn(
+              "flex justify-between gap-3 px-3 py-2",
+              s.kind === "minus" && "text-muted-foreground",
+              s.kind === "subtotal" && "bg-muted/40 font-semibold",
+              s.kind === "start" && "font-semibold",
+              s.kind === "end" && "bg-profit-soft font-bold",
+            )}
+          >
+            <span className="min-w-0 font-sans">{s.kind === "minus" ? (s.cents < 0 ? "+ " : "− ") : ""}{s.label}</span>
+            <span className={cn("shrink-0", s.kind === "end" && (s.cents < 0 ? "text-loss" : "text-profit"))}>
+              {formatCents(s.kind === "minus" ? Math.abs(s.cents) : s.cents)}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+const CANCEL_PLATFORMS: TaxPlatform[] = ["poshmark", "mercari", "ebay", "facebook", "depop"]
+
+function CancelledSales({ year, sales }: { year: number; sales: CancelledSale[] }) {
+  const [open, setOpen] = useState(false)
+  const [platform, setPlatform] = useState<TaxPlatform>("poshmark")
+  const [amount, setAmount] = useState("")
+  const [date, setDate] = useState(() => toDateInput(new Date()))
+  const [title, setTitle] = useState("")
+  const [pending, start] = useTransition()
+  const total = sales.reduce((a, c) => a + c.gross_cents, 0)
+
+  return (
+    <div className="flex flex-col gap-2 rounded-2xl border p-4">
+      <div className="flex items-baseline justify-between gap-2">
+        <p className="font-bold">Cancelled sales</p>
+        {total > 0 && <p className="font-mono text-sm text-muted-foreground">{formatCents(total)}</p>}
+      </div>
+      <p className="text-xs text-muted-foreground">
+        Poshmark can count cancelled sales on your 1099-K even though you were never paid. Log them so they come off what the IRS sees.
+      </p>
+      {sales.map((c) => (
+        <div key={c.id} className="flex items-center gap-2 text-sm">
+          <span className="min-w-0 flex-1 truncate">
+            {TAX_PLATFORM_LABELS[c.platform]} · {new Date(c.cancelled_at).toLocaleDateString("en-US")}
+            {c.title ? ` · ${c.title}` : ""}
+          </span>
+          <span className="font-mono">{formatCents(c.gross_cents)}</span>
+          <button
+            aria-label="Delete cancelled sale"
+            disabled={pending}
+            onClick={() =>
+              start(async () => {
+                const res = await deleteCancelledSale(c.id)
+                if (!res.ok) toast.error(res.error)
+              })
+            }
+            className="p-1 text-muted-foreground"
+          >
+            <Trash2 className="size-4" />
+          </button>
+        </div>
+      ))}
+      {open ? (
+        <form
+          className="mt-1 flex flex-col gap-2"
+          onSubmit={(e) => {
+            e.preventDefault()
+            start(async () => {
+              const res = await addCancelledSale({ platform, grossCents: toCents(amount), cancelledAt: `${date}T12:00:00`, title })
+              if (!res.ok) return void toast.error(res.error)
+              toast.success("Cancelled sale logged")
+              setAmount("")
+              setTitle("")
+              setOpen(false)
+            })
+          }}
+        >
+          <div className="grid grid-cols-2 gap-2">
+            <NativeSelect value={platform} onChange={(e) => setPlatform(e.target.value as TaxPlatform)} aria-label="Marketplace">
+              {CANCEL_PLATFORMS.map((p) => <option key={p} value={p}>{TAX_PLATFORM_LABELS[p]}</option>)}
+            </NativeSelect>
+            <TextInput type="date" aria-label="Date" value={date} min={`${year}-01-01`} onChange={(e) => setDate(e.target.value)} />
+          </div>
+          <MoneyInput value={amount} onChange={setAmount} placeholder="Sale amount" />
+          <TextInput placeholder="Item (optional)" value={title} onChange={(e) => setTitle(e.target.value)} maxLength={200} />
+          <button disabled={pending || !amount.trim()} className="h-12 rounded-2xl bg-brand font-bold text-ink disabled:opacity-60">
+            Save cancelled sale
+          </button>
+        </form>
+      ) : (
+        <button onClick={() => setOpen(true)} className="self-start text-sm font-semibold text-brand">+ Log a cancelled sale</button>
+      )}
+    </div>
+  )
 }

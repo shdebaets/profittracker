@@ -300,7 +300,7 @@ function useRun() {
   return [pending, run] as const
 }
 
-function LiveActions({ listing, m, title }: { listing: Listing; m: Marketplace; title: string }) {
+function LiveActions({ listing, m, title, photoUrls = [] }: { listing: Listing; m: Marketplace; title: string; photoUrls?: string[] }) {
   const [pending, run] = useRun()
   const ext = useExtension()
   const api = m.mode === "api"
@@ -349,7 +349,7 @@ function LiveActions({ listing, m, title }: { listing: Listing; m: Marketplace; 
   }
   return (
     <div className="grid grid-cols-2 gap-2">
-      <SyncNotice listing={listing} m={m} url={url} title={title} />
+      <SyncNotice listing={listing} m={m} url={url} title={title} photoUrls={photoUrls} />
       <a href={url} target="_blank" rel="noopener noreferrer" className="flex h-11 items-center justify-center gap-1.5 rounded-xl border font-semibold">
         View <ExternalLink className="size-4" />
       </a>
@@ -377,7 +377,7 @@ function LiveActions({ listing, m, title }: { listing: Listing; m: Marketplace; 
 }
 
 /** Edit once, update everywhere: what still has to reach this site. */
-function SyncNotice({ listing, m, url, title }: { listing: Listing; m: Marketplace; url: string; title: string }) {
+function SyncNotice({ listing, m, url, title, photoUrls }: { listing: Listing; m: Marketplace; url: string; title: string; photoUrls: string[] }) {
   const [pending, run] = useRun()
   const ext = useExtension()
   // The extension can open this listing's edit page and fill the changes (0.9.0+).
@@ -419,6 +419,8 @@ function SyncNotice({ listing, m, url, title }: { listing: Listing; m: Marketpla
                 url: listing.external_url!,
                 title,
                 changes: listing.pending_changes ?? {},
+                // New photos ride along (signed links); extension 0.11.0+ adds them to the edit form.
+                photoUrls: listing.pending_changes?.photoPaths?.length ? photoUrls : undefined,
               })
             }
             className="flex h-10 items-center justify-center gap-1 rounded-lg border bg-card font-semibold"
@@ -459,7 +461,7 @@ function AssistedRow({
   const live = listing && ["active", "delist_pending", "error"].includes(listing.status)
   return (
     <RowShell m={m} status={statusChip(listing)} open={open} onToggle={() => setOpen((o) => !o)}>
-      {live ? <LiveActions listing={listing} m={m} title={item.title ?? ""} /> : item.status === "inventory" && <ListingKit item={item} m={m} draft={draft} saveDraft={saveDraft} hints={hints} />}
+      {live ? <LiveActions listing={listing} m={m} title={item.title ?? ""} photoUrls={item.photo_urls} /> : item.status === "inventory" && <ListingKit item={item} m={m} draft={draft} saveDraft={saveDraft} hints={hints} />}
     </RowShell>
   )
 }
@@ -603,7 +605,7 @@ function EbayRow({
   if (live)
     body = (
       <>
-        <LiveActions listing={listing} m={m} title={item.title ?? ""} />
+        <LiveActions listing={listing} m={m} title={item.title ?? ""} photoUrls={item.photo_urls} />
         {listing.status === "active" && status?.connected && <EbayPromoteLive listing={listing} status={status} />}
       </>
     )

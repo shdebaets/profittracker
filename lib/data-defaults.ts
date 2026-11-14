@@ -9,4 +9,7 @@ export const DEFAULT_SETTINGS: Settings = {
   stale_days: 60,
   email_recap: true,
   email_tax_reminders: true,
+  email_alerts: true,
+  push_recap: true,
+  push_tax_reminders: true,
 }

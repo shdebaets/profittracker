@@ -1,6 +1,6 @@
 "use client"
 
-import { CheckCircle2, Clock, Package, RotateCcw, ShoppingBag } from "lucide-react"
+import { Check, CheckCircle2, Clock, Package, RotateCcw, ShoppingBag } from "lucide-react"
 import { useTransition } from "react"
 import { toast } from "sonner"
 import { markReturned } from "@/app/(app)/actions/items"
@@ -11,7 +11,8 @@ import type { Item } from "@/lib/types"
 import { cn } from "@/lib/utils"
 import { ListingBadges } from "./crosslist/listing-badges"
 
-export function ItemCard({ item, onOpen }: { item: Item; onOpen: () => void }) {
+/** `selected` (true/false) shows the card as pickable for bulk actions; tapping then calls onOpen to toggle. */
+export function ItemCard({ item, onOpen, selected }: { item: Item; onOpen: () => void; selected?: boolean }) {
   const [pending, startTransition] = useTransition()
   const sale = item.status === "sold" ? itemSale(item) : null
   const when = item.status === "sold" ? item.sold_at! : item.purchased_at
@@ -21,9 +22,17 @@ export function ItemCard({ item, onOpen }: { item: Item; onOpen: () => void }) {
     : 1
 
   return (
-    <div className="overflow-hidden rounded-3xl border bg-card shadow-sm">
-      <button onClick={onOpen} className="block w-full p-4 text-left">
+    <div className={cn("overflow-hidden rounded-3xl border bg-card shadow-sm", selected && "border-brand ring-2 ring-brand/40")}>
+      <button onClick={onOpen} aria-pressed={selected} className="block w-full p-4 text-left">
         <div className="flex items-center gap-2 border-b pb-3">
+          {selected !== undefined && (
+            <span
+              aria-hidden
+              className={cn("grid size-6 shrink-0 place-items-center rounded-full border-2", selected ? "border-brand bg-brand text-ink" : "border-muted-foreground/40")}
+            >
+              {selected && <Check className="size-4" strokeWidth={3} />}
+            </span>
+          )}
           {item.status === "sold" ? (
             <span className="flex items-center gap-1 rounded-lg border border-profit/30 bg-profit-soft px-2 py-1 text-xs font-bold tracking-wide text-profit uppercase">
               <ShoppingBag className="size-3.5" /> Sold

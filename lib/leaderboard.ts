@@ -38,3 +38,23 @@ export function initialsFrom(email: string) {
   const parts = email.split("@")[0].split(/[._\-+0-9]+/).filter(Boolean)
   return (parts.slice(0, 2).map((p) => p[0]).join("") || "FL").toUpperCase()
 }
+
+export const BOARDS: Board[] = ["profit", "itemsSold", "miles"]
+export const BOARD_LABEL: Record<Board, string> = { profit: "Profit", itemsSold: "Items sold", miles: "Miles" }
+
+export type BadgeAward = { userId: string; year: number; month: number; board: Board; place: 1 | 2 | 3; name: string; value: number }
+
+/** The month's top 3 on each board. Ties keep the board's order (rank() sorts stably). */
+export function badgeAwards(rows: { userId: string; name: string; totals: MonthTotals }[], m: Month): BadgeAward[] {
+  return BOARDS.flatMap((board) =>
+    rank(rows, board)
+      .slice(0, 3)
+      .map((r) => ({ userId: r.userId, year: m.year, month: m.month, board, place: r.place as 1 | 2 | 3, name: r.name, value: r.totals[board] })),
+  )
+}
+
+/** Badges are awarded in the first days of a month for the month before (catches a missed cron). */
+export const badgeMonthDue = (now: Date): Month | null => (now.getUTCDate() <= 3 ? prevMonth(monthOf(now)) : null)
+
+export type Badge = { year: number; month: number; board: Board; place: number }
+export const badgeLabel = (b: Badge) => `#${b.place} ${BOARD_LABEL[b.board]} · ${new Date(Date.UTC(b.year, b.month, 15)).toLocaleString("en-US", { month: "short", year: "2-digit", timeZone: "UTC" })}`

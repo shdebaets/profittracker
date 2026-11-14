@@ -4,7 +4,7 @@
 
 import { itemSale } from "./profit"
 import type { MarketplaceId } from "./marketplaces/registry"
-import type { Expense, Item, Subscription } from "./types"
+import type { CancelledSale, Expense, Item, Subscription } from "./types"
 
 export const TAX_DISCLAIMER = "Estimates only. Not tax advice. Review with your tax professional."
 
@@ -51,6 +51,8 @@ export function salePlatform(item: Item): TaxPlatform {
       return "mercari"
     case "poshmark_amz":
       return "poshmark"
+    case "facebook":
+      return "facebook"
     case "cash":
       return "local"
     default:
@@ -70,6 +72,12 @@ export type PlatformTotals = {
   /** Item price × qty plus shipping the buyer paid: what the marketplace counts as gross. */
   gross: number
   shippingCollected: number
+  /** Sales tax the marketplace collected: on the 1099-K, never income. */
+  salesTax: number
+  /** Refunded to buyers after the sale. */
+  refunds: number
+  /** Cancelled sales that can still be counted on a 1099-K (gross). */
+  cancelled: number
   fees: number
   labels: number
   cogs: number
@@ -107,7 +115,7 @@ export type YearReport = {
 }
 
 function emptyTotals(): Omit<PlatformTotals, "platform"> {
-  return { sales: 0, gross: 0, shippingCollected: 0, fees: 0, labels: 0, cogs: 0, net: 0 }
+  return { sales: 0, gross: 0, shippingCollected: 0, salesTax: 0, refunds: 0, cancelled: 0, fees: 0, labels: 0, cogs: 0, net: 0 }
 }
 
 /** Range filter: [from, to) in local time. */
@@ -129,6 +137,7 @@ export function periodReport(
   subs: Subscription[],
   period: Period,
   now = new Date(),
+  cancelled: CancelledSale[] = [],
 ): Omit<YearReport, "year"> {
   const byPlatform = new Map<TaxPlatform, PlatformTotals>()
   const totals = emptyTotals()
@@ -143,6 +152,8 @@ export function periodReport(
       t.sales++
       t.gross += s.revenue
       t.shippingCollected += i.buyer_shipping_cents ?? 0
+      t.salesTax += i.sales_tax_cents ?? 0
+      t.refunds += i.refund_cents ?? 0
       t.fees += s.fees
       t.labels += s.shipping
       t.cogs += s.cog
@@ -150,6 +161,15 @@ export function periodReport(
     }
     byPlatform.set(p, row)
     if (i.cost_unknown) unknownCostSales++
+  }
+
+  for (const c of cancelled) {
+    if (!inPeriod(c.cancelled_at, period)) continue
+    const p = c.platform
+    const row = byPlatform.get(p) ?? { platform: p, ...emptyTotals() }
+    row.cancelled += c.gross_cents
+    totals.cancelled += c.gross_cents
+    byPlatform.set(p, row)
   }
 
   let miles = 0, trips = 0, mileageCents = 0, expenseCents = 0
@@ -191,8 +211,15 @@ export function periodReport(
   }
 }
 
-export function yearReport(items: Item[], expenses: Expense[], subs: Subscription[], year: number, now = new Date()): YearReport {
-  return { year, ...periodReport(items, expenses, subs, yearPeriod(year), now) }
+export function yearReport(
+  items: Item[],
+  expenses: Expense[],
+  subs: Subscription[],
+  year: number,
+  now = new Date(),
+  cancelled: CancelledSale[] = [],
+): YearReport {
+  return { year, ...periodReport(items, expenses, subs, yearPeriod(year), now, cancelled) }
 }
 
 // ---------- Tax savings ----------
@@ -239,6 +266,16 @@ export function estimatedTax(netProfitCents: number, bracket: number) {
   return { se, income, total: se + income }
 }
 
+/**
+ * Which quarterly reminder is due `days` before a payment: the week-before one (sent on days 7 to 2)
+ * or the day-before one (days 1 and 0). A window instead of an exact day, so a cron run that was
+ * missed still sends late; `email_log` keeps each one to a single send.
+ */
+export function taxReminderWindow(days: number): 7 | 1 | null {
+  if (days < 0 || days > 7) return null
+  return days <= 1 ? 1 : 7
+}
+
 export function daysBetween(a: Date, b: Date) {
   const day = (d: Date) => Date.UTC(d.getFullYear(), d.getMonth(), d.getDate())
   return Math.round((day(b) - day(a)) / 86_400_000)
@@ -252,9 +289,14 @@ export type ReconcileRow = {
   reported: number
   reportedEntered: boolean
   trackedGross: number
-  /** Reported minus tracked: usually sales tax the marketplace collected, or sales not logged here. */
+  /** What the 1099-K should show from what's logged: gross + sales tax + cancelled sales. */
+  expected: number
+  /** Reported minus expected: sales not logged here, or sales tax we don't know about. */
   unexplained: number
   shippingCollected: number
+  salesTax: number
+  refunds: number
+  cancelled: number
   fees: number
   labels: number
   cogs: number
@@ -271,20 +313,64 @@ export function reconcile(report: Omit<YearReport, "year">, forms: Partial<Recor
     .map((platform) => {
       const t = report.platforms.find((p) => p.platform === platform) ?? { platform, ...emptyTotals() }
       const entered = forms[platform]
-      const reported = entered ?? t.gross
+      const expected = t.gross + t.salesTax + t.cancelled
+      const reported = entered ?? expected
       return {
         platform,
         reported,
         reportedEntered: entered !== undefined,
         trackedGross: t.gross,
-        unexplained: reported - t.gross,
+        expected,
+        unexplained: reported - expected,
         shippingCollected: t.shippingCollected,
+        salesTax: t.salesTax,
+        refunds: t.refunds,
+        cancelled: t.cancelled,
         fees: t.fees,
         labels: t.labels,
         cogs: t.cogs,
         net: t.net,
       }
     })
+}
+
+// ---------- Year gap: 1099-K gross down to net profit ----------
+
+export type GapStep = { label: string; cents: number; kind: "start" | "minus" | "subtotal" | "end" }
+
+/**
+ * The whole tax year as one waterfall, from what the IRS sees (1099-K gross) to what the
+ * seller actually made. Each "minus" step is a positive amount that gets taken off.
+ * Gross that isn't on any 1099-K (cash, local) is added back so the end is real net profit.
+ */
+export function gapBreakdown(report: Omit<YearReport, "year">, rows: ReconcileRow[]): GapStep[] {
+  const irs = rows.reduce((a, r) => a + r.reported, 0)
+  const salesTax = rows.reduce((a, r) => a + r.salesTax, 0)
+  const cancelled = rows.reduce((a, r) => a + r.cancelled, 0)
+  const unexplained = rows.reduce((a, r) => a + r.unexplained, 0)
+  const formGross = rows.reduce((a, r) => a + r.trackedGross, 0)
+  const nonForm = report.totals.gross - formGross
+  const steps: GapStep[] = [{ label: "What the IRS sees (1099-K gross)", cents: irs, kind: "start" }]
+  const minus = (label: string, cents: number) => cents && steps.push({ label, cents, kind: "minus" })
+  minus("Sales tax the marketplace collected", salesTax)
+  minus("Cancelled sales", cancelled)
+  if (unexplained > 0) minus("On the 1099-K but not logged here", unexplained)
+  if (unexplained < 0) minus("Logged here but not on a 1099-K", unexplained)
+  if (nonForm) steps.push({ label: "Cash and local sales (no 1099-K)", cents: -nonForm, kind: "minus" })
+  minus("Refunds to buyers", report.totals.refunds)
+  steps.push({
+    label: "Gross receipts (incl. shipping buyers paid)",
+    cents: report.totals.gross - report.totals.refunds,
+    kind: "subtotal",
+  })
+  minus("Platform fees", report.totals.fees)
+  minus("Shipping labels", report.totals.labels)
+  minus("Cost of goods sold", report.totals.cogs)
+  minus("Mileage", report.mileageCents)
+  minus("Expenses", report.expenseCents)
+  minus("Subscriptions", report.subscriptionCents)
+  steps.push({ label: "What you actually made (net profit)", cents: report.netProfit, kind: "end" })
+  return steps
 }
 
 // ---------- Schedule C ----------
@@ -312,10 +398,10 @@ export function scheduleC(r: YearReport): ScheduleCLine[] {
 
   const expenses = [...otherExpenseLines.values()].sort((a, b) => lineOrder(a.line) - lineOrder(b.line))
   const totalExpenses = expenses.reduce((a, l) => a + l.cents, 0)
-  const grossProfit = r.totals.gross - r.totals.cogs
+  const grossProfit = r.totals.gross - r.totals.refunds - r.totals.cogs
   return [
     { line: "1", label: "Gross receipts or sales", cents: r.totals.gross },
-    { line: "2", label: "Returns and allowances", cents: 0 },
+    { line: "2", label: "Returns and allowances", cents: r.totals.refunds },
     { line: "4", label: "Cost of goods sold (Part III)", cents: r.totals.cogs },
     { line: "7", label: "Gross income", cents: grossProfit },
     ...expenses,

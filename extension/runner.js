@@ -253,8 +253,21 @@
       if (c.title != null) put(fields.title, String(c.title).slice(0, 80), "Title")
       if (c.description != null) put(fields.description, String(c.description).slice(0, 1500), "Description")
       if (c.priceCents != null) put(fields.price, FL.wholeDollars(c.priceCents), "Price")
-      if (c.quantity != null) todo.push(`Quantity (set it to ${c.quantity})`)
-      if (c.photoPaths?.length) todo.push("Photos (match them to FlipLedger)")
+      // Quantity: only where the site's edit form has a quantity box (site.edit.fields.quantity).
+      if (c.quantity != null) {
+        const box = fields.quantity && D.findField(fields.quantity)
+        ;(box && D.setValue(box, String(c.quantity)) ? done : todo).push(box ? "Quantity" : `Quantity (set it to ${c.quantity})`)
+      }
+      // Photos: the edit form's file box only adds photos, so FlipLedger's go in after the old ones
+      // and the seller removes the ones that shouldn't stay.
+      if (c.photoPaths?.length) {
+        const { photos } = site.edit.photos ? ((await send({ type: "GET_JOB", withPhotos: true })) ?? {}) : {}
+        const list = (photos ?? []).slice(0, site.photoLimit)
+        if (list.length && (await D.setPhotos(list))) {
+          done.push(`${list.length} photo${list.length === 1 ? "" : "s"} added`)
+          todo.push("Photos (remove the old ones and put the cover photo first)")
+        } else todo.push("Photos (match them to FlipLedger)")
+      }
       await send({ type: "UPDATE", patch: { state: "filled" } })
       D.panel({
         title: "Changes filled in",

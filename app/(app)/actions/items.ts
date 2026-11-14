@@ -11,7 +11,7 @@ import type { MarketplaceId } from "@/lib/marketplaces/registry"
 import { getItem } from "@/lib/data"
 import { UserError } from "@/lib/errors"
 import { marketplace } from "@/lib/marketplaces/registry"
-import { removeUnreferencedPhotos } from "@/lib/photos"
+import { PHOTO_BUCKET, removeUnreferencedPhotos } from "@/lib/photos"
 import { distributeHaul } from "@/lib/profit"
 import type { Item } from "@/lib/types"
 import { fail, type ActionResult } from "./result"
@@ -23,7 +23,7 @@ export async function loadItem(id: string): Promise<Item | null> {
 }
 
 const cents = z.number().int().min(0).max(100_000_000)
-const platform = z.enum(["cash", "card", "mercari_depop", "ebay", "poshmark_amz", "custom"])
+const platform = z.enum(["cash", "card", "mercari_depop", "ebay", "poshmark_amz", "facebook", "custom"])
 const marketplaceId = z.enum(["ebay", "mercari", "facebook", "depop", "vinted", "poshmark", "etsy"])
 
 const saleFields = z.object({
@@ -32,6 +32,7 @@ const saleFields = z.object({
   labelCostCents: cents.default(0),
   feePct: z.number().min(0).max(1),
   feeFixedCents: cents.default(0),
+  salesTaxCents: cents.default(0),
   platform,
   soldAt: z.string().optional(),
 })
@@ -48,6 +49,10 @@ const itemSchema = z.object({
   purchasedAt: z.string().optional(),
   sale: saleFields.optional(),
   photoPaths: z.array(z.string().max(200)).max(12).default([]),
+  /** Listing description; left alone when not sent. */
+  description: z.string().trim().max(5000).optional(),
+  /** Asking price for a new inventory item (from Scan to Comp's estimate). */
+  listPriceCents: cents.nullable().optional(),
 })
 export type ItemInput = z.input<typeof itemSchema>
 
@@ -58,6 +63,7 @@ function saleColumns(s: z.output<typeof saleFields>): SaleColumns {
     label_cost_cents: s.labelCostCents,
     fee_pct: s.feePct,
     fee_fixed_cents: s.feeFixedCents,
+    sales_tax_cents: s.salesTaxCents,
     platform: s.platform,
     sold_at: s.soldAt ? new Date(s.soldAt).toISOString() : new Date().toISOString(),
   }
@@ -73,6 +79,8 @@ function baseColumns(i: z.output<typeof itemSchema>) {
     returnable: i.returnable,
     return_deadline: i.returnable ? i.returnDeadline || null : null,
     photo_paths: i.photoPaths,
+    ...(i.description !== undefined ? { description: i.description || null } : {}),
+    ...(i.listPriceCents ? { list_price_cents: i.listPriceCents } : {}),
     ...(i.purchasedAt ? { purchased_at: new Date(i.purchasedAt).toISOString() } : {}),
   }
 }
@@ -103,7 +111,7 @@ export async function updateItem(id: string, input: ItemInput): Promise<ActionRe
   try {
     const i = itemSchema.parse(input)
     const { supabase } = await requireUser()
-    const { data: before } = await supabase.from("items").select("photo_paths, cost_unknown, title, quantity, status").eq("id", id).single()
+    const { data: before } = await supabase.from("items").select("photo_paths, cost_unknown, title, description, quantity, status").eq("id", id).single()
     const { error } = await supabase
       .from("items")
       .update({
@@ -115,10 +123,11 @@ export async function updateItem(id: string, input: ItemInput): Promise<ActionRe
       .eq("id", id)
     if (error) throw error
     const oldPhotos = (before?.photo_paths as string[] | undefined) ?? []
-    // Edit once, update everywhere: title, quantity and photo changes go to the live listings.
+    // Edit once, update everywhere: title, description, quantity and photo changes go to the live listings.
     if (before?.status === "inventory" && i.mode === "inventory") {
       const changes: ListingChanges = {}
       if (i.title && i.title !== before.title) changes.title = i.title
+      if (i.description && i.description !== before.description) changes.description = i.description
       if (i.quantity !== before.quantity) changes.quantity = i.quantity
       if (i.photoPaths.length && i.photoPaths.join() !== oldPhotos.join()) changes.photoPaths = i.photoPaths
       if (hasChanges(changes)) await propagateToListings(supabase, id, changes, { canUseApi: await canCrosslist() })
@@ -255,6 +264,90 @@ export async function createHaul(input: HaulInput): Promise<ActionResult> {
       })
       if (insErr) throw insErr
     }
+    return done()
+  } catch (e) {
+    return fail(e)
+  }
+}
+
+const receiptPath = z.string().max(200).regex(/^[0-9a-f-]+\/[0-9a-f-]+\.jpg$/)
+
+const haulEditSchema = z.object({
+  id: z.string().uuid(),
+  title: z.string().trim().max(200),
+  store: z.string().trim().max(100),
+  /** Only sent when the date changed. */
+  purchasedAt: z.string().datetime().optional(),
+  /** undefined keeps the receipt, null removes it, a path replaces it. */
+  receiptPath: receiptPath.nullable().optional(),
+})
+export type HaulEditInput = z.input<typeof haulEditSchema>
+
+/**
+ * Edit a lot's name, store, date and receipt. The store and date were copied onto the lot's items when it
+ * was logged, so items that still have the lot's old value follow the change; items edited since keep theirs.
+ */
+export async function updateHaul(input: HaulEditInput): Promise<ActionResult> {
+  try {
+    const h = haulEditSchema.parse(input)
+    const { supabase, userId } = await requireUser()
+    if (h.receiptPath && !h.receiptPath.startsWith(`${userId}/`)) throw new Error("Receipt photo belongs to another user")
+    const { data: old, error: readErr } = await supabase
+      .from("hauls")
+      .select("store, purchased_at, receipt_path")
+      .eq("id", h.id)
+      .maybeSingle<{ store: string | null; purchased_at: string; receipt_path: string | null }>()
+    if (readErr) throw readErr
+    if (!old) throw new UserError("That lot is gone. Refresh and try again.")
+
+    const store = h.store || null
+    const { error } = await supabase
+      .from("hauls")
+      .update({
+        title: h.title || null,
+        store,
+        ...(h.purchasedAt ? { purchased_at: h.purchasedAt } : {}),
+        ...(h.receiptPath !== undefined ? { receipt_path: h.receiptPath } : {}),
+      })
+      .eq("id", h.id)
+    if (error) throw error
+
+    if (store !== old.store) {
+      const q = supabase.from("items").update({ store }).eq("haul_id", h.id)
+      const { error: e } = old.store === null ? await q.is("store", null) : await q.eq("store", old.store)
+      if (e) throw e
+    }
+    if (h.purchasedAt && h.purchasedAt !== old.purchased_at) {
+      const { error: e } = await supabase
+        .from("items")
+        .update({ purchased_at: h.purchasedAt })
+        .eq("haul_id", h.id)
+        .eq("purchased_at", old.purchased_at)
+      if (e) throw e
+    }
+    // The old receipt file belongs to this lot only.
+    if (h.receiptPath !== undefined && old.receipt_path && old.receipt_path !== h.receiptPath) {
+      await supabase.storage.from(PHOTO_BUCKET).remove([old.receipt_path])
+    }
+    return done()
+  } catch (e) {
+    return fail(e)
+  }
+}
+
+/** Delete a lot. Its items stay, with their costs; they're just no longer grouped (`haul_id` is set null). */
+export async function deleteHaul(id: string): Promise<ActionResult> {
+  try {
+    const haulId = z.string().uuid().parse(id)
+    const { supabase } = await requireUser()
+    const { data: gone, error } = await supabase
+      .from("hauls")
+      .delete()
+      .eq("id", haulId)
+      .select("receipt_path")
+      .maybeSingle<{ receipt_path: string | null }>()
+    if (error) throw error
+    if (gone?.receipt_path) await supabase.storage.from(PHOTO_BUCKET).remove([gone.receipt_path])
     return done()
   } catch (e) {
     return fail(e)

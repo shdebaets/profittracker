@@ -133,3 +133,14 @@ export async function billingState(whopUserId: string | null): Promise<BillingSt
     return { ...empty, error: true }
   }
 }
+
+/** October through March: year end and tax season, when paying for a year up front is the easiest yes. Pure. */
+export function yearlySeason(now: Date): boolean {
+  const m = now.getMonth()
+  return m >= 9 || m <= 2
+}
+
+/** The seasonal "go yearly" banner: monthly members (not on a pause), in season, with a yearly checkout link. Pure. */
+export function showYearlyBanner(b: BillingState, annualUrl: string, now: Date): boolean {
+  return Boolean(annualUrl) && yearlySeason(now) && b.linked && b.plan === "monthly" && !b.paused
+}
