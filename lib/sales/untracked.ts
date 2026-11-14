@@ -25,6 +25,7 @@ export type SoldItemRow = {
   sales_tax_cents?: number
   platform: Platform
   sold_at: string
+  sold_on: "ebay" | "mercari"
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -56,6 +57,7 @@ export function ebaySoldItem(line: EbaySaleLine, userId: string): SoldItemRow {
     sales_tax_cents: line.salesTaxCents,
     platform: "ebay",
     sold_at: soldAt,
+    sold_on: "ebay",
   }
 }
 
@@ -122,5 +124,6 @@ export function marketplaceSoldItem(s: MarketplaceSale, userId: string, now = ne
     fee_fixed_cents: fee.fixedCents,
     platform: fee.id,
     sold_at: soldAt.toISOString(),
+    sold_on: s.marketplace,
   }
 }

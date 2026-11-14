@@ -39,6 +39,12 @@ export type Item = {
   list_price_cents: number | null
   /** "Write it from photos" suggestions (eBay category/specifics, other sites' categories); read with readHints. */
   ai_hints?: unknown
+  /** Free-text category path, e.g. "Women > Shoes > Sneakers". */
+  category: string | null
+  /** The marketplace it sold on (null: in person, or unknown for old sales). */
+  sold_on: MarketplaceId | null
+  /** When the seller shipped it (or handed it over). Null on a sold item = still to ship. */
+  shipped_at: string | null
   /** Cross-listings for this item (filled in by getItems). */
   listings: Listing[]
   created_at: string

@@ -7,7 +7,7 @@ const sold = (p: Partial<Item>): Item => ({
   id: Math.random().toString(36), seq: 1, title: "Nike “Dunk” Low – size 10…", status: "sold", quantity: 1, cost_cents: 2000,
   cost_unknown: false, purchased_at: "2026-01-01T12:00:00Z", store: null, link_url: null, haul_id: null,
   sale_price_cents: 9000, buyer_shipping_cents: 0, label_cost_cents: 800, fee_pct: 0.1325, fee_fixed_cents: 0,
-  sales_tax_cents: 700, refund_cents: 0, platform: "ebay", sold_at: "2026-03-10T12:00:00", returnable: false,
+  sales_tax_cents: 700, refund_cents: 0, category: null, sold_on: null, shipped_at: null, platform: "ebay", sold_at: "2026-03-10T12:00:00", returnable: false,
   return_deadline: null, photo_paths: [], photo_urls: [], description: null, condition: null, brand: null, size: null,
   list_price_cents: null, listings: [], created_at: "2026-01-01T12:00:00Z", ...p,
 })

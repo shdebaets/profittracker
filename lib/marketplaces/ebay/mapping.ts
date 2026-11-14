@@ -138,6 +138,9 @@ export type EbayOrder = {
   orderId: string
   creationDate: string
   orderPaymentStatus?: string
+  /** NOT_STARTED, IN_PROGRESS or FULFILLED. */
+  orderFulfillmentStatus?: string
+  buyer?: { username?: string }
   cancelStatus?: { cancelState?: string }
   totalMarketplaceFee?: { value: string }
   lineItems: {
@@ -150,6 +153,7 @@ export type EbayOrder = {
     deliveryCost?: { shippingCost?: { value: string } }
     /** Sales tax eBay collected and remitted for this line (on the 1099-K, not the seller's income). */
     ebayCollectAndRemitTaxes?: { amount?: { value: string } }[]
+    lineItemFulfillmentInstructions?: { shipByDate?: string }
   }[]
 }
 
@@ -198,6 +202,11 @@ export type EbaySaleLine = {
   feeCents: number // this line's share of eBay's actual fees
   salesTaxCents: number
   soldAt: string
+  /** The buyer's eBay username. Never their address. */
+  buyer: string | null
+  shipBy: string | null
+  /** eBay's orderFulfillmentStatus. */
+  fulfillment: string | null
 }
 
 /**
@@ -227,8 +236,14 @@ export function ordersToSales(orders: EbayOrder[]): EbaySaleLine[] {
         feeCents: total > 0 ? Math.round((fee * value(l)) / total) : 0,
         salesTaxCents: (l.ebayCollectAndRemitTaxes ?? []).reduce((a, t) => a + cents(t.amount), 0),
         soldAt: o.creationDate,
+        buyer: o.buyer?.username ?? null,
+        shipBy: l.lineItemFulfillmentInstructions?.shipByDate ?? null,
+        fulfillment: o.orderFulfillmentStatus ?? null,
       })
     }
   }
   return out
 }
+
+/** An eBay order's page in Seller Hub. */
+export const ebayOrderUrl = (orderId: string) => `https://www.ebay.com/sh/ord/details?orderid=${encodeURIComponent(orderId)}`
