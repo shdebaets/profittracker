@@ -17,18 +17,24 @@ export async function GET(request: NextRequest) {
   const pkce = decodePkce(jar.get(WHOP_COOKIE)?.value)
   jar.delete({ name: WHOP_COOKIE, path: "/auth/whop" })
 
+  // Already signed in (an older email-login account): link Whop to this account.
+  const { data } = await (await createClient()).auth.getClaims()
+  const current = data?.claims ? { userId: data.claims.sub, email: (data.claims.email as string | undefined) ?? "" } : null
+  // Signed-in people can't see /login (the proxy sends them home), so their errors go to /crosslister.
+  const failTo = (code: string) => go(current ? `/crosslister?whop_error=${code}` : `/login?error=${code}`)
+
   const code = params.get("code")
-  if (params.get("error") === "access_denied") return go("/login")
-  if (!code || !pkce || params.get("state") !== pkce.state) return go("/login?error=whop")
+  if (params.get("error") === "access_denied") return current ? go("/crosslister") : go("/login")
+  if (!code || !pkce || params.get("state") !== pkce.state) {
+    console.error("[whop sign-in] bad callback", { hasCode: !!code, hasCookie: !!pkce, error: params.get("error") })
+    return failTo("whop")
+  }
 
   try {
     const { clientId } = whopConfig()
     const redirectUri = new URL(CALLBACK_PATH, request.nextUrl.origin).toString()
     const token = await exchangeCode(clientId, redirectUri, code, pkce.verifier)
     const info = await getUserInfo(token)
-    // Already signed in (an older email-login account): link Whop to this account.
-    const { data } = await (await createClient()).auth.getClaims()
-    const current = data?.claims ? { userId: data.claims.sub, email: (data.claims.email as string | undefined) ?? "" } : null
     const linked = current ? await linkWhopToCurrentUser(info, current) : null
     const { userId, email } = linked ?? (await signInWithWhopUser(info))
     // Refresh the Cross-Lister answer now so a fresh purchase shows up right away.
@@ -36,6 +42,6 @@ export async function GET(request: NextRequest) {
     return go(linked ? "/crosslister" : "/")
   } catch (e) {
     reportError(e, "whop sign-in")
-    return go(`/login?error=${e instanceof WhopSignInError ? e.code : "whop"}`)
+    return failTo(e instanceof WhopSignInError ? e.code : "whop")
   }
 }
