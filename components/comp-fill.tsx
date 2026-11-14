@@ -35,7 +35,7 @@ export function CompFill({ onPrice }: { onPrice: (cents: number) => void }) {
       }
       // This device reads eBay's sold prices itself (extension or phone app): refresh them if stale.
       if (source && soldIsStale(res.lookup.soldCollectedAt)) {
-        const pulled = await pullSoldHere(source, res.lookup.query)
+        const pulled = await pullSoldHere(source, res.lookup.query, res.lookup.searches)
         const again = await compLookup(res.lookup.gtin ?? input, res.lookup.gtin ? null : res.lookup.product, pulled.ok)
         if (again.ok && "lookup" in again) res = again
       }

@@ -85,7 +85,7 @@ export function CompView({ tracked, initialQuery }: { tracked: Tracked[]; initia
     if (!source) return
     setCollecting(true)
     try {
-      const res = await pullSoldHere(source, q)
+      const res = await pullSoldHere(source, q, result?.query === q ? result.searches : undefined)
       const again = (paid: boolean) => lookup(result?.gtin ?? q, result?.gtin ? null : result?.product, paid)
       // eBay blocked the read (signed out, captcha): fall back to the server's data for this one.
       if (!res.ok) {
