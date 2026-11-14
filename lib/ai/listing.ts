@@ -1,12 +1,11 @@
 // AI listing from photos: Claude looks at the item's photos and drafts the title, description,
 // item specifics, category and a suggested price. Kept cheap: a small model, at most 4 photos,
-// a short answer, and a per-user daily fair-use cap.
+// a short answer, and a silent per-user fair-use cap (lib/ai/usage.ts).
 import "server-only"
 import { z } from "zod"
 import { ITEM_CONDITIONS } from "@/lib/marketplaces/registry"
 
 export const AI_MODEL = process.env.AI_MODEL?.trim() || "claude-haiku-5-5"
-export const AI_DAILY_LIMIT = Number(process.env.AI_DAILY_LIMIT) || 60
 export const AI_MAX_PHOTOS = 4
 
 export const listingDraftSchema = z.object({
@@ -19,6 +18,10 @@ export const listingDraftSchema = z.object({
   item_specifics: z.array(z.object({ name: z.string().max(60), value: z.string().max(120) })).max(15),
   suggested_price_usd: z.number().min(0).max(100000).nullable(),
   price_note: z.string().max(200),
+  // Other marketplaces: menu paths as the seller sees them on each site, and Facebook's short title.
+  mercari_category: z.array(z.string().max(60)).max(5).catch([]),
+  poshmark_category: z.array(z.string().max(60)).max(5).catch([]),
+  facebook_title: z.string().max(100).catch(""),
 })
 export type ListingDraft = z.infer<typeof listingDraftSchema>
 
@@ -41,8 +44,19 @@ const TOOL = {
       },
       suggested_price_usd: { type: ["number", "null"], description: "Typical used resale price on eBay in USD, or null if you can't tell." },
       price_note: { type: "string", description: "One short line on how sure the price is." },
+      mercari_category: {
+        type: "array",
+        items: { type: "string" },
+        description: "Mercari category menu path, top level first, e.g. [\"Women\", \"Shoes\", \"Sneakers\"] or [\"Electronics\", \"Video games & consoles\", \"Games\"]. Use Mercari's own menu names.",
+      },
+      poshmark_category: {
+        type: "array",
+        items: { type: "string" },
+        description: "Poshmark category menu path, department first, e.g. [\"Men\", \"Jackets & Coats\"] or [\"Home\", \"Kitchen\"]. Use Poshmark's own menu names.",
+      },
+      facebook_title: { type: "string", description: "Short Facebook Marketplace title: plain words a local buyer would search, under 60 characters, no sizes or codes unless they matter." },
     },
-    required: ["title", "description", "brand", "size", "condition", "category", "item_specifics", "suggested_price_usd", "price_note"],
+    required: ["title", "description", "brand", "size", "condition", "category", "item_specifics", "suggested_price_usd", "price_note", "mercari_category", "poshmark_category", "facebook_title"],
   },
 }
 
@@ -56,7 +70,7 @@ export async function draftListingFromPhotos(imageUrls: string[], hint: string |
     headers: { "x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json" },
     body: JSON.stringify({
       model: AI_MODEL,
-      max_tokens: 900,
+      max_tokens: 1100,
       tools: [TOOL],
       tool_choice: { type: "tool", name: TOOL.name },
       system:

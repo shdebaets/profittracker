@@ -11,6 +11,8 @@ type FLT = {
   wholeDollars(cents: number | null): string
   guessCategory(i: { title?: string; description?: string }): { dept: string | null; kind: string | null }
   categoryPath(m: string, g: { dept: string | null; kind: string | null }): string[][] | null
+  categoryPaths(m: string, l: { title?: string; description?: string; categoryPaths?: Record<string, string[]> }): string[][][]
+  siteTitle(m: string, l: { title: string; facebookTitle?: string }): string
 }
 let FL: FLT
 
@@ -127,5 +129,20 @@ describe("extension shared helpers", () => {
     expect(FL.categoryPath("facebook", { dept: null, kind: "tops" })).toBeNull()
     expect(FL.categoryPath("mercari", { dept: null, kind: null })).toBeNull()
     expect(FL.categoryPath("depop", { dept: "men", kind: "tops" })).toBeNull()
+  })
+
+  it("tries the AI's category path before the title guess", () => {
+    const l = { title: "Nike Air Max 90 mens size 10 sneakers", categoryPaths: { mercari: ["Men", "Shoes", " Athletic "] } }
+    const paths = FL.categoryPaths("mercari", l)
+    expect(paths[0]).toEqual([["Men"], ["Shoes"], ["Athletic"]])
+    expect(paths[1]).toEqual(FL.categoryPath("mercari", FL.guessCategory(l)))
+    expect(FL.categoryPaths("poshmark", { title: "mystery thing" })).toEqual([])
+  })
+
+  it("uses the AI's short Facebook title only on Facebook", () => {
+    const l = { title: "Nike Air Max 90 Mens Size 10 White CW1234-100", facebookTitle: "Nike Air Max 90 sneakers" }
+    expect(FL.siteTitle("facebook", l)).toBe("Nike Air Max 90 sneakers")
+    expect(FL.siteTitle("mercari", l)).toBe(l.title)
+    expect(FL.siteTitle("facebook", { title: "Lamp" })).toBe("Lamp")
   })
 })

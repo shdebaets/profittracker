@@ -4,7 +4,7 @@ import {
   ArrowLeft, Check, ChevronDown, Copy, ExternalLink, Images, Loader2, Search, Sparkles, Unplug, Wand2,
 } from "lucide-react"
 import Link from "next/link"
-import { useEffect, useState, useTransition } from "react"
+import { useEffect, useRef, useState, useTransition } from "react"
 import { toast } from "sonner"
 import { aiDraftListing } from "@/app/(app)/actions/ai"
 import { markListingSynced, retryListingSync } from "@/app/(app)/actions/edit"
@@ -19,6 +19,7 @@ import { AD_RATE_MAX, AD_RATE_MIN, defaultConditionId, normalizeAdRate } from "@
 import { EXTENSION_STORE_URL, ITEM_CONDITIONS, MARKETPLACES, type ItemCondition, type Marketplace } from "@/lib/marketplaces/registry"
 import { delistWithExtension, editWithExtension, extensionCanEdit, listWithExtension, useExtension } from "@/lib/extension"
 import { centsToInput, formatCents, toCents } from "@/lib/money"
+import { aiHintsFrom, ebayCategoryQuery, prefillAspects, readHints, type AiHints } from "@/lib/ai/hints"
 import type { Item, Listing } from "@/lib/types"
 import { cn } from "@/lib/utils"
 import { GENERIC_ERROR } from "@/lib/errors"
@@ -90,7 +91,8 @@ export function CrosslistPanel({ item, active, onBack }: { item: Item; active: b
     k === "price" ? toCents(draft.price) !== toCents(saved.price) : draft[k].trim() !== saved[k],
   )
   const set = <K extends keyof Draft>(k: K, v: Draft[K]) => setDraft((d) => ({ ...d, [k]: v }))
-  const [ai, setAi] = useState<{ category: string; specifics: { name: string; value: string }[]; priceNote: string } | null>(null)
+  // AI suggestions for eBay's category/specifics and the other sites, kept on the item (items.ai_hints).
+  const [ai, setAi] = useState<AiHints | null>(() => readHints(item.ai_hints))
   const [aiPending, startAi] = useTransition()
 
   function writeWithAi() {
@@ -106,7 +108,7 @@ export function CrosslistPanel({ item, active, onBack }: { item: Item; active: b
         size: d.size ?? cur.size,
         price: d.suggested_price_usd != null ? d.suggested_price_usd.toFixed(2) : cur.price,
       }))
-      setAi({ category: d.category, specifics: d.item_specifics, priceNote: d.price_note })
+      setAi(aiHintsFrom(d))
       toast.success("Drafted from your photos. Check it, then save.")
     })
   }
@@ -207,9 +209,9 @@ export function CrosslistPanel({ item, active, onBack }: { item: Item; active: b
       </section>
 
       <p className="-mb-2 text-xs font-bold tracking-wider text-muted-foreground uppercase">Marketplaces</p>
-      <EbayRow item={item} listing={listingFor(MARKETPLACES[0])} status={ebay} draft={draft} saveDraft={saveDraft} />
+      <EbayRow item={item} listing={listingFor(MARKETPLACES[0])} status={ebay} draft={draft} saveDraft={saveDraft} hints={ai} />
       {MARKETPLACES.filter((m) => m.mode === "assisted").map((m) => (
-        <AssistedRow key={m.id} item={item} m={m} listing={listingFor(m)} draft={draft} saveDraft={saveDraft} />
+        <AssistedRow key={m.id} item={item} m={m} listing={listingFor(m)} draft={draft} saveDraft={saveDraft} hints={ai} />
       ))}
 
       {anyLive && (
@@ -445,25 +447,26 @@ function SyncNotice({ listing, m, url, title, photoUrls }: { listing: Listing; m
 // ---------- Assisted marketplaces (no API): photo + copy kit, then the user confirms ----------
 
 function AssistedRow({
-  item, m, listing, draft, saveDraft,
+  item, m, listing, draft, saveDraft, hints,
 }: {
   item: Item
   m: Marketplace
   listing?: Listing
   draft: Draft
   saveDraft: () => Promise<boolean>
+  hints: AiHints | null
 }) {
   const needsAttention = listing?.status === "delist_pending"
   const [open, setOpen] = useState(needsAttention)
   const live = listing && ["active", "delist_pending", "error"].includes(listing.status)
   return (
     <RowShell m={m} status={statusChip(listing)} open={open} onToggle={() => setOpen((o) => !o)}>
-      {live ? <LiveActions listing={listing} m={m} title={item.title ?? ""} photoUrls={item.photo_urls} /> : item.status === "inventory" && <ListingKit item={item} m={m} draft={draft} saveDraft={saveDraft} />}
+      {live ? <LiveActions listing={listing} m={m} title={item.title ?? ""} photoUrls={item.photo_urls} /> : item.status === "inventory" && <ListingKit item={item} m={m} draft={draft} saveDraft={saveDraft} hints={hints} />}
     </RowShell>
   )
 }
 
-function ListingKit({ item, m, draft, saveDraft }: { item: Item; m: Marketplace; draft: Draft; saveDraft: () => Promise<boolean> }) {
+function ListingKit({ item, m, draft, saveDraft, hints }: { item: Item; m: Marketplace; draft: Draft; saveDraft: () => Promise<boolean>; hints: AiHints | null }) {
   const [url, setUrl] = useState("")
   const [pending, run] = useRun()
   const [files, setFiles] = useState<File[] | null>(null)
@@ -483,6 +486,9 @@ function ListingKit({ item, m, draft, saveDraft }: { item: Item; m: Marketplace;
       brand: draft.brand,
       size: draft.size,
       photoUrls: photos,
+      // The AI's category for this site replaces the extension's guess from the title.
+      categoryPaths: hints ? { mercari: hints.mercariCategory, poshmark: hints.poshmarkCategory } : undefined,
+      facebookTitle: hints?.facebookTitle || undefined,
     })
     toast.message(`Opening ${m.label}. Check the listing there, then click Publish.`)
   }
@@ -582,13 +588,14 @@ function ListingKit({ item, m, draft, saveDraft }: { item: Item; m: Marketplace;
 // ---------- eBay (API): we publish and end listings for the user ----------
 
 function EbayRow({
-  item, listing, status, draft, saveDraft,
+  item, listing, status, draft, saveDraft, hints,
 }: {
   item: Item
   listing?: Listing
   status: EbayStatus | null
   draft: Draft
   saveDraft: () => Promise<boolean>
+  hints: AiHints | null
 }) {
   const m = MARKETPLACES[0]
   const live = listing && ["active", "error"].includes(listing.status)
@@ -618,7 +625,7 @@ function EbayRow({
         <Link href="/settings#marketplaces" className="font-semibold text-profit underline">Settings</Link>.
       </p>
     )
-  else body = <EbayPublish item={item} draft={draft} saveDraft={saveDraft} status={status} />
+  else body = <EbayPublish item={item} draft={draft} saveDraft={saveDraft} status={status} hints={hints} />
 
   return (
     <RowShell m={m} status={statusChip(listing)} open={open} onToggle={() => setOpen((o) => !o)}>
@@ -708,7 +715,9 @@ function EbayPromoteLive({ listing, status }: { listing: Listing; status: EbaySt
   )
 }
 
-function EbayPublish({ item, draft, saveDraft, status }: { item: Item; draft: Draft; saveDraft: () => Promise<boolean>; status: EbayStatus }) {
+function EbayPublish({
+  item, draft, saveDraft, status, hints,
+}: { item: Item; draft: Draft; saveDraft: () => Promise<boolean>; status: EbayStatus; hints: AiHints | null }) {
   const sandbox = status.sandbox
   const [promote, setPromote] = useState(status.promote.enabled)
   const [adRate, setAdRate] = useState(String(status.promote.rate))
@@ -750,10 +759,28 @@ function EbayPublish({ item, draft, saveDraft, status }: { item: Item; draft: Dr
       setConditionId(defaultConditionId(draft.condition || null, allowed.map((o) => o.id)) ?? "")
       setValues((v) => ({
         ...Object.fromEntries(list.map((a) => [a.name, a.name === "Brand" ? draft.brand : a.name === "Size" ? draft.size : ""])),
+        // The AI's item specifics, where eBay takes them; what the seller typed still wins.
+        ...Object.fromEntries(Object.entries(prefillAspects(list, hints?.specifics ?? [])).filter(([k]) => !(k === "Brand" && draft.brand) && !(k === "Size" && draft.size))),
         ...Object.fromEntries(Object.entries(v).filter(([, x]) => x)),
       }))
     })
   }
+
+  // With an AI category, ask eBay's Taxonomy suggestions once and pick the top match; the seller can change it.
+  const autoCat = useRef<string | null>(null)
+  useEffect(() => {
+    if (cat || !hints?.category || !draft.title.trim()) return
+    const query = ebayCategoryQuery(hints.category, draft.title)
+    if (autoCat.current === query) return
+    autoCat.current = query
+    startBusy(async () => {
+      const res = await ebayCategories(query)
+      if (!res.ok || !res.data.length) return
+      setCats(res.data)
+      pickCategory(res.data[0])
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hints?.category])
 
   const promoting = promote && status.canPromote
 

@@ -25,7 +25,7 @@
       if (await D.setPhotos(photos)) done.push(`${photos.length} photo${photos.length === 1 ? "" : "s"}`)
       else todo.push("Add photos")
       const title = D.findField("Title")
-      step(!!title && D.setValue(title, l.title.slice(0, 99)), "Title")
+      step(!!title && D.setValue(title, FL.siteTitle("facebook", l).slice(0, 99)), "Title")
       const price = D.findField("Price")
       step(!!price && D.setValue(price, FL.wholeDollars(l.priceCents)), "Price")
       await D.pickCategory("facebook", "Category", l, done, todo)
