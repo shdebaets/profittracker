@@ -39,7 +39,8 @@ export type CompStats = {
 }
 
 /** eBay condition text → new or used. Open box and "new other" count as used: they sell below sealed. */
-export const isNewCondition = (c: string | null | undefined) => !!c && /^(new|brand new)$/i.test(c.trim())
+export const isNewCondition = (c: string | null | undefined) =>
+  !!c && /^(brand )?new\b/i.test(c.trim()) && !/other|open box|used|pre-?owned|refurb/i.test(c)
 
 const daysAgo = (iso: string, now: Date) => (now.getTime() - new Date(iso + "T12:00:00Z").getTime()) / 86_400_000
 

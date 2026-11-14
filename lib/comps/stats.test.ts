@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { buyProfit, compStats, isGtin, median, queryKey } from "./stats"
+import { buyProfit, compStats, isGtin, isNewCondition, median, queryKey } from "./stats"
 
 const now = new Date("2026-11-13T12:00:00Z")
 const sold = (days: number, priceCents: number, bestOffer = false) => ({
@@ -48,6 +48,10 @@ describe("comps", () => {
     expect(s.newEstimate).toBe(11000)
     expect(s.usedEstimate).toBe(8000)
     expect(compStats([live(10000, "New")], [], now).newEstimate).toBeNull()
+  })
+  it("reads eBay's condition names", () => {
+    for (const c of ["New", "Brand New", "New/Factory Sealed", "New with tags", "NEW"]) expect(isNewCondition(c)).toBe(true)
+    for (const c of ["New other (see details)", "Open box", "Used", "Pre-owned", "Seller refurbished", null]) expect(isNewCondition(c)).toBe(false)
   })
   it("profit after eBay fee and label", () => {
     const p = buyProfit(800, 3200)
