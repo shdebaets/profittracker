@@ -7,7 +7,7 @@ import { UserError } from "@/lib/errors"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { requireUser } from "@/lib/supabase/server"
 import { hasCrosslistAccess } from "@/lib/whop/access"
-import { applyPromo, cancelMembership, crosslisterMemberships, pauseMembership, pickRenewing, resumeMembership } from "@/lib/whop/billing"
+import { applyPromo, cancelMembership, crosslisterMemberships, pickRenewing, resumeMembership } from "@/lib/whop/billing"
 import { whopConfig } from "@/lib/whop/config"
 
 export type RecheckState = { checked?: boolean; unlocked?: boolean }
@@ -39,13 +39,13 @@ function done(): ActionResult {
   return { ok: true }
 }
 
-export async function pauseCrosslister(months: number): Promise<ActionResult> {
+/** Half price for the next 1–3 renewals; the seller keeps full access the whole time. */
+export async function takeHalfOff(months: number): Promise<ActionResult> {
   try {
     const n = z.number().int().min(1).max(3).parse(months)
-    const m = await myMembership()
-    const until = new Date()
-    until.setMonth(until.getMonth() + n)
-    await pauseMembership(m.id, until)
+    const code = whopConfig().halfOffCodes[n - 1]
+    if (!code) throw new UserError("That offer isn't available right now.")
+    await applyPromo((await myMembership()).id, code)
     return done()
   } catch (e) {
     return fail(e)
@@ -55,17 +55,6 @@ export async function pauseCrosslister(months: number): Promise<ActionResult> {
 export async function resumeCrosslister(): Promise<ActionResult> {
   try {
     await resumeMembership((await myMembership()).id)
-    return done()
-  } catch (e) {
-    return fail(e)
-  }
-}
-
-export async function acceptSaveOffer(): Promise<ActionResult> {
-  try {
-    const { savePromoCode } = whopConfig()
-    if (!savePromoCode) throw new UserError("That offer isn't available right now.")
-    await applyPromo((await myMembership()).id, savePromoCode)
     return done()
   } catch (e) {
     return fail(e)

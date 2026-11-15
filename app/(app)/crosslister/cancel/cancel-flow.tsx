@@ -1,6 +1,6 @@
 "use client"
 
-import { Car, CirclePause, Package, PiggyBank, Receipt, Share2, Tag } from "lucide-react"
+import { Car, CirclePause, Package, PiggyBank, Receipt, Share2 } from "lucide-react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useState, useTransition } from "react"
@@ -8,7 +8,7 @@ import { toast } from "sonner"
 import { NativeSelect } from "@/components/fields"
 import { formatDate } from "@/lib/dates"
 import { formatCents } from "@/lib/money"
-import { acceptSaveOffer, cancelCrosslister, pauseCrosslister } from "../actions"
+import { cancelCrosslister, takeHalfOff } from "../actions"
 
 type Stats = { savings: number; year: number; miles: number; expenseCents: number; items: number; liveListings: number }
 
@@ -23,8 +23,8 @@ const REASONS = [
 ]
 
 export function CancelFlow({
-  stats, plan, renewsAt, annualUrl, hasPromo,
-}: { stats: Stats; plan: string; renewsAt: string | null; annualUrl: string; hasPromo: boolean }) {
+  stats, plan, renewsAt, annualUrl, halfOff,
+}: { stats: Stats; plan: string; renewsAt: string | null; annualUrl: string; halfOff: boolean }) {
   const router = useRouter()
   const [pending, start] = useTransition()
   const [months, setMonths] = useState("1")
@@ -81,38 +81,28 @@ export function CancelFlow({
 
       {step === "offers" ? (
         <>
-          <section className="flex flex-col gap-3 rounded-3xl border bg-card p-5">
-            <p className="flex items-center gap-2 font-bold"><CirclePause className="size-5 text-brand" /> Take a break instead</p>
-            <p className="text-sm text-muted-foreground">
-              Pause billing for up to 3 months. You keep everything, and billing starts again on its own.
-            </p>
-            <div className="flex gap-2">
-              <NativeSelect value={months} onChange={(e) => setMonths(e.target.value)} className="w-36">
-                <option value="1">1 month</option>
-                <option value="2">2 months</option>
-                <option value="3">3 months</option>
-              </NativeSelect>
-              <button
-                disabled={pending}
-                onClick={() => run(() => pauseCrosslister(Number(months)), `Paused for ${months} month${months === "1" ? "" : "s"}`)}
-                className="h-12 flex-1 rounded-2xl bg-brand font-bold text-ink disabled:opacity-60"
-              >
-                Pause billing
-              </button>
-            </div>
-          </section>
-
-          {hasPromo && (
+          {halfOff && plan === "monthly" && (
             <section className="flex flex-col gap-3 rounded-3xl border bg-card p-5">
-              <p className="flex items-center gap-2 font-bold"><Tag className="size-5 text-brand" /> Stay for less</p>
-              <p className="text-sm text-muted-foreground">Keep FlipLedger at a lower price on your next renewals.</p>
-              <button
-                disabled={pending}
-                onClick={() => run(acceptSaveOffer, "Discount applied to your next renewal")}
-                className="h-12 rounded-2xl bg-brand font-bold text-ink disabled:opacity-60"
-              >
-                Claim the discount
-              </button>
+              <p className="flex items-center gap-2 font-bold"><CirclePause className="size-5 text-brand" /> Take a break at half price</p>
+              <p className="text-sm text-muted-foreground">
+                Pay 50% for up to 3 months and keep everything working. Full price comes back on its own after that.
+              </p>
+              <div className="flex gap-2">
+                <NativeSelect value={months} onChange={(e) => setMonths(e.target.value)} className="w-36" aria-label="How many months">
+                  <option value="1">1 month</option>
+                  <option value="2">2 months</option>
+                  <option value="3">3 months</option>
+                </NativeSelect>
+                <button
+                  disabled={pending}
+                  onClick={() =>
+                    run(() => takeHalfOff(Number(months)), `Half price for your next ${months === "1" ? "month" : `${months} months`}`)
+                  }
+                  className="h-12 flex-1 rounded-2xl bg-brand font-bold text-ink disabled:opacity-60"
+                >
+                  Pay half price
+                </button>
+              </div>
             </section>
           )}
 

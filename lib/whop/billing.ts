@@ -1,5 +1,5 @@
 // The Cross-Lister's Whop billing, managed inside FlipLedger: the cancel flow shows what the seller
-// would lose, offers a pause or the yearly plan, and only then cancels (at the end of the period).
+// would lose, offers half price for a few months or the yearly plan, and only then cancels (at the end of the period).
 import "server-only"
 import { whopConfig } from "./config"
 
@@ -64,11 +64,7 @@ export async function crosslisterMemberships(whopUserId: string): Promise<Member
   return res.data ?? []
 }
 
-/** Stop charging until `until`; the seller keeps access and billing resumes on its own. */
-export function pauseMembership(id: string, until: Date) {
-  return whop(`/memberships/${encodeURIComponent(id)}/pause`, { method: "POST", body: { until: until.toISOString() } })
-}
-
+/** Ends a pause from before the half-price offer replaced it (Nov 2026). */
 export function resumeMembership(id: string) {
   return whop(`/memberships/${encodeURIComponent(id)}/resume`, { method: "POST", body: {} })
 }
@@ -81,7 +77,7 @@ export function cancelMembership(id: string, reason: string) {
   })
 }
 
-/** Apply the save-offer promo code (WHOP_SAVE_PROMO_CODE) to the next renewals. */
+/** Apply a promo code (one of WHOP_HALF_OFF_CODES) to the membership's next renewals. */
 export function applyPromo(id: string, code: string) {
   return whop(`/memberships/${encodeURIComponent(id)}/apply_promo_code`, { method: "POST", body: { promo_code: code } })
 }

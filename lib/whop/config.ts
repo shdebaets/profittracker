@@ -20,13 +20,22 @@ export function whopConfig() {
     /** Yearly plan checkout and id: the "switch to yearly" save offer in the cancel flow. */
     annualUrl: process.env.WHOP_CROSSLIST_ANNUAL_URL?.trim() ?? "",
     annualPlanId: process.env.WHOP_CROSSLIST_ANNUAL_PLAN_ID?.trim() ?? "",
-    /** Promo code (as typed at checkout) offered as "stay at a lower price" in the cancel flow. Empty hides it. */
-    savePromoCode: process.env.WHOP_SAVE_PROMO_CODE?.trim() ?? "",
+    /**
+     * The cancel flow's "take a break at half price" offer: three Whop promo codes, 50% off for 1, 2 and 3
+     * months, in that order (Whop sets the length on the code). Empty hides the offer.
+     */
+    halfOffCodes: halfOffCodes(process.env.WHOP_HALF_OFF_CODES),
     /** Emails that always get cross-listing, lowercased. */
     freeEmails: list(process.env.FLIPLEDGER_FREE_EMAILS).map((e) => e.toLowerCase()),
     /** Email/password and magic-link login: on for local QA, or until Whop sign-in is configured. */
     emailLogin: process.env.ALLOW_EMAIL_LOGIN === "1" || !clientId,
   }
+}
+
+/** "1MO,2MO,3MO" → the code for each length, or [] unless all three are set. Pure. */
+export function halfOffCodes(v: string | undefined): string[] {
+  const codes = list(v)
+  return codes.length === 3 ? codes : []
 }
 
 export const MANAGE_BILLING_URL = "https://whop.com/@me/settings/orders"

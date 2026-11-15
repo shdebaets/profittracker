@@ -29,7 +29,7 @@ export default async function CancelPage() {
     return t >= period.from && t < period.to
   }).length
   const liveListings = items.reduce((a, i) => a + i.listings.filter((l) => l.status === "active").length, 0)
-  const { annualUrl, savePromoCode } = whopConfig()
+  const { annualUrl, halfOffCodes } = whopConfig()
 
   return (
     <>
@@ -46,7 +46,7 @@ export default async function CancelPage() {
         plan={billing.plan}
         renewsAt={billing.renewsAt}
         annualUrl={billing.plan === "monthly" ? annualUrl : ""}
-        hasPromo={Boolean(savePromoCode)}
+        halfOff={halfOffCodes.length > 0}
       />
     </>
   )
