@@ -30,7 +30,7 @@ async function myMembership() {
     .maybeSingle<{ whop_user_id: string }>()
   if (!data) throw new UserError("Connect your Whop account first.")
   const plan = pickRenewing(await crosslisterMemberships(data.whop_user_id), whopConfig().annualPlanId)
-  if (!plan) throw new UserError("We couldn't find a Cross-Lister subscription that renews on this account.")
+  if (!plan) throw new UserError("We couldn't find a FlipLedger membership that renews on this account.")
   return plan.membership
 }
 

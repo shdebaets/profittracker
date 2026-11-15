@@ -32,20 +32,23 @@ export const requireUser = cache(async () => {
   return { supabase, userId: claims.sub, email: (claims.email as string | undefined) ?? "" }
 })
 
-/** Whether the current user has the Cross-Lister (lib/whop/access.ts). Cached per request. */
-export const canCrosslist = cache(async () => {
+/** Whether the current user has an active FlipLedger membership (lib/whop/access.ts). Cached per request. */
+export const isMember = cache(async () => {
   const { userId, email } = await requireUser()
   return hasCrosslistAccess(userId, email)
 })
 
-export const CROSSLIST_LOCKED = "Cross-listing needs the FlipLedger Cross-Lister. Get it in Settings → Cross-Lister."
+export const MEMBERSHIP_LOCKED =
+  "Your FlipLedger membership isn't active, so you can view and export your history but not change it. Renew in Settings → Membership."
 
 /**
- * requireUser plus the Cross-Lister. Every cross-listing server action and route goes through this;
- * it throws a UserError (shown as-is by fail()) when the user doesn't have it.
+ * requireUser plus an active membership. FlipLedger is paid: without one, people can only view and
+ * export their history. Every server action that changes data goes through this; it throws a
+ * UserError (shown as-is by fail()) for lapsed users. Account housekeeping (settings, push,
+ * disconnecting eBay, billing) stays on requireUser.
  */
-export const requireCrosslister = cache(async () => {
+export const requireMember = cache(async () => {
   const user = await requireUser()
-  if (!(await canCrosslist())) throw new UserError(CROSSLIST_LOCKED)
+  if (!(await isMember())) throw new UserError(MEMBERSHIP_LOCKED)
   return user
 })

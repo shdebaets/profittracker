@@ -63,6 +63,7 @@ export function CancelFlow({
       <div className="rounded-3xl border border-brand/40 bg-brand-soft p-5 text-sm">
         <p className="font-semibold">If you cancel, on {ends} these stop:</p>
         <ul className="mt-2 flex list-disc flex-col gap-1 pl-5">
+          <li>Adding and editing: no new items, sales, lots, mileage or expenses.</li>
           <li>Cross-listing: no more listing to eBay or auto-filling Facebook, Poshmark and Mercari.</li>
           <li>
             Auto-delist: a sale on one site won&apos;t take the item down on the others
@@ -71,10 +72,10 @@ export function CancelFlow({
           <li>Smart Offers: no more automatic offers to interested buyers.</li>
           <li>AI listing: no more writing listings from your photos.</li>
         </ul>
-        <p className="mt-3 font-semibold">These stay, free:</p>
+        <p className="mt-3 font-semibold">You can still:</p>
         <ul className="mt-2 flex list-disc flex-col gap-1 pl-5">
-          <li>All your history: items, sales, lots, mileage, expenses and taxes.</li>
-          <li>Profit tracking, mileage, expenses and tax reports, like today.</li>
+          <li>View all your history: items, sales, lots, mileage, expenses and taxes.</li>
+          <li>Export it: CSV, tax PDF and the print report.</li>
         </ul>
       </div>
 
@@ -104,7 +105,7 @@ export function CancelFlow({
           {hasPromo && (
             <section className="flex flex-col gap-3 rounded-3xl border bg-card p-5">
               <p className="flex items-center gap-2 font-bold"><Tag className="size-5 text-brand" /> Stay for less</p>
-              <p className="text-sm text-muted-foreground">Keep the Cross-Lister at a lower price on your next renewals.</p>
+              <p className="text-sm text-muted-foreground">Keep FlipLedger at a lower price on your next renewals.</p>
               <button
                 disabled={pending}
                 onClick={() => run(acceptSaveOffer, "Discount applied to your next renewal")}
@@ -129,7 +130,7 @@ export function CancelFlow({
 
           <div className="flex flex-col gap-2">
             <Link href="/crosslister" className="flex h-12 items-center justify-center rounded-2xl bg-profit font-bold text-white">
-              Keep my Cross-Lister
+              Keep my membership
             </Link>
             <button onClick={() => setStep("confirm")} className="h-12 rounded-2xl text-sm font-semibold text-muted-foreground">
               No thanks, cancel
@@ -145,7 +146,7 @@ export function CancelFlow({
           </NativeSelect>
           <button
             disabled={pending || !reason}
-            onClick={() => run(() => cancelCrosslister({ reason }), `Cancelled. You keep the Cross-Lister until ${ends}.`)}
+            onClick={() => run(() => cancelCrosslister({ reason }), `Cancelled. Your membership stays active until ${ends}.`)}
             className="h-12 rounded-2xl border border-destructive font-bold text-destructive disabled:opacity-50"
           >
             Cancel at the end of my period

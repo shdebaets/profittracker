@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache"
 import { z } from "zod"
 import { UserError } from "@/lib/errors"
-import { requireUser } from "@/lib/supabase/server"
+import { requireMember } from "@/lib/supabase/server"
 import { fail, type ActionResult } from "./result"
 
 const cents = z.number().int().min(0).max(100_000_000)
@@ -24,7 +24,7 @@ const cancelledSchema = z.object({
 export async function addCancelledSale(input: z.input<typeof cancelledSchema>): Promise<ActionResult> {
   try {
     const c = cancelledSchema.parse(input)
-    const { supabase, userId } = await requireUser()
+    const { supabase, userId } = await requireMember()
     const { error } = await supabase.from("cancelled_sales").insert({
       user_id: userId,
       platform: c.platform,
@@ -42,7 +42,7 @@ export async function addCancelledSale(input: z.input<typeof cancelledSchema>): 
 export async function deleteCancelledSale(id: string): Promise<ActionResult> {
   try {
     const sid = z.string().uuid().parse(id)
-    const { supabase } = await requireUser()
+    const { supabase } = await requireMember()
     const { error } = await supabase.from("cancelled_sales").delete().eq("id", sid)
     if (error) throw error
     return done()
@@ -57,7 +57,7 @@ const refundSchema = z.object({ itemId: z.string().uuid(), refundCents: cents })
 export async function setRefund(input: z.input<typeof refundSchema>): Promise<ActionResult> {
   try {
     const r = refundSchema.parse(input)
-    const { supabase } = await requireUser()
+    const { supabase } = await requireMember()
     const { data: item, error: readErr } = await supabase
       .from("items")
       .select("status, sale_price_cents, quantity, buyer_shipping_cents")

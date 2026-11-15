@@ -7,7 +7,7 @@ import { monthLabel, monthOf, prevMonth } from "@/lib/leaderboard"
 import { sellerMonth, cardBadges } from "@/lib/leaderboard-data"
 import { formatCents } from "@/lib/money"
 import { createAdminClient } from "@/lib/supabase/admin"
-import { requireUser } from "@/lib/supabase/server"
+import { requireMember } from "@/lib/supabase/server"
 import { winCard } from "@/lib/win-card"
 import { fail, type ActionResult } from "./result"
 
@@ -19,7 +19,7 @@ const profileSchema = z.object({
 export async function saveLeaderboardProfile(input: z.input<typeof profileSchema>): Promise<ActionResult> {
   try {
     const p = profileSchema.parse(input)
-    const { supabase, userId } = await requireUser()
+    const { supabase, userId } = await requireMember()
     const { error } = await supabase
       .from("leaderboard_profiles")
       .upsert({ user_id: userId, display_name: p.name, opted_in: p.optedIn, updated_at: new Date().toISOString() })
@@ -36,7 +36,7 @@ export async function postWinToDiscord(which: "this" | "last"): Promise<ActionRe
   try {
     const hook = process.env.DISCORD_WINS_WEBHOOK_URL?.trim()
     if (!hook) throw new UserError("Posting to Discord isn't set up yet.")
-    const { supabase, userId } = await requireUser()
+    const { supabase, userId } = await requireMember()
     const now = monthOf(new Date())
     const m = which === "last" ? prevMonth(now) : now
     const key = `${m.year}-${m.month + 1}`

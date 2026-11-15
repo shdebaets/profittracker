@@ -1,5 +1,5 @@
-// Who may use cross-listing (the profit tracker is free): allowlisted emails, or anyone Whop says
-// has one of the Cross-Lister products (WHOP_CROSSLIST_PRODUCT_IDS).
+// Who has an active FlipLedger membership (the whole app is paid; without one it is view and export only):
+// allowlisted emails, or anyone Whop says has one of the membership products (WHOP_CROSSLIST_PRODUCT_IDS).
 // Whop's answer is cached in whop_links for ACCESS_TTL_MS so a page load doesn't call Whop every time.
 import "server-only"
 import { createAdminClient } from "@/lib/supabase/admin"

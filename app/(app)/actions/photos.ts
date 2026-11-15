@@ -1,7 +1,7 @@
 "use server"
 
 import { z } from "zod"
-import { requireUser } from "@/lib/supabase/server"
+import { requireMember, requireUser } from "@/lib/supabase/server"
 import { PHOTO_BUCKET, removeUnreferencedPhotos } from "@/lib/photos"
 import { fail } from "./result"
 
@@ -13,7 +13,7 @@ export async function createPhotoUploads(
 ): Promise<{ ok: true; uploads: PhotoUpload[] } | { ok: false; error: string }> {
   try {
     const n = z.number().int().min(1).max(12).parse(count)
-    const { supabase, userId } = await requireUser()
+    const { supabase, userId } = await requireMember()
     const uploads: PhotoUpload[] = []
     for (let i = 0; i < n; i++) {
       const path = `${userId}/${crypto.randomUUID()}.jpg`

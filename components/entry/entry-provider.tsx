@@ -59,7 +59,7 @@ export function EntryProvider({
   defaultReturnDays, crosslist, children,
 }: {
   defaultReturnDays: number
-  /** Has the Cross-Lister; without it the Cross-list sheet shows an upsell. */
+  /** Has an active membership; without it the Cross-list sheet shows an upsell. */
   crosslist: boolean
   children: React.ReactNode
 }) {

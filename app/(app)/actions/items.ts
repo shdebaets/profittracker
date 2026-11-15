@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache"
 import { z } from "zod"
-import { canCrosslist, requireUser } from "@/lib/supabase/server"
+import { isMember, requireMember } from "@/lib/supabase/server"
 import { hasChanges, propagateToListings, type ListingChanges } from "@/lib/crosslist/edit"
 import { recordSale, takeDown, type SaleOutcome } from "@/lib/crosslist/engine"
 import { adapters, supabaseStore } from "@/lib/crosslist/store"
@@ -94,7 +94,7 @@ export async function createItem(input: ItemInput): Promise<ActionResult> {
   try {
     const i = itemSchema.parse(input)
     if (i.mode === "sold" && !i.sale) throw new UserError("Enter the sale details.")
-    const { supabase } = await requireUser()
+    const { supabase } = await requireMember()
     const { error } = await supabase.from("items").insert({
       ...baseColumns(i),
       status: i.mode,
@@ -110,7 +110,7 @@ export async function createItem(input: ItemInput): Promise<ActionResult> {
 export async function updateItem(id: string, input: ItemInput): Promise<ActionResult> {
   try {
     const i = itemSchema.parse(input)
-    const { supabase } = await requireUser()
+    const { supabase } = await requireMember()
     const { data: before } = await supabase.from("items").select("photo_paths, cost_unknown, title, description, quantity, status").eq("id", id).single()
     const { error } = await supabase
       .from("items")
@@ -130,7 +130,7 @@ export async function updateItem(id: string, input: ItemInput): Promise<ActionRe
       if (i.description && i.description !== before.description) changes.description = i.description
       if (i.quantity !== before.quantity) changes.quantity = i.quantity
       if (i.photoPaths.length && i.photoPaths.join() !== oldPhotos.join()) changes.photoPaths = i.photoPaths
-      if (hasChanges(changes)) await propagateToListings(supabase, id, changes, { canUseApi: await canCrosslist() })
+      if (hasChanges(changes)) await propagateToListings(supabase, id, changes, { canUseApi: await isMember() })
     }
     const dropped = oldPhotos.filter((p) => !i.photoPaths.includes(p))
     await removeUnreferencedPhotos(supabase, dropped)
@@ -148,7 +148,7 @@ export async function setItemCost(id: string, costCents: number): Promise<Action
   try {
     const itemId = z.string().uuid().parse(id)
     const cost = cents.parse(costCents)
-    const { supabase } = await requireUser()
+    const { supabase } = await requireMember()
     const { data, error } = await supabase.from("items").update({ cost_cents: cost, cost_unknown: false }).eq("id", itemId).select("id")
     if (error) throw error
     if (!data?.length) throw new UserError("This item isn't there any more. Refresh and try again.")
@@ -169,7 +169,7 @@ export async function markSold(
     const sale = saleColumns(saleFields.parse(input))
     // No marketplace picked: sold in person, so there's nothing to ship.
     if (!soldOn) sale.shipped_at = sale.sold_at
-    const { supabase } = await requireUser()
+    const { supabase } = await requireMember()
     const outcome = await recordSale(supabaseStore(supabase), adapters, { itemId: id, qty, sale, soldOn })
     revalidatePath("/", "layout")
     return { ok: true, outcome }
@@ -182,7 +182,7 @@ export async function markSold(
 export async function markShipped(id: string, shipped: boolean): Promise<ActionResult> {
   try {
     const itemId = z.string().uuid().parse(id)
-    const { supabase } = await requireUser()
+    const { supabase } = await requireMember()
     const { error } = await supabase
       .from("items")
       .update({ shipped_at: shipped ? new Date().toISOString() : null })
@@ -197,7 +197,7 @@ export async function markShipped(id: string, shipped: boolean): Promise<ActionR
 
 export async function markReturned(id: string): Promise<ActionResult> {
   try {
-    const { supabase } = await requireUser()
+    const { supabase } = await requireMember()
     await takeDown(supabaseStore(supabase), adapters, id)
     const { error } = await supabase.from("items").update({ status: "returned" }).eq("id", id)
     if (error) throw error
@@ -209,7 +209,7 @@ export async function markReturned(id: string): Promise<ActionResult> {
 
 export async function deleteItem(id: string): Promise<ActionResult> {
   try {
-    const { supabase } = await requireUser()
+    const { supabase } = await requireMember()
     // Listings cascade-delete with the item, so end any live API listing first.
     const down = await takeDown(supabaseStore(supabase), adapters, id)
     if (down.failed.length) throw new UserError(`Couldn't end the ${marketplace(down.failed[0].marketplace).label} listing, so the item wasn't deleted. ${down.failed[0].error}`)
@@ -246,7 +246,7 @@ export type HaulInput = z.input<typeof haulSchema>
 export async function createHaul(input: HaulInput): Promise<ActionResult> {
   try {
     const h = haulSchema.parse(input)
-    const { supabase, userId } = await requireUser()
+    const { supabase, userId } = await requireMember()
     if (h.receiptPath && !h.receiptPath.startsWith(`${userId}/`)) throw new Error("Receipt photo belongs to another user")
     const purchased_at = h.purchasedAt ? new Date(h.purchasedAt).toISOString() : new Date().toISOString()
     const { data: haul, error } = await supabase
@@ -309,7 +309,7 @@ export type HaulEditInput = z.input<typeof haulEditSchema>
 export async function updateHaul(input: HaulEditInput): Promise<ActionResult> {
   try {
     const h = haulEditSchema.parse(input)
-    const { supabase, userId } = await requireUser()
+    const { supabase, userId } = await requireMember()
     if (h.receiptPath && !h.receiptPath.startsWith(`${userId}/`)) throw new Error("Receipt photo belongs to another user")
     const { data: old, error: readErr } = await supabase
       .from("hauls")
@@ -358,7 +358,7 @@ export async function updateHaul(input: HaulEditInput): Promise<ActionResult> {
 export async function deleteHaul(id: string): Promise<ActionResult> {
   try {
     const haulId = z.string().uuid().parse(id)
-    const { supabase } = await requireUser()
+    const { supabase } = await requireMember()
     const { data: gone, error } = await supabase
       .from("hauls")
       .delete()
