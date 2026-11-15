@@ -6,7 +6,7 @@ import { loadUserData, sendRecap } from "@/lib/email/jobs"
 import { EmailError } from "@/lib/email/send"
 import { reportError, UserError } from "@/lib/errors"
 import { createAdminClient } from "@/lib/supabase/admin"
-import { requireUser } from "@/lib/supabase/server"
+import { requireMember, requireUser } from "@/lib/supabase/server"
 import { mileageDeduction } from "@/lib/profit"
 import { tripPush } from "@/lib/push/messages"
 import { pushToUser } from "@/lib/push/send"
@@ -30,7 +30,7 @@ export type ExpenseInput = z.input<typeof expenseSchema>
 export async function saveExpense(id: string | null, input: ExpenseInput): Promise<ActionResult> {
   try {
     const e = expenseSchema.parse(input)
-    const { supabase } = await requireUser()
+    const { supabase } = await requireMember()
     const row = {
       kind: "expense" as const,
       title: e.title,
@@ -61,7 +61,7 @@ export type MileageInput = z.input<typeof mileageSchema>
 export async function logMileage(input: MileageInput): Promise<ActionResult> {
   try {
     const m = mileageSchema.parse(input)
-    const { supabase, userId } = await requireUser()
+    const { supabase, userId } = await requireMember()
     const deduction = mileageDeduction(m.miles, m.rateCents)
     const { error } = await supabase.from("expenses").insert({
       kind: "mileage",
@@ -85,7 +85,7 @@ export async function logMileage(input: MileageInput): Promise<ActionResult> {
 
 export async function deleteExpense(id: string): Promise<ActionResult> {
   try {
-    const { supabase } = await requireUser()
+    const { supabase } = await requireMember()
     const { error } = await supabase.from("expenses").delete().eq("id", id)
     if (error) throw error
     return done()
@@ -102,7 +102,7 @@ const subSchema = z.object({
 export async function createSubscription(input: z.input<typeof subSchema>): Promise<ActionResult> {
   try {
     const s = subSchema.parse(input)
-    const { supabase } = await requireUser()
+    const { supabase } = await requireMember()
     const { error } = await supabase.from("subscriptions").insert({ name: s.name, amount_cents: s.amountCents })
     if (error) throw error
     return done()
@@ -113,7 +113,7 @@ export async function createSubscription(input: z.input<typeof subSchema>): Prom
 
 export async function setSubscriptionActive(id: string, active: boolean): Promise<ActionResult> {
   try {
-    const { supabase } = await requireUser()
+    const { supabase } = await requireMember()
     const { error } = await supabase.from("subscriptions").update({ active }).eq("id", id)
     if (error) throw error
     return done()
@@ -124,7 +124,7 @@ export async function setSubscriptionActive(id: string, active: boolean): Promis
 
 export async function deleteSubscription(id: string): Promise<ActionResult> {
   try {
-    const { supabase } = await requireUser()
+    const { supabase } = await requireMember()
     const { error } = await supabase.from("subscriptions").delete().eq("id", id)
     if (error) throw error
     return done()

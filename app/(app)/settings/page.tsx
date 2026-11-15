@@ -5,7 +5,7 @@ import { getConnections, getSettings } from "@/lib/data"
 import { ebayConfig } from "@/lib/marketplaces/ebay/client"
 import { offerReport } from "@/lib/offers-settle"
 import { createAdminClient } from "@/lib/supabase/admin"
-import { canCrosslist, requireUser } from "@/lib/supabase/server"
+import { isMember, requireUser } from "@/lib/supabase/server"
 import { CrosslistUpsell } from "@/components/crosslist/crosslist-upsell"
 import { MarketplacesSettings } from "./marketplaces"
 import { SettingsForm } from "./settings-form"
@@ -13,7 +13,7 @@ import { SmartOffers, type OfferLog, type OfferRuleRow } from "./smart-offers"
 
 export default async function SettingsPage({ searchParams }: PageProps<"/settings">) {
   const [{ email, userId }, settings, connections, params, crosslist] = await Promise.all([
-    requireUser(), getSettings(), getConnections(), searchParams, canCrosslist(),
+    requireUser(), getSettings(), getConnections(), searchParams, isMember(),
   ])
   // whop_links is service-role only; scoped to this user.
   const { data: whop } = await createAdminClient()
@@ -42,9 +42,9 @@ export default async function SettingsPage({ searchParams }: PageProps<"/setting
         <span className="ml-auto size-2 shrink-0 rounded-full bg-profit" />
       </p>
       <Link href="/crosslister" className="rounded-3xl border bg-card p-5 text-sm">
-        <span className="font-semibold">Cross-Lister</span>
+        <span className="font-semibold">Membership</span>
         <span className="mt-1 block text-muted-foreground">
-          {crosslist ? "Active. Manage it or your billing →" : "List everywhere from FlipLedger. See what's included →"}
+          {crosslist ? "Active. Manage it or your billing →" : "View-only right now. See plans →"}
         </span>
       </Link>
       <SettingsForm settings={settings} />

@@ -7,7 +7,7 @@ import { UserError } from "@/lib/errors"
 import { planReprice, validChange } from "@/lib/reprice"
 import { soldMedians } from "@/lib/sold-medians"
 import { askingPrice } from "@/lib/stale"
-import { canCrosslist, requireUser } from "@/lib/supabase/server"
+import { isMember, requireMember } from "@/lib/supabase/server"
 import type { Item, Listing } from "@/lib/types"
 import { fail, type ActionResult } from "./result"
 
@@ -27,8 +27,8 @@ export async function repriceItems(input: z.input<typeof changeSchema>): Promise
   try {
     const c = changeSchema.parse(input)
     if (!validChange(c)) throw new UserError(c.mode === "percent" ? "Drop by 1% to 90%." : "Enter a price.")
-    const { supabase, userId } = await requireUser()
-    const canUseApi = await canCrosslist()
+    const { supabase, userId } = await requireMember()
+    const canUseApi = await isMember()
     const { data, error } = await supabase
       .from("items")
       .select("*, listings:marketplace_listings(*)")
@@ -63,7 +63,7 @@ export type SuggestResult = { ok: true; prices: Record<string, number> } | { ok:
 export async function suggestPrices(itemIds: string[]): Promise<SuggestResult> {
   try {
     const ids = z.array(z.uuid()).min(1).max(200).parse(itemIds)
-    const { supabase, userId } = await requireUser()
+    const { supabase, userId } = await requireMember()
     const { data, error } = await supabase.from("items").select("id, title").in("id", ids).eq("status", "inventory")
     if (error) throw error
     return { ok: true, prices: Object.fromEntries(await soldMedians(supabase, data ?? [], userId)) }
@@ -76,12 +76,12 @@ export async function suggestPrices(itemIds: string[]): Promise<SuggestResult> {
 export async function retryListingSync(listingId: string): Promise<ActionResult> {
   try {
     const id = z.uuid().parse(listingId)
-    const { supabase } = await requireUser()
+    const { supabase } = await requireMember()
     const { data, error } = await supabase.from("marketplace_listings").select("*").eq("id", id).single()
     if (error) throw error
     const l = data as Listing
     // Only this listing: re-running the whole item would re-send changes to listings that are fine.
-    const out = (await propagateToListings(supabase, l.item_id, l.pending_changes ?? {}, { canUseApi: await canCrosslist(), listingId: l.id }))
+    const out = (await propagateToListings(supabase, l.item_id, l.pending_changes ?? {}, { canUseApi: await isMember(), listingId: l.id }))
       .find((o) => o.listingId === l.id)
     revalidatePath("/", "layout")
     if (out?.status === "failed") throw new UserError(out.error ?? "eBay still didn't accept the change.")
@@ -95,7 +95,7 @@ export async function retryListingSync(listingId: string): Promise<ActionResult>
 export async function markListingSynced(listingId: string): Promise<ActionResult> {
   try {
     const id = z.uuid().parse(listingId)
-    const { supabase } = await requireUser()
+    const { supabase } = await requireMember()
     const { error } = await supabase
       .from("marketplace_listings")
       .update({ sync_status: "synced", sync_error: null, pending_changes: null })

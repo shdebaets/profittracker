@@ -9,7 +9,7 @@ import { soldKey } from "@/lib/comps/sold-api"
 import { median, queryKey } from "@/lib/comps/stats"
 import type { Item } from "@/lib/types"
 import { createAdminClient } from "@/lib/supabase/admin"
-import { requireUser } from "@/lib/supabase/server"
+import { requireMember } from "@/lib/supabase/server"
 import { AiError } from "@/lib/ai/listing"
 import { COMP_PHOTO_DAILY_LIMIT, identifyFromPhoto } from "@/lib/comps/photo"
 import { reportError, UserError } from "@/lib/errors"
@@ -30,7 +30,7 @@ export async function compLookup(
   try {
     const q = z.string().trim().min(2, "Scan a barcode or type what it is").max(120).parse(input)
     const p = z.string().trim().max(120).nullable().optional().parse(product)
-    const { supabase, userId } = await requireUser()
+    const { supabase, userId } = await requireMember()
     const r = await lookupComps(supabase, q, { userId, product: p, skipPaidSold: z.boolean().parse(readsSoldHere) })
     return isPick(r) ? { ok: true, pick: r } : { ok: true, lookup: r }
   } catch (e) {
@@ -48,7 +48,7 @@ export async function compPhotoIdentify(photo: string): Promise<PhotoIdResult> {
   try {
     // A ~1024px JPEG from the browser, well under the 1MB server action body cap.
     const m = z.string().max(900_000, "That photo is too big. Try again.").regex(/^data:image\/jpeg;base64,[A-Za-z0-9+/=]+$/, "Take or pick a photo.").parse(photo)
-    const { userId } = await requireUser()
+    const { userId } = await requireMember()
     // ai_usage is service-role only, scoped to this user.
     const admin = createAdminClient()
     const since = new Date(Date.now() - 86_400_000).toISOString()
@@ -81,7 +81,7 @@ const soldRow = z.object({
 /** Sold listings the extension read from eBay's public sold search for `query`. Shared market data. */
 export async function saveSoldComps(query: string, rows: unknown, total?: number | null): Promise<ActionResult & { saved?: number }> {
   try {
-    await requireUser()
+    await requireMember()
     const q = z.string().min(2).max(120).parse(query)
     const key = queryKey(q)
     const ebayTotal = z.number().int().min(0).max(10_000_000).nullable().optional().parse(total) ?? null
@@ -133,7 +133,7 @@ const trackSchema = z.object({
 export async function trackProduct(input: z.input<typeof trackSchema>): Promise<ActionResult> {
   try {
     const t = trackSchema.parse(input)
-    const { supabase, userId } = await requireUser()
+    const { supabase, userId } = await requireMember()
     const { error } = await supabase.from("tracked_products").upsert(
       { user_id: userId, query: t.query, gtin: t.gtin ?? null, title: t.title ?? null, product: t.product ?? null, image_url: t.image ?? null, target_cost_cents: t.targetCostCents ?? null },
       { onConflict: "user_id,query" },
@@ -148,7 +148,7 @@ export async function trackProduct(input: z.input<typeof trackSchema>): Promise<
 
 export async function untrackProduct(id: string): Promise<ActionResult> {
   try {
-    const { supabase } = await requireUser()
+    const { supabase } = await requireMember()
     const { error } = await supabase.from("tracked_products").delete().eq("id", z.uuid().parse(id))
     if (error) throw error
     revalidatePath("/comp")
@@ -161,7 +161,7 @@ export async function untrackProduct(id: string): Promise<ActionResult> {
 /** Re-check one tracked product's numbers and save them. */
 export async function refreshTracked(id: string): Promise<ActionResult> {
   try {
-    const { supabase, userId } = await requireUser()
+    const { supabase, userId } = await requireMember()
     const { data: t, error } = await supabase.from("tracked_products").select("query, gtin, product").eq("id", z.uuid().parse(id)).single()
     if (error) throw error
     // Old tracked rows have no product: their query is already the narrowed search phrase.
@@ -184,7 +184,7 @@ export type OverpricedResult = { ok: true; items: Overpriced[]; checked: number 
 /** Compare each priced inventory item with the sold comps on file for its title (last 90 days). */
 export async function findOverpriced(): Promise<OverpricedResult> {
   try {
-    const { supabase, userId } = await requireUser()
+    const { supabase, userId } = await requireMember()
     const { data, error } = await supabase.from("items").select("*, listings:marketplace_listings(*)").eq("status", "inventory")
     if (error) throw error
     const items = (data ?? []) as Item[]

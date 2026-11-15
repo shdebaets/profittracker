@@ -7,7 +7,7 @@ import { AI_DAILY_LIMIT, FAIR_USE_MESSAGE, LISTING_KIND, listingCallsToday } fro
 import { reportError, UserError } from "@/lib/errors"
 import { signPaths } from "@/lib/photos"
 import { createAdminClient } from "@/lib/supabase/admin"
-import { requireUser } from "@/lib/supabase/server"
+import { requireMember } from "@/lib/supabase/server"
 import { fail } from "./result"
 
 export type AiDraftResult = { ok: true; draft: ListingDraft } | { ok: false; error: string }
@@ -16,7 +16,7 @@ export type AiDraftResult = { ok: true; draft: ListingDraft } | { ok: false; err
 export async function aiDraftListing(itemId: string): Promise<AiDraftResult> {
   try {
     const id = z.uuid().parse(itemId)
-    const { supabase, userId } = await requireUser()
+    const { supabase, userId } = await requireMember()
     const { data: item, error } = await supabase.from("items").select("title, photo_paths").eq("id", id).single()
     if (error) throw error
     const paths = (item.photo_paths as string[] | null) ?? []

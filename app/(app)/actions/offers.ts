@@ -5,7 +5,7 @@ import { z } from "zod"
 import { ASSISTED_OFFER_SITES, dueOffers, type DueOffer, type OfferCandidate } from "@/lib/offers-assisted"
 import { lastSentByListing, type OfferRule } from "@/lib/offers"
 import { createAdminClient } from "@/lib/supabase/admin"
-import { requireCrosslister } from "@/lib/supabase/server"
+import { requireMember } from "@/lib/supabase/server"
 import { fail, type ActionResult } from "./result"
 
 const ruleSchema = z
@@ -22,7 +22,7 @@ const ruleSchema = z
 export async function saveOfferRules(input: z.input<typeof ruleSchema>): Promise<ActionResult> {
   try {
     const r = ruleSchema.parse(input)
-    const { supabase, userId } = await requireCrosslister()
+    const { supabase, userId } = await requireMember()
     const { error } = await supabase.from("smart_offer_rules").upsert({
       user_id: userId,
       enabled: r.enabled,
@@ -46,7 +46,7 @@ export type AssistedOffersResult = { ok: true; offers: DueOffer[] } | { ok: fals
 /** Poshmark and Mercari listings due an offer under the seller's Smart Offers rules. */
 export async function getAssistedOffers(): Promise<AssistedOffersResult> {
   try {
-    const { supabase } = await requireCrosslister()
+    const { supabase } = await requireMember()
     const [{ data: rule }, { data: listings, error }, { data: sent }] = await Promise.all([
       supabase.from("smart_offer_rules").select("*").maybeSingle<OfferRule & { enabled: boolean }>(),
       supabase
@@ -84,7 +84,7 @@ export async function getAssistedOffers(): Promise<AssistedOffersResult> {
 export async function logAssistedOffer(input: { listingId: string; offerCents: number }): Promise<ActionResult> {
   try {
     const { listingId, offerCents } = z.object({ listingId: z.uuid(), offerCents: z.number().int().positive().max(10_000_000) }).parse(input)
-    const { supabase, userId } = await requireCrosslister()
+    const { supabase, userId } = await requireMember()
     // The same report can reach more than one open tab: one offer per listing per 10 minutes.
     const { data: recent } = await supabase
       .from("smart_offers")

@@ -3,7 +3,7 @@ import Link from "next/link"
 import { PageTitle } from "@/components/app-header"
 import { formatDate } from "@/lib/dates"
 import { createAdminClient } from "@/lib/supabase/admin"
-import { canCrosslist, requireUser } from "@/lib/supabase/server"
+import { isMember, requireUser } from "@/lib/supabase/server"
 import { YearlyPlanBanner } from "@/components/yearly-plan-banner"
 import { billingState, showYearlyBanner } from "@/lib/whop/billing"
 import { MANAGE_BILLING_URL, whopConfig } from "@/lib/whop/config"
@@ -11,13 +11,15 @@ import { RecheckButton } from "./recheck-button"
 import { ResumeButton } from "./resume-button"
 
 const PERKS = [
+  "Profit tracking, lots, mileage, expenses and tax reports",
+  "Scan to comp, stale and overpriced alerts, weekly recaps",
   "List on eBay straight from FlipLedger",
   "Auto-fill Facebook Marketplace, Poshmark and Mercari with the Chrome extension",
   "Sales sync and delist everywhere when something sells",
   "Import your existing Poshmark and Mercari listings",
 ]
 
-const PLAN_LABEL = { monthly: "Monthly plan", yearly: "Yearly plan", other: "Cross-Lister plan" } as const
+const PLAN_LABEL = { monthly: "Monthly plan", yearly: "Yearly plan", other: "FlipLedger plan" } as const
 
 const WHOP_ERRORS: Record<string, string> = {
   whop: "Connecting your Whop account didn't work. Try again.",
@@ -26,7 +28,7 @@ const WHOP_ERRORS: Record<string, string> = {
 }
 
 export default async function CrosslisterPage({ searchParams }: PageProps<"/crosslister">) {
-  const [{ userId }, unlocked, { whop_error }] = await Promise.all([requireUser(), canCrosslist(), searchParams])
+  const [{ userId }, unlocked, { whop_error }] = await Promise.all([requireUser(), isMember(), searchParams])
   const whopError = typeof whop_error === "string" ? (WHOP_ERRORS[whop_error] ?? WHOP_ERRORS.whop) : null
   const { checkoutUrl, annualUrl, clientId } = whopConfig()
   // whop_links is service-role only; scoped to this user.
@@ -39,7 +41,7 @@ export default async function CrosslisterPage({ searchParams }: PageProps<"/cros
 
   return (
     <>
-      <PageTitle title="Cross-Lister" subtitle="List once, sell everywhere" />
+      <PageTitle title="Membership" subtitle="Everything in FlipLedger, one plan" />
       {whopError && (
         <p role="alert" className="rounded-2xl border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">
           {whopError}
@@ -61,7 +63,7 @@ export default async function CrosslisterPage({ searchParams }: PageProps<"/cros
 
         {unlocked ? (
           <>
-            <p className="rounded-2xl bg-profit-soft px-4 py-3 text-sm">You have the Cross-Lister. Open any item and tap Cross-list.</p>
+            <p className="rounded-2xl bg-profit-soft px-4 py-3 text-sm">Your membership is active. Open any item and tap Cross-list to list it everywhere.</p>
             <Link href="/settings" className="flex h-12 items-center justify-center rounded-2xl border font-semibold">
               Connect marketplaces
             </Link>
@@ -71,7 +73,7 @@ export default async function CrosslisterPage({ searchParams }: PageProps<"/cros
             {checkoutUrl ? (
               <div className="grid gap-2">
                 <a href={checkoutUrl} className="flex h-12 items-center justify-center rounded-2xl bg-brand font-bold text-ink">
-                  Get the Cross-Lister · $30/month
+                  Get FlipLedger · $30/month
                 </a>
                 {annualUrl && (
                   <a href={annualUrl} className="flex h-12 items-center justify-center rounded-2xl border font-semibold">
@@ -80,7 +82,7 @@ export default async function CrosslisterPage({ searchParams }: PageProps<"/cros
                 )}
               </div>
             ) : (
-              <p className="text-center text-sm text-muted-foreground">The Cross-Lister opens soon.</p>
+              <p className="text-center text-sm text-muted-foreground">Memberships open soon.</p>
             )}
             {!billing.linked && clientId ? (
               <a href="/auth/whop/start" className="flex h-12 items-center justify-center rounded-2xl border font-semibold">
@@ -117,7 +119,7 @@ export default async function CrosslisterPage({ searchParams }: PageProps<"/cros
           )}
           {billing.canceling && (
             <p className="text-xs text-muted-foreground">
-              Changed your mind? Buy again any time from this page. Your listings and history stay in FlipLedger.
+              Changed your mind? Buy again any time from this page. Your history stays in FlipLedger, and you can still view and export it.
             </p>
           )}
         </div>

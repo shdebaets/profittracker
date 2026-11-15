@@ -3,15 +3,16 @@ import { BottomNav } from "@/components/bottom-nav"
 import { AutoSync } from "@/components/crosslist/auto-sync"
 import { ExtensionBridge } from "@/components/crosslist/extension-bridge"
 import { EntryProvider } from "@/components/entry/entry-provider"
+import { MembershipBanner } from "@/components/membership-banner"
 import { TaxBracketOnboarding } from "@/components/tax-bracket-onboarding"
-import { canCrosslist, requireUser } from "@/lib/supabase/server"
+import { isMember, requireUser } from "@/lib/supabase/server"
 import { getSettings } from "@/lib/data"
 
 export default async function AppLayout({ children }: LayoutProps<"/">) {
   const { supabase } = await requireUser()
   const [settings, crosslist, inv, exp] = await Promise.all([
     getSettings(),
-    canCrosslist(),
+    isMember(),
     supabase.from("items").select("id", { count: "exact", head: true }).eq("status", "inventory"),
     supabase.from("expenses").select("id", { count: "exact", head: true }),
   ])
@@ -20,9 +21,10 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
     <EntryProvider defaultReturnDays={settings.default_return_days} crosslist={crosslist}>
       <div className="mx-auto flex min-h-dvh max-w-lg flex-col gap-5 px-4 pb-32">
         <AppHeader />
+        {!crosslist && <MembershipBanner />}
         {children}
       </div>
-      {/* Sales sync, auto-delist and the extension are Cross-Lister features. */}
+      {/* Sales sync, auto-delist and the extension need an active membership. */}
       {!settings.tax_bracket_set && <TaxBracketOnboarding />}
       {crosslist && <AutoSync />}
       {crosslist && <ExtensionBridge />}

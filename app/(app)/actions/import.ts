@@ -8,7 +8,7 @@ import { fetchPoshmarkCloset, POSHMARK_PHOTO_HOST, PoshmarkClosetError, poshmark
 import { PHOTO_BUCKET } from "@/lib/photos"
 import { marketplaceSoldItem, planUntrackedSales, type MarketplaceSale, type SalesPlan } from "@/lib/sales/untracked"
 import { createAdminClient } from "@/lib/supabase/admin"
-import { requireCrosslister, requireUser } from "@/lib/supabase/server"
+import { requireMember, requireUser } from "@/lib/supabase/server"
 import { fail } from "./result"
 
 type Result<T> = { ok: true; data: T } | { ok: false; error: string }
@@ -70,7 +70,7 @@ export async function findPoshmarkListings(closet: string): Promise<Result<Impor
   try {
     const username = poshmarkUsername(closet)
     if (!username) throw new UserError("Enter your Poshmark username, or paste your closet link.")
-    const { supabase } = await requireCrosslister()
+    const { supabase } = await requireMember()
     let candidates: ImportCandidate[]
     try {
       candidates = await fetchPoshmarkCloset(username)
@@ -96,7 +96,7 @@ export async function previewImport(input: ImportCandidate[]): Promise<Result<Im
   try {
     const candidates = candidatesSchema.parse(input)
     if (!candidates.length) throw new UserError("No live listings found.")
-    const { supabase } = await requireCrosslister()
+    const { supabase } = await requireMember()
     return { ok: true, data: preview(candidates, await plan(supabase, candidates)) }
   } catch (e) {
     return fail(e) as { ok: false; error: string }
@@ -128,7 +128,7 @@ async function copyPhoto(supabase: SupabaseClient, userId: string, url: string |
 export async function importListings(input: ImportCandidate[]): Promise<Result<{ created: number; linked: number; skipped: number }>> {
   try {
     const candidates = candidatesSchema.parse(input)
-    const { supabase, userId } = await requireCrosslister()
+    const { supabase, userId } = await requireMember()
     const p = await plan(supabase, candidates)
     const now = new Date().toISOString()
 
@@ -216,7 +216,7 @@ async function planSales(supabase: SupabaseClient, sales: MarketplaceSale[]): Pr
 export async function previewSales(input: MarketplaceSale[]): Promise<Result<SalesPreview>> {
   try {
     const sales = salesSchema.parse(input)
-    const { supabase } = await requireCrosslister()
+    const { supabase } = await requireMember()
     const p = await planSales(supabase, sales)
     return { ok: true, data: { sales, create: p.create.length, skip: p.skip.length } }
   } catch (e) {
@@ -232,7 +232,7 @@ export async function previewSales(input: MarketplaceSale[]): Promise<Result<Sal
 export async function recordSales(input: MarketplaceSale[]): Promise<Result<{ created: number; skipped: number }>> {
   try {
     const sales = salesSchema.parse(input)
-    const { supabase, userId } = await requireCrosslister()
+    const { supabase, userId } = await requireMember()
     // marketplace_sales has no insert policy; the admin client writes it, always for this user.
     const admin = createAdminClient()
     const p = await planSales(supabase, sales)
