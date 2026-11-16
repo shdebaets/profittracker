@@ -342,7 +342,14 @@ export function InventoryView({
         )}
         {!visible.length && (
           <div className="rounded-3xl border border-dashed bg-card/50 p-8 text-center text-muted-foreground">
-            {items.length ? "Nothing matches these filters." : "No items yet. Tap + to add your first one."}
+            {items.length ? "Nothing matches these filters." : (
+              <>
+                No items yet. Tap + to add your first one.
+                <Link href="/settings#import" className="mt-2 block text-sm font-semibold text-foreground underline">
+                  Coming from another tracker? Import your history
+                </Link>
+              </>
+            )}
           </div>
         )}
       </div>

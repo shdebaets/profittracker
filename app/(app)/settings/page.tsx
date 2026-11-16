@@ -7,6 +7,7 @@ import { offerReport } from "@/lib/offers-settle"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { isMember, requireUser } from "@/lib/supabase/server"
 import { CrosslistUpsell } from "@/components/crosslist/crosslist-upsell"
+import { BacklogImport } from "@/components/backlog/backlog-import"
 import { MarketplacesSettings } from "./marketplaces"
 import { SettingsForm } from "./settings-form"
 import { SmartOffers, type OfferLog, type OfferRuleRow } from "./smart-offers"
@@ -48,6 +49,7 @@ export default async function SettingsPage({ searchParams }: PageProps<"/setting
         </span>
       </Link>
       <SettingsForm settings={settings} />
+      {crosslist && <BacklogImport mileageRateCents={settings.mileage_rate_cents} />}
       {crosslist ? (
         <MarketplacesSettings
           ebay={connections.find((c) => c.marketplace === "ebay") ?? null}

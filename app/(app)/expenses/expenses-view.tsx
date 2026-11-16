@@ -10,6 +10,7 @@ import { createSubscription, deleteExpense, deleteSubscription, logMileage, setS
 import { BottomSheet } from "@/components/bottom-sheet"
 import { FieldLabel, MoneyInput, NativeSelect, TextInput } from "@/components/fields"
 import { StatCard } from "@/components/stat-card"
+import Link from "next/link"
 import { dollars, exportCsv } from "@/lib/csv"
 import { dateInputToIso, formatDate, formatDateAt, toDateInput } from "@/lib/dates"
 import { coordLabel, endTrip, gpsSupported, resumeTrip, startTrip, tripMiles, useGpsTrip } from "@/lib/gps-trip"
@@ -255,7 +256,16 @@ function Ledger({ expenses, onEdit }: { expenses: Expense[]; onEdit: (e: Expense
           )
         })}
         {!visible.length && (
-          <EmptyState>{expenses.length ? "No matching records." : "No expenses yet: boxes, tape, and mileage all count."}</EmptyState>
+          <EmptyState>
+            {expenses.length ? "No matching records." : (
+              <>
+                No expenses yet: boxes, tape, and mileage all count.
+                <Link href="/settings#import" className="mt-2 block text-sm font-semibold text-foreground underline">
+                  Tracked them somewhere else? Import them
+                </Link>
+              </>
+            )}
+          </EmptyState>
         )}
       </div>
     </>
