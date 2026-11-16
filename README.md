@@ -12,6 +12,7 @@ Installable web app (PWA) for resellers. Users log inventory and sales, and the 
 - **Inventory:** All/Sales/Stock tabs, time filters, search, and a return-window countdown with **Mark Returned**. **Mark Sold** handles partial lots, e.g. selling 2 of 5 splits the row. Exports to CSV.
 - **Calculator:** what-if profit and break-even price. "Log sale" prefills the add sheet.
 - **Expenses:** ledger with categories, manual mileage log at a configurable IRS rate, monthly subscriptions (pause or resume), and CSV export.
+- **Backlog import:** bring inventory, past sales, expenses and mileage over from another tracker or spreadsheet (CSV, Excel or a Google Sheets link), with columns guessed and adjustable, re-imports skipped, and undo.
 - **Settings:** mileage rate, default return window, sign out.
 - **PWA:** installable, and the app shell and offline page are cached. Data still needs a connection.
 
