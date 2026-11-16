@@ -7,7 +7,7 @@ import type { SupabaseClient } from "@supabase/supabase-js"
 import { pushToUser } from "@/lib/push/send"
 import { trackedPush } from "@/lib/push/comp-messages"
 import { isPick, lookupComps } from "./lookup"
-import { soldDailyLimit, soldRequestsToday } from "./sold-api"
+import { soldDailyLimit, soldMonthlyLimit, soldRequestsToday } from "./sold-api"
 import type { CompStats } from "./stats"
 import { soldMedianOf, trackedAlert } from "./tracked-alerts"
 
@@ -42,7 +42,9 @@ export async function refreshTrackedProducts(
     .limit(1000)
   if (error) throw error
   const perUser = new Map<string, number>()
-  const budget = Math.floor(soldDailyLimit() * BUDGET_SHARE())
+  // The cron's share of a day: of SOLD_DATA_DAILY_LIMIT if set, else of a 30th of the monthly plan.
+  const day = Number.isFinite(soldDailyLimit()) ? soldDailyLimit() : soldMonthlyLimit() / 30
+  const budget = Math.floor(day * BUDGET_SHARE())
   let checked = 0, alerts = 0, skipped = 0
   for (const t of (data ?? []) as Row[]) {
     if (checked >= PER_RUN()) return { checked, alerts, skipped, stoppedBy: "cap" }
