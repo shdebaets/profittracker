@@ -21,7 +21,8 @@ type Item = {
 const LIVE_TTL_MS = 24 * 60 * 60_000
 const maxCalls = () => Number(process.env.COMP_UNITS_MAX_CALLS) || 80
 /** Single-item calls in flight at once (getItems batches are a restricted API: our keyset gets 403). */
-const PARALLEL = 8
+// 16 at once: eBay slows each call past ~16 (0.85 s at 8, 1.5 s at 20), so more buys little.
+const PARALLEL = 16
 let batchDenied = false
 const dailyLimit = () => Number(process.env.COMP_UNITS_DAILY_LIMIT) || 2000
 

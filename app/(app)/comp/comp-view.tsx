@@ -66,6 +66,8 @@ export function CompView({ tracked, initialQuery }: { tracked: Tracked[]; initia
   const [scanning, setScanning] = useState(false)
   const [result, setResult] = useState<CompLookup | null>(null)
   const [pick, setPick] = useState<CompPick | null>(null)
+  // Products this member can still check today (5 a day for now; null = no limit).
+  const [checksLeft, setChecksLeft] = useState<number | null>(null)
   const [cost, setCost] = useState("")
   const [pending, start] = useTransition()
   const [collecting, setCollecting] = useState(false)
@@ -102,6 +104,7 @@ export function CompView({ tracked, initialQuery }: { tracked: Tracked[]; initia
       } else {
         setPick(null)
         setResult(res.lookup)
+        setChecksLeft(res.checksLeft)
       }
     },
     [source],
@@ -314,6 +317,11 @@ export function CompView({ tracked, initialQuery }: { tracked: Tracked[]; initia
                   </>
                 )}
               </p>
+              {checksLeft != null && (
+                <p className="text-xs text-muted-foreground">
+                  {checksLeft === 0 ? "That was your last new product check today" : `${checksLeft} new product check${checksLeft === 1 ? "" : "s"} left today`}
+                </p>
+              )}
             </div>
           </div>
 

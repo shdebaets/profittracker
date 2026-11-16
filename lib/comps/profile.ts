@@ -2,7 +2,7 @@
 // every sale of it, plus the words that mark look-alikes. eBay needs every word of a search to
 // match, and sellers title the same box a dozen ways ("UPC Night", "Ultra Premium Collection
 // Umbreon", "30th Anniversary Celebration Night"), so one search finds a fraction of the sales.
-// Built once per product by a bigger Claude model (cached a week in comp_cache by lookup).
+// Built once per product by a bigger Claude model (cached 30 days in comp_cache by lookup).
 import "server-only"
 import { mergeSearches } from "./variants"
 
@@ -119,6 +119,8 @@ export async function buildProfile(product: string, liveTitles: string[]): Promi
     body: JSON.stringify({
       model: PROFILE_MODEL(),
       max_tokens: 2000,
+      // Low effort: same keywords as the default in tests (Night, Nov 16), less thinking to pay for.
+      output_config: { effort: "low" },
       tools: [TOOL],
       // Sonnet 5.5 refuses forced tool choice ("tool"/"any"), so the prompt asks for the tool instead.
       tool_choice: { type: "auto" },
@@ -127,7 +129,7 @@ export async function buildProfile(product: string, liveTitles: string[]): Promi
         {
           role: "user",
           content: `Product: ${product.slice(0, 160)}\nTitles of live eBay listings for it (some are other products or editions):\n${liveTitles
-            .slice(0, 80)
+            .slice(0, 50)
             .map((t) => `- ${t.slice(0, 140)}`)
             .join("\n")}`,
         },
