@@ -11,6 +11,7 @@ import { createAdminClient } from "@/lib/supabase/admin"
 import { queryKey, soldPhrase } from "./stats"
 
 export const SOLD_TTL_MS = (Number(process.env.SOLD_DATA_TTL_HOURS) || 24) * 60 * 60_000
+const EMPTY_TTL_MS = 2 * 60 * 60_000
 const ENDPOINT = "https://api.openwebninja.com/real-time-ebay-data/search"
 const monthlyLimit = () => Number(process.env.SOLD_DATA_MONTHLY_LIMIT) || 10_000
 const dailyLimit = () => Number(process.env.SOLD_DATA_DAILY_LIMIT) || Math.floor(monthlyLimit() / 30)
@@ -111,8 +112,12 @@ async function fetchPage(query: string, page: number): Promise<{ items: unknown[
   if (!key) throw new SoldApiError("SOLD_DATA_API_KEY is not set")
   const params = new URLSearchParams({ query: query.slice(0, 100), show_only: "sold_items", sort_by: "RECENTLY_SOLD", domain: "com", page: String(page) })
   const res = await fetch(`${ENDPOINT}?${params}`, { headers: { "x-api-key": key }, signal: AbortSignal.timeout(25_000) })
-  const body = (await res.json().catch(() => ({}))) as { data?: { products?: unknown[] } | unknown[]; error?: unknown; message?: unknown }
+  const body = (await res.json().catch(() => ({}))) as { data?: { products?: unknown[] } | unknown[]; error?: unknown; message?: unknown; status?: unknown }
   if (!res.ok) throw new SoldApiError(`sold data ${res.status}: ${String(body.message ?? body.error ?? "").slice(0, 200)}`)
+  // A 200 without data (quota used up, provider error) is a failed read, not "no sales": throwing
+  // keeps it from being saved as a read, so the next lookup tries again.
+  if (body.data == null || /error/i.test(String(body.status ?? "")))
+    throw new SoldApiError(`sold data: no data (${String(body.status ?? "")} ${String(body.message ?? body.error ?? "").slice(0, 200)})`)
   const data = body.data as ({ products?: unknown[] } & Record<string, unknown>) | unknown[] | undefined
   if (page === 1 && data && !Array.isArray(data)) console.log("[sold data] response keys", Object.keys(data).join(","))
   const items = Array.isArray(data) ? data : (data?.products ?? [])
@@ -132,12 +137,13 @@ const MAX_REQUESTS = () => Number(process.env.SOLD_DATA_MAX_REQUESTS_PER_PRODUCT
 export const soldKey = (query: string) => `sold9:${queryKey(query)}`
 
 /** What the last sold read found: when it ran and eBay's own count of matching sold listings. */
-export async function lastSoldRead(query: string): Promise<{ at: string; total: number | null; within30: number | null } | null> {
+export async function lastSoldRead(query: string): Promise<{ at: string; total: number | null; within30: number | null; results: number } | null> {
   const { data } = await createAdminClient().from("comp_cache").select("payload, fetched_at").eq("key", soldKey(query)).maybeSingle()
   if (!data) return null
   const total = Number((data.payload as { total?: unknown })?.total)
   const w = Number((data.payload as { within30?: unknown })?.within30)
-  return { at: data.fetched_at, total: Number.isFinite(total) && total > 0 ? total : null, within30: Number.isFinite(w) && w > 0 ? w : null }
+  const results = Number((data.payload as { results?: unknown })?.results ?? 0) || 0
+  return { at: data.fetched_at, total: Number.isFinite(total) && total > 0 ? total : null, within30: Number.isFinite(w) && w > 0 ? w : null, results }
 }
 
 export const soldDailyLimit = dailyLimit
@@ -178,8 +184,11 @@ export async function refreshSoldFromApi(query: string, searches?: string[]): Pr
   // v2: reads several pages (v1 read one, which undercounted busy products).
   // v5: searches the cut-down phrase (soldPhrase) instead of the full product name.
   const key = soldKey(query)
-  const { data: last } = await admin.from("comp_cache").select("fetched_at").eq("key", key).maybeSingle()
-  if (last && Date.now() - Date.parse(last.fetched_at) < SOLD_TTL_MS) return 0
+  const { data: last } = await admin.from("comp_cache").select("fetched_at, payload").eq("key", key).maybeSingle()
+  // A read that found nothing is retried after 2 hours, not the full TTL (it may have been a
+  // provider hiccup; a product with truly no sales costs 1-3 requests to re-check).
+  const found = Number((last?.payload as { results?: unknown })?.results ?? 1) > 0
+  if (last && Date.now() - Date.parse(last.fetched_at) < (found ? SOLD_TTL_MS : EMPTY_TTL_MS)) return 0
   const left = await soldRequestsLeft()
   if (left <= 0) {
     console.warn("[sold data] request budget used up", JSON.stringify({ daily: dailyLimit(), monthly: monthlyLimit() }))

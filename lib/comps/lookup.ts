@@ -125,7 +125,8 @@ export async function lookupComps(
   // Sold prices from the data provider when nobody has read this product in 12 hours (no-op without a key).
   const before = await lastSoldRead(query).catch(() => null)
   // Instant when there's something to show: a product read before refreshes in the background.
-  const later = !!opts.background && !!before
+  // A read that found nothing doesn't count: wait for a real one rather than show "no sold data".
+  const later = !!opts.background && !!before && before.results > 0
   if (!opts.skipPaidSold) {
     if (later) after(() => refreshSoldFromApi(query, searches).then(() => undefined))
     else await refreshSoldFromApi(query, searches)
