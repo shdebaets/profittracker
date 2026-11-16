@@ -224,6 +224,11 @@ export async function refreshSoldFromApi(query: string, searches?: string[]): Pr
     const phraseTotal = firstPages[0]?.total ?? null
     const oldest = firstPages.map((p) => p.oldest).filter((d): d is string => !!d).sort()[0] ?? null
     const lastPage = phraseTotal ? Math.min(100, Math.ceil(phraseTotal / 60)) : 0
+    // The first keyword ran out of results (every page read in order, the last one not full): the
+    // read holds all of eBay's sales for it, so its 30-day count is exact and nothing is projected.
+    // eBay's result total can't tell us this: it changes from page to page (192 on page 1, then 122).
+    const tail = firstPages.find((p) => p.page === lastRead)
+    if (tail && !tail.full && firstPages.length === lastRead) within30 = firstPages.flatMap((p) => p.got).filter((r) => r.sold_on >= monthAgo).length
     // The probe stays inside the per-product budget (it needs 2 requests to be worth starting).
     if (phraseTotal && lastPage > lastRead && oldest && oldest >= monthAgo && firstPages.every((p) => p.full) && requests + 2 <= MAX_REQUESTS()) {
       let inside = lastRead
