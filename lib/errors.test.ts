@@ -52,6 +52,17 @@ describe("friendlyError", () => {
       expect(friendlyError(ebay(400, "Fulfillment policy is not valid."))).toMatch(/policies/)
       expect(friendlyError(ebay(400, "Condition is not supported for this category."))).toMatch(/condition/)
     })
+    it("eBay's word filter (25019) says so and quotes eBay", () => {
+      const msg = "Cannot revise listing. The item cannot be listed or modified. The title and/or description may contain improper words, or the listing or seller may be in violation of eBay policy."
+      const out = friendlyError(ebay(400, msg, 25019))
+      expect(out).toMatch(/^eBay blocked this listing because of a word/)
+      expect(out).toContain('eBay says: "The title and/or description may contain improper words, or the listing or seller may be in violation of eBay policy."')
+    })
+    it("one-word guesses end with eBay's own sentence", () => {
+      expect(friendlyError(ebay(400, "A user error has occurred. The title is too long."))).toBe(
+        'eBay didn\'t accept the title. Shorten it or remove special characters. eBay says: "The title is too long."',
+      )
+    })
     it("selling limits say so instead of blaming the price", () => {
       const msg = "A user error has occurred. This listing would cause you to exceed the amount you can list. You can list up to USD 500.00 more in total sales this month. Please consider reducing the starting price or request to list more."
       expect(friendlyError(ebay(400, msg, 25002))).toBe(
