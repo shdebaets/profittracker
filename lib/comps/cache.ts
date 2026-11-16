@@ -3,7 +3,7 @@ import "server-only"
 import { createAdminClient } from "@/lib/supabase/admin"
 
 export const LIVE_TTL_MS = 2 * 60 * 60_000 // live listings: 2 hours
-export const IDENTIFY_TTL_MS = 24 * 60 * 60_000 // which products a search covers: a day
+export const IDENTIFY_TTL_MS = 7 * 24 * 60 * 60_000 // which products a search covers: a week (saves AI calls)
 
 /** Returns the cached value if it's fresher than `ttlMs`, else runs `load` and stores it. */
 export async function cached<T>(key: string, ttlMs: number, load: () => Promise<T>): Promise<T> {

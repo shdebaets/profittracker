@@ -115,15 +115,14 @@ export async function judgeTitles(
   }
 
   let judged = true
-  const todo = unique.filter((t) => !verdicts.has(hash(t))).slice(0, MAX_PER_CALL * 5)
-  for (let i = 0; i < todo.length; i += MAX_PER_CALL) {
-    const batch = todo.slice(i, i + MAX_PER_CALL)
+  // Up to 800 new titles a lookup (about $0.005 on Haiku), 4 calls at a time. Verdicts are kept
+  // per product and title, so later lookups only judge titles nobody has seen yet.
+  const todo = unique.filter((t) => !verdicts.has(hash(t))).slice(0, MAX_PER_CALL * 10)
+  const batches = Array.from({ length: Math.ceil(todo.length / MAX_PER_CALL) }, (_, i) => todo.slice(i * MAX_PER_CALL, (i + 1) * MAX_PER_CALL))
+  const one = async (batch: string[]) => {
     try {
       const out = await askClaude(product, batch, editions)
-      if (!out) {
-        judged = false
-        break
-      }
+      if (!out) return void (judged = false)
       const rows = batch.map((t, j) => ({ query_key: pk, title_hash: hash(t), keep: out.keep.has(j) }))
       for (const r of rows) verdicts.set(r.title_hash, r.keep)
       await admin.from("comp_judgments").upsert(rows, { onConflict: "query_key,title_hash" })
@@ -131,8 +130,8 @@ export async function judgeTitles(
     } catch (e) {
       console.error("[comp judge]", e)
       judged = false
-      break
     }
   }
+  for (let i = 0; i < batches.length && judged; i += 4) await Promise.all(batches.slice(i, i + 4).map(one))
   return { keep: (t) => !ruledOut(t) && !obviousMulti(t, product) && (verdicts.get(hash(t.trim())) ?? true), judged }
 }

@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache"
 import { z } from "zod"
+import { compChecks } from "@/lib/comps/checks"
 import { judgeTitles } from "@/lib/comps/judge"
 import { isPick, lookupComps, searchPhrase, type CompLookup, type CompPick } from "@/lib/comps/lookup"
 import { overpricedItems, type Overpriced } from "@/lib/comps/overpriced"
@@ -15,7 +16,8 @@ import { COMP_PHOTO_DAILY_LIMIT, identifyFromPhoto } from "@/lib/comps/photo"
 import { reportError, UserError } from "@/lib/errors"
 import { fail, type ActionResult } from "./result"
 
-export type LookupResult = { ok: true; lookup: CompLookup } | { ok: true; pick: CompPick } | { ok: false; error: string }
+/** checksLeft: products this member can still check in the next 24 hours (null = no limit). */
+export type LookupResult = { ok: true; lookup: CompLookup; checksLeft: number | null } | { ok: true; pick: CompPick } | { ok: false; error: string }
 
 /**
  * Scan to Comp: a barcode or keywords → live listings plus any sold history we have.
@@ -30,9 +32,10 @@ export async function compLookup(
   try {
     const q = z.string().trim().min(2, "Scan a barcode or type what it is").max(120).parse(input)
     const p = z.string().trim().max(120).nullable().optional().parse(product)
-    const { supabase, userId } = await requireMember()
-    const r = await lookupComps(supabase, q, { userId, product: p, skipPaidSold: z.boolean().parse(readsSoldHere), background: true })
-    return isPick(r) ? { ok: true, pick: r } : { ok: true, lookup: r }
+    const { supabase, userId, email } = await requireMember()
+    const checks = await compChecks(userId, email)
+    const r = await lookupComps(supabase, q, { userId, product: p, skipPaidSold: z.boolean().parse(readsSoldHere), background: true, gate: checks.gate })
+    return isPick(r) ? { ok: true, pick: r } : { ok: true, lookup: r, checksLeft: checks.left() }
   } catch (e) {
     return fail(e) as { ok: false; error: string }
   }
@@ -170,11 +173,13 @@ export async function untrackProduct(id: string): Promise<ActionResult> {
 /** Re-check one tracked product's numbers and save them. */
 export async function refreshTracked(id: string): Promise<ActionResult> {
   try {
-    const { supabase, userId } = await requireMember()
+    const { supabase, userId, email } = await requireMember()
     const { data: t, error } = await supabase.from("tracked_products").select("query, gtin, product").eq("id", z.uuid().parse(id)).single()
     if (error) throw error
     // Old tracked rows have no product: their query is already the narrowed search phrase.
-    const l = await lookupComps(supabase, t.gtin ?? t.query, { userId, product: t.gtin ? null : t.product ?? t.query })
+    // A tap to refresh counts toward the daily checks (the daily cron refresh doesn't).
+    const { gate } = await compChecks(userId, email)
+    const l = await lookupComps(supabase, t.gtin ?? t.query, { userId, product: t.gtin ? null : t.product ?? t.query, gate })
     if (isPick(l)) throw new UserError("Open this product and pick which one you mean, then track it again.")
     const { error: upErr } = await supabase
       .from("tracked_products")

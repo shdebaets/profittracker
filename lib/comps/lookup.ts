@@ -78,6 +78,8 @@ export async function lookupComps(
      * them. Cron jobs leave this off and wait.
      */
     background?: boolean
+    /** Runs once the product is known, before any paid read or AI profile (the member's daily cap; throws to stop). */
+    gate?: (key: string) => Promise<void>
   } = {},
 ): Promise<CompLookup | CompPick> {
   const now = opts.now ?? new Date()
@@ -108,10 +110,12 @@ export async function lookupComps(
   }
   product ??= (gtin ? live.title : null) ?? raw
   const query = searchPhrase(product)
+  await opts.gate?.(queryKey(query))
 
   // The product's search profile: 6 to 10 keywords worded the way different sellers title it, and
-  // the words that mark other editions and junk (one bigger AI call, cached a week).
-  const profile: CompProfile = await cached(`prof1:${queryKey(query)}`, 7 * 24 * 60 * 60_000, () => buildProfile(product, live.comps.map((c) => c.title))).catch((e) => {
+  // the words that mark other editions and junk (one bigger AI call, cached 30 days: a product's
+  // wording doesn't change, and this is the priciest AI call in a lookup).
+  const profile: CompProfile = await cached(`prof1:${queryKey(query)}`, 30 * 24 * 60 * 60_000, () => buildProfile(product, live.comps.map((c) => c.title))).catch((e) => {
     console.error("[comp profile]", e)
     return cleanProfile(product, {})
   })
@@ -143,7 +147,8 @@ export async function lookupComps(
     data.push(...((page ?? []) as Row[]))
     if ((page?.length ?? 0) < 1000) break
   }
-  const judge = await judgeTitles(product, [...market.comps.map((c) => c.title), ...data.map((r) => r.title)], opts.userId ?? null, profile)
+  // Sold titles first: they make the counts, so they get judged first if a lookup has more new titles than the judge takes.
+  const judge = await judgeTitles(product, [...data.map((r) => r.title), ...market.comps.map((c) => c.title)], opts.userId ?? null, profile)
   const keptLive = market.comps.filter((c) => judge.keep(c.title))
   const rows = data.filter((r) => judge.keep(r.title))
   const filteredOut = market.comps.length - keptLive.length + (data.length - rows.length)

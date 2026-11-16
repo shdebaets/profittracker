@@ -1,16 +1,19 @@
 // eBay sold listings from a data provider (OpenWeb Ninja's Real-Time eBay Data API), for when no
 // seller with the extension has read a product recently. eBay has shown sold searches only to
 // signed-in members since 22 July 2026, so servers can't read them directly.
-// One request = one page of up to 60 sold listings (up to SOLD_DATA_MAX_PAGES, default 4, for busy products). Results are cached 12 hours per search and
-// shared by everyone, and there's a daily cap (SOLD_DATA_DAILY_LIMIT, default 300 requests).
+// One request = one page of up to 60 sold listings. A product's read is cached SOLD_DATA_TTL_HOURS
+// (default 24) and shared by everyone. Requests are counted per UTC day and capped by
+// SOLD_DATA_MONTHLY_LIMIT (default 10,000, the plan) over 30 days and SOLD_DATA_DAILY_LIMIT
+// (default a 30th of the monthly limit) a day.
 import "server-only"
 import { createHash } from "node:crypto"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { queryKey, soldPhrase } from "./stats"
 
-export const SOLD_TTL_MS = 12 * 60 * 60_000
+export const SOLD_TTL_MS = (Number(process.env.SOLD_DATA_TTL_HOURS) || 24) * 60 * 60_000
 const ENDPOINT = "https://api.openwebninja.com/real-time-ebay-data/search"
-const dailyLimit = () => Number(process.env.SOLD_DATA_DAILY_LIMIT) || 300
+const monthlyLimit = () => Number(process.env.SOLD_DATA_MONTHLY_LIMIT) || 10_000
+const dailyLimit = () => Number(process.env.SOLD_DATA_DAILY_LIMIT) || Math.floor(monthlyLimit() / 30)
 
 export type SoldRow = {
   external_id: string
@@ -139,16 +142,34 @@ export async function lastSoldRead(query: string): Promise<{ at: string; total: 
 
 export const soldDailyLimit = dailyLimit
 
-/** Paid sold-data requests made in the last 24 hours (browser reads count 0). */
-export async function soldRequestsToday(): Promise<number> {
-  const since = new Date(Date.now() - 86_400_000).toISOString()
-  const { data: today } = await createAdminClient().from("comp_cache").select("payload").like("key", "sold%").gte("fetched_at", since).limit(5000)
-  return (today ?? []).reduce((n, r) => n + (Number((r.payload as { requests?: number })?.requests ?? 1) || 0), 0)
+const callsKey = (d: Date) => `paid-sold-calls:${d.toISOString().slice(0, 10)}`
+
+/** Paid sold-data requests made today (UTC) and over the last 30 days. */
+export async function soldRequestsUsed(): Promise<{ today: number; month: number }> {
+  const keys = Array.from({ length: 30 }, (_, i) => callsKey(new Date(Date.now() - i * 86_400_000)))
+  const { data } = await createAdminClient().from("comp_cache").select("key, payload").in("key", keys)
+  const calls = (k: string) => Number((data?.find((r) => r.key === k)?.payload as { calls?: number })?.calls ?? 0) || 0
+  return { today: calls(keys[0]), month: keys.reduce((n, k) => n + calls(k), 0) }
+}
+
+/** Paid sold-data requests made today (UTC). */
+export const soldRequestsToday = async () => (await soldRequestsUsed()).today
+
+/** Requests this server may still make right now (the smaller of today's and the 30-day budget). */
+async function soldRequestsLeft(): Promise<number> {
+  const used = await soldRequestsUsed()
+  return Math.max(0, Math.min(dailyLimit() - used.today, monthlyLimit() - used.month))
+}
+
+async function countRequests(n: number) {
+  if (n <= 0) return
+  const { error } = await createAdminClient().rpc("comp_count_add", { p_key: callsKey(new Date()), p_n: n })
+  if (error) console.error("[sold data] count", error)
 }
 
 /**
  * Reads sold listings for a search into comp_sales (shared) unless this search was read in the
- * last 12 hours or the daily cap is used up. Returns how many rows it saved (0 when skipped).
+ * last SOLD_DATA_TTL_HOURS or the request budget is used up. Returns how many rows it saved (0 when skipped).
  * Never throws: comps still work from live listings if the provider is down.
  */
 export async function refreshSoldFromApi(query: string, searches?: string[]): Promise<number> {
@@ -159,13 +180,16 @@ export async function refreshSoldFromApi(query: string, searches?: string[]): Pr
   const key = soldKey(query)
   const { data: last } = await admin.from("comp_cache").select("fetched_at").eq("key", key).maybeSingle()
   if (last && Date.now() - Date.parse(last.fetched_at) < SOLD_TTL_MS) return 0
-  if ((await soldRequestsToday()) >= dailyLimit()) {
-    console.warn("[sold data] daily limit reached", dailyLimit())
+  const left = await soldRequestsLeft()
+  if (left <= 0) {
+    console.warn("[sold data] request budget used up", JSON.stringify({ daily: dailyLimit(), monthly: monthlyLimit() }))
     return 0
   }
+  // This read's cap: the per-product cap, or what's left of the budget if that's less.
+  const cap = Math.min(MAX_REQUESTS(), left)
+  let requests = 0
   try {
     const rows: SoldRow[] = []
-    let requests = 0
     let total: number | null = null
     const monthAgo = new Date(Date.now() - 30 * 86_400_000).toISOString().slice(0, 10)
     const phrases = searches?.length ? searches : [soldPhrase(query)]
@@ -177,7 +201,7 @@ export async function refreshSoldFromApi(query: string, searches?: string[]): Pr
     // Pages run in parallel (the comp screen waits on this), counted in keyword order so "fresh"
     // means listings no earlier keyword found.
     const read = async (jobs: { n: number; page: number }[]) => {
-      jobs = jobs.slice(0, Math.max(0, MAX_REQUESTS() - requests))
+      jobs = jobs.slice(0, Math.max(0, cap - requests))
       requests += jobs.length
       const done = await Promise.all(
         jobs.map(async ({ n, page }) => {
@@ -213,8 +237,8 @@ export async function refreshSoldFromApi(query: string, searches?: string[]): Pr
       const jobs = [...last.values()]
         .filter((p) => more(p) && p.page < (p.n === 0 ? MAX_PAGES() : 4))
         .flatMap((p) => (p.n === 0 ? [p.page + 1, p.page + 2] : [p.page + 1]).filter((pg) => pg <= (p.n === 0 ? MAX_PAGES() : 4)).map((page) => ({ n: p.n, page })))
-      if (!jobs.length || requests >= MAX_REQUESTS() - 5) break
-      await read(jobs.slice(0, Math.max(0, MAX_REQUESTS() - 5 - requests)))
+      if (!jobs.length || requests >= cap - 5) break
+      await read(jobs.slice(0, Math.max(0, cap - 5 - requests)))
     }
     // A busy product: the pages read are only the newest few days. Find the page where the first
     // keyword's results cross 30 days ago (binary search, at most 5 requests), so the 30-day count
@@ -230,7 +254,7 @@ export async function refreshSoldFromApi(query: string, searches?: string[]): Pr
     const tail = firstPages.find((p) => p.page === lastRead)
     if (tail && !tail.full && firstPages.length === lastRead) within30 = firstPages.flatMap((p) => p.got).filter((r) => r.sold_on >= monthAgo).length
     // The probe stays inside the per-product budget (it needs 2 requests to be worth starting).
-    if (phraseTotal && lastPage > lastRead && oldest && oldest >= monthAgo && firstPages.every((p) => p.full) && requests + 2 <= MAX_REQUESTS()) {
+    if (phraseTotal && lastPage > lastRead && oldest && oldest >= monthAgo && firstPages.every((p) => p.full) && requests + 2 <= cap) {
       let inside = lastRead
       const probe = async (page: number) => {
         const res = await fetchPage(phrases[0], page)
@@ -243,7 +267,7 @@ export async function refreshSoldFromApi(query: string, searches?: string[]): Pr
       if (end && end >= monthAgo) within30 = phraseTotal
       else {
         let outside = lastPage
-        for (let i = 0; i < 4 && outside - inside > 1 && requests < MAX_REQUESTS(); i++) {
+        for (let i = 0; i < 4 && outside - inside > 1 && requests < cap; i++) {
           const mid = Math.floor((inside + outside) / 2)
           const o = await probe(mid)
           if (o && o >= monthAgo) inside = mid
@@ -272,5 +296,8 @@ export async function refreshSoldFromApi(query: string, searches?: string[]): Pr
   } catch (e) {
     console.error("[sold data]", e)
     return 0
+  } finally {
+    // Count every request sent, even when the read failed partway (the provider still bills them).
+    await countRequests(requests)
   }
 }
