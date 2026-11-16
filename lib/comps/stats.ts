@@ -118,43 +118,40 @@ export const PRESALE = /\b(pre-?sale|pre-?order|presell|ships? (by|on|in|after)|
 export const etDay = (d: Date) => d.toLocaleDateString("en-CA", { timeZone: "America/New_York" })
 const shiftDay = (day: string, n: number) => new Date(Date.parse(day + "T12:00:00Z") + n * 86_400_000).toISOString().slice(0, 10)
 
-/**
- * A listing's units over days (CompAmp's spreadUnits): one unit on the day it last sold, and the
- * rest spread evenly from the day it was listed, because a 10-unit listing that last sold today
- * sold its other 9 over the weeks it was up. Pure.
- */
-export function spreadUnits(units: number, createdOn: string | null | undefined, soldOn: string): { day: string; qty: number }[] {
-  const n = Math.max(1, Math.floor(units))
-  const out = [{ day: soldOn, qty: 1 }]
-  if (n === 1) return out
-  let start = createdOn && createdOn < soldOn ? createdOn : soldOn
-  if (shiftDay(start, 365) < soldOn) start = shiftDay(soldOn, -365)
-  const days: string[] = []
-  for (let d = start; d <= soldOn; d = shiftDay(d, 1)) days.push(d)
-  for (const day of days) out.push({ day, qty: (n - 1) / days.length })
-  return out
-}
+/** Each listing's eBay sold count by day it was read (comp_item_counts), keyed by item id. */
+export type UnitHistory = Map<string, { day: string; qty: number }[]>
 
 /**
- * Every unit sold, by day (CompAmp's reconciledSales): each sold listing once by item id at its
- * unit count, then live listings that have sold units the sold search didn't show (or showed fewer
- * of), spread from when they were listed to today. Pure.
+ * Every unit sold, by day. eBay's lifetime sold count can't say when units sold (a relisted
+ * listing keeps its old total, Night Nov 16: "230 sold" on a listing Terapeak shows selling under
+ * 40 that week), so units come from day-to-day changes in that count (`history`): a listing read
+ * at 200 one day and 209 the next sold 9, spread over the days between readings. Before a
+ * listing's first reading, only what the sold search showed counts: one unit on its last sale day.
+ * Live listings count only through their changes. Pure.
  */
-export function reconcileUnits(sold: SoldComp[], live: ActiveComp[], today: string): { day: string; qty: number }[] {
-  const byId = new Map<string, { units: number; createdOn: string | null | undefined; soldOn: string }>()
+export function reconcileUnits(sold: SoldComp[], live: ActiveComp[], _today: string, history: UnitHistory = new Map()): { day: string; qty: number }[] {
+  const lastSold = new Map<string, string>()
   sold.forEach((s, i) => {
     const id = s.itemId ?? `row:${i}`
-    const units = s.auction ? 1 : Math.max(1, Math.floor(s.units ?? 1))
-    const cur = byId.get(id)
-    if (!cur || units > cur.units || (units === cur.units && s.soldOn > cur.soldOn)) byId.set(id, { units, createdOn: s.createdOn, soldOn: s.soldOn })
+    const d = lastSold.get(id)
+    if (!d || s.soldOn > d) lastSold.set(id, s.soldOn)
   })
-  for (const a of live) {
-    const q = Math.floor(a.soldQty ?? 0)
-    if (!a.itemId || q <= 0) continue
-    const cur = byId.get(a.itemId)
-    if (!cur || cur.units < q) byId.set(a.itemId, { units: q, createdOn: a.createdOn, soldOn: today })
+  const ids = new Set([...lastSold.keys(), ...live.flatMap((a) => (a.itemId ? [a.itemId] : []))])
+  const out: { day: string; qty: number }[] = []
+  for (const id of ids) {
+    const h = [...(history.get(id) ?? [])].sort((a, b) => a.day.localeCompare(b.day))
+    const soldOn = lastSold.get(id)
+    for (let i = 1; i < h.length; i++) {
+      const delta = h[i].qty - h[i - 1].qty
+      if (delta <= 0) continue
+      const days: string[] = []
+      for (let d = shiftDay(h[i - 1].day, 1); d <= h[i].day; d = shiftDay(d, 1)) days.push(d)
+      for (const d of days) out.push({ day: d, qty: delta / days.length })
+    }
+    // The sale the sold search showed, unless the readings already cover that day.
+    if (soldOn && (!h.length || soldOn <= h[0].day || soldOn > h[h.length - 1].day)) out.push({ day: soldOn, qty: 1 })
   }
-  return [...byId.values()].flatMap((x) => spreadUnits(x.units, x.createdOn, x.soldOn))
+  return out
 }
 
 /** Units in the last `n` days, today included (a launch-day product sells most of its units today). Pure. */
@@ -174,6 +171,8 @@ export function compStats(
   liveTotal?: number,
   /** From the latest sold read: its rows (so older, patchier reads don't stretch the span) and eBay's own match count, already scaled by the share that was this product. */
   soldRead?: { latest: SoldComp[]; total: number | null; within30?: number | null },
+  /** Daily readings of each listing's eBay sold count (units come from their changes). */
+  history?: UnitHistory,
 ): CompStats {
   const bins = prices(active.filter((a) => a.buyItNow))
   // Lowest live is what a buyer pays today, shipping included (CompAmp's lowest BIN).
@@ -189,9 +188,9 @@ export function compStats(
   }
   const priced = (days: number) => prices(clean.filter((s) => daysAgo(s.soldOn, now) <= days && inBand(s)))
 
-  // Units, not listings: a listing that sold 10 boxes is 10 sales (CompAmp's reconciliation).
+  // Units, not listings: a listing's daily sold-count changes, else one unit per sale the search showed.
   const today = etDay(now)
-  const unitDays = reconcileUnits(sold, active, today)
+  const unitDays = reconcileUnits(sold, active, today, history)
   const listings30 = sold.filter((x) => daysAgo(x.soldOn, now) <= 30)
   const units30 = unitsIn(unitDays, today, 30)
   // Units per sold listing in the read, to turn a listing count into units.

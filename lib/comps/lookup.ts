@@ -10,7 +10,7 @@ import { judgeTitles } from "./judge"
 import { buildProfile, cleanProfile, type CompProfile } from "./profile"
 import { lastSoldRead, refreshSoldFromApi } from "./sold-api"
 import { compStats, isGtin, queryKey, type ActiveComp, type CompStats, type SoldComp } from "./stats"
-import { backgroundUnitCalls, loadUnits } from "./units"
+import { backgroundUnitCalls, loadUnitHistory, loadUnits } from "./units"
 
 export type CompLookup = {
   /** What sold history is filed under (and what the extension searches eBay for). */
@@ -199,7 +199,9 @@ export async function lookupComps(
     title: r.title, priceCents: r.price_cents, shippingCents: r.shipping_cents, soldOn: r.sold_on, bestOffer: r.best_offer, condition: r.condition,
   }))
   const droppedSales = data.filter((r) => !judge.keep(r.title)).sort(byDate).slice(0, 10).map((r) => ({ title: r.title, priceCents: r.price_cents, soldOn: r.sold_on }))
-  const stats = compStats(active, sold, now, liveTotal, soldRead)
+  // Units from each listing's daily sold-count readings (comp_item_counts).
+  const unitHistory = await loadUnitHistory(unitIds)
+  const stats = compStats(active, sold, now, liveTotal, soldRead, unitHistory)
   const history = await recordAndReadHistory(queryKey(query), stats, sold, now).catch((e) => {
     console.error("[comp history]", e)
     return [] as HistoryDay[]

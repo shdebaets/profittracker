@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { buyProfit, compStats, landed, soldPace, isGtin, isNewCondition, median, queryKey, reconcileUnits, spreadUnits, unitsIn } from "./stats"
+import { buyProfit, compStats, landed, soldPace, isGtin, isNewCondition, median, queryKey, reconcileUnits, unitsIn } from "./stats"
 
 const now = new Date("2026-11-13T12:00:00Z")
 const sold = (days: number, priceCents: number, bestOffer = false) => ({
@@ -139,30 +139,33 @@ describe("30-day count from eBay's own results", () => {
 describe("units, not listings", () => {
   const now = new Date("2026-11-14T20:00:00Z") // 3pm in New York
   const today = "2026-11-14"
-  it("spreads a multi-unit listing from the day it was listed to its last sale", () => {
-    const days = spreadUnits(5, "2026-11-11", "2026-11-14")
-    expect(days.reduce((s, d) => s + d.qty, 0)).toBe(5)
-    expect(days.filter((d) => d.day === "2026-11-14").reduce((s, d) => s + d.qty, 0)).toBe(2)
-    expect(spreadUnits(1, "2026-10-01", today)).toEqual([{ day: today, qty: 1 }])
-    // No creation date: every unit on the sale day.
-    expect(spreadUnits(3, null, today).reduce((s, d) => s + d.qty, 0)).toBe(3)
-  })
-  it("counts each listing once at its units, auctions as one, and live listings' unseen sales", () => {
+  it("counts units from day-to-day changes in a listing's sold count", () => {
+    const history = new Map([
+      // 200 -> 209 over one day: 9 that day. 209 -> 215 over 3 days: 2 a day.
+      ["big", [{ day: "2026-11-10", qty: 200 }, { day: "2026-11-11", qty: 209 }, { day: "2026-11-14", qty: 215 }]],
+      // A live listing whose count went up: counts too, even with no sale in the search.
+      ["live", [{ day: "2026-11-12", qty: 3 }, { day: "2026-11-13", qty: 5 }]],
+    ])
     const sold = [
-      { priceCents: 100, shippingCents: 0, soldOn: "2026-11-13", bestOffer: false, itemId: "1", units: 10, createdOn: "2026-11-13" },
-      { priceCents: 100, shippingCents: 0, soldOn: "2026-11-12", bestOffer: false, itemId: "1", units: 10, createdOn: "2026-11-13" },
-      { priceCents: 100, shippingCents: 0, soldOn: "2026-11-12", bestOffer: false, itemId: "2", units: 4, auction: true },
-      { priceCents: 100, shippingCents: 0, soldOn: "2026-11-12", bestOffer: false, itemId: "3" },
+      // Inside the readings: covered by the changes, not counted again.
+      { priceCents: 100, shippingCents: 0, soldOn: "2026-11-12", bestOffer: false, itemId: "big", units: 215 },
+      { priceCents: 100, shippingCents: 0, soldOn: "2026-11-13", bestOffer: false, itemId: "single" },
+      { priceCents: 100, shippingCents: 0, soldOn: "2026-11-12", bestOffer: false, itemId: "auction", units: 4, auction: true },
     ]
-    const live = [
-      { priceCents: 100, shippingCents: 0, title: "x", condition: null, buyItNow: true, itemId: "3", soldQty: 6, createdOn: "2026-11-10" },
-      { priceCents: 100, shippingCents: 0, title: "y", condition: null, buyItNow: true, itemId: "4", soldQty: 2, createdOn: "2026-11-14" },
-      { priceCents: 100, shippingCents: 0, title: "z", condition: null, buyItNow: true, itemId: "5", soldQty: 0 },
-    ]
-    const days = reconcileUnits(sold, live, today)
-    // 10 (item 1, once) + 1 (auction) + 6 (item 3: live count beats the one sale seen) + 2 (item 4).
+    const live = [{ priceCents: 100, shippingCents: 0, title: "x", condition: null, buyItNow: true, itemId: "live", soldQty: 5 }]
+    const days = reconcileUnits(sold, live, today, history)
+    // 9 + 6 (big) + 2 (live) + 1 (single) + 1 (auction).
     expect(unitsIn(days, today, 30)).toBe(19)
-    expect(unitsIn(days, "2026-12-31", 7)).toBe(0)
+    expect(days.filter((d) => d.day === "2026-11-11").reduce((s, d) => s + d.qty, 0)).toBe(9)
+    expect(days.filter((d) => d.day === "2026-11-13").reduce((s, d) => s + d.qty, 0)).toBe(2 + 2 + 1)
+  })
+  it("before any readings, a listing's lifetime count doesn't land in the window", () => {
+    // eBay says 230 sold, but not when (relisted listings keep their old totals): one unit on its last sale.
+    const sold = [{ priceCents: 100, shippingCents: 0, soldOn: "2026-11-13", bestOffer: false, itemId: "big", units: 230, createdOn: "2026-11-09" }]
+    expect(unitsIn(reconcileUnits(sold, [], today), today, 7)).toBe(1)
+    // A sale after the last reading still counts (the next reading will cover it).
+    const after = reconcileUnits(sold, [], today, new Map([["big", [{ day: "2026-11-12", qty: 229 }]]]))
+    expect(unitsIn(after, today, 7)).toBe(1)
   })
   it("reports units in the 7 and 30 day counts", () => {
     const sold = [
@@ -170,9 +173,10 @@ describe("units, not listings", () => {
       { priceCents: 4000, shippingCents: 0, soldOn: "2026-11-13", bestOffer: false, itemId: "multi", units: 8, createdOn: "2026-11-13" },
       { priceCents: 4000, shippingCents: 0, soldOn: "2026-10-25", bestOffer: false, itemId: "old" },
     ]
-    const st = compStats([], sold, now)
-    expect(st.sold7).toBe(14)
-    expect(st.sold30).toBe(15)
+    const history = new Map([["multi", [{ day: "2026-11-12", qty: 1 }, { day: "2026-11-13", qty: 8 }]]])
+    const st = compStats([], sold, now, undefined, undefined, history)
+    expect(st.sold7).toBe(13)
+    expect(st.sold30).toBe(14)
     expect(st.soldListings30).toBe(8)
     expect(st.multiUnitListings).toBe(1)
   })
