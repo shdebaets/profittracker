@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { buyProfit, compStats, landed, soldPace, isGtin, isNewCondition, median, queryKey } from "./stats"
+import { buyProfit, compStats, landed, soldPace, isGtin, isNewCondition, median, queryKey, reconcileUnits, spreadUnits, unitsIn } from "./stats"
 
 const now = new Date("2026-11-13T12:00:00Z")
 const sold = (days: number, priceCents: number, bestOffer = false) => ({
@@ -133,5 +133,58 @@ describe("30-day count from eBay's own results", () => {
   it("leaves overseas sellers out of the price", () => {
     const st = compStats([], [...Array.from({ length: 10 }, () => sale("2026-11-14")), ...Array.from({ length: 9 }, () => ({ ...sale("2026-11-14", true), priceCents: 48000 }))], now)
     expect(st.estimate).toBe(36000)
+  })
+})
+
+describe("units, not listings", () => {
+  const now = new Date("2026-11-14T20:00:00Z") // 3pm in New York
+  const today = "2026-11-14"
+  it("spreads a multi-unit listing from the day it was listed to its last sale", () => {
+    const days = spreadUnits(5, "2026-11-11", "2026-11-14")
+    expect(days.reduce((s, d) => s + d.qty, 0)).toBe(5)
+    expect(days.filter((d) => d.day === "2026-11-14").reduce((s, d) => s + d.qty, 0)).toBe(2)
+    expect(spreadUnits(1, "2026-10-01", today)).toEqual([{ day: today, qty: 1 }])
+    // No creation date: every unit on the sale day.
+    expect(spreadUnits(3, null, today).reduce((s, d) => s + d.qty, 0)).toBe(3)
+  })
+  it("counts each listing once at its units, auctions as one, and live listings' unseen sales", () => {
+    const sold = [
+      { priceCents: 100, shippingCents: 0, soldOn: "2026-11-13", bestOffer: false, itemId: "1", units: 10, createdOn: "2026-11-13" },
+      { priceCents: 100, shippingCents: 0, soldOn: "2026-11-12", bestOffer: false, itemId: "1", units: 10, createdOn: "2026-11-13" },
+      { priceCents: 100, shippingCents: 0, soldOn: "2026-11-12", bestOffer: false, itemId: "2", units: 4, auction: true },
+      { priceCents: 100, shippingCents: 0, soldOn: "2026-11-12", bestOffer: false, itemId: "3" },
+    ]
+    const live = [
+      { priceCents: 100, shippingCents: 0, title: "x", condition: null, buyItNow: true, itemId: "3", soldQty: 6, createdOn: "2026-11-10" },
+      { priceCents: 100, shippingCents: 0, title: "y", condition: null, buyItNow: true, itemId: "4", soldQty: 2, createdOn: "2026-11-14" },
+      { priceCents: 100, shippingCents: 0, title: "z", condition: null, buyItNow: true, itemId: "5", soldQty: 0 },
+    ]
+    const days = reconcileUnits(sold, live, today)
+    // 10 (item 1, once) + 1 (auction) + 6 (item 3: live count beats the one sale seen) + 2 (item 4).
+    expect(unitsIn(days, today, 30)).toBe(19)
+    expect(unitsIn(days, "2026-12-31", 7)).toBe(0)
+  })
+  it("reports units in the 7 and 30 day counts", () => {
+    const sold = [
+      ...Array.from({ length: 6 }, (_, i) => ({ priceCents: 4000, shippingCents: 0, soldOn: "2026-11-13", bestOffer: false, itemId: `s${i}` })),
+      { priceCents: 4000, shippingCents: 0, soldOn: "2026-11-13", bestOffer: false, itemId: "multi", units: 8, createdOn: "2026-11-13" },
+      { priceCents: 4000, shippingCents: 0, soldOn: "2026-10-25", bestOffer: false, itemId: "old" },
+    ]
+    const st = compStats([], sold, now)
+    expect(st.sold7).toBe(14)
+    expect(st.sold30).toBe(15)
+    expect(st.soldListings30).toBe(8)
+    expect(st.multiUnitListings).toBe(1)
+  })
+  it("keeps far-off prices and pre-sales out of the median, but counts them", () => {
+    const sold = [
+      ...Array.from({ length: 6 }, (_, i) => ({ priceCents: 6000, shippingCents: 0, soldOn: "2026-11-10", bestOffer: false, itemId: `a${i}`, title: "Merry camo set" })),
+      { priceCents: 1500, shippingCents: 0, soldOn: "2026-11-10", bestOffer: false, itemId: "cheap", title: "Merry camo pants only" },
+      { priceCents: 20000, shippingCents: 0, soldOn: "2026-11-10", bestOffer: false, itemId: "presale", title: "PRE-ORDER Merry camo set" },
+      { priceCents: 13000, shippingCents: 0, soldOn: "2026-11-10", bestOffer: false, itemId: "high", title: "Merry camo set" },
+    ]
+    const st = compStats([], sold, now)
+    expect(st.soldMedian30).toBe(6000)
+    expect(st.sold30).toBe(9)
   })
 })

@@ -14,16 +14,48 @@ export function median(nums: number[]): number | null {
   return a.length % 2 ? a[m] : Math.round((a[m - 1] + a[m]) / 2)
 }
 
-export type ActiveComp = { priceCents: number; shippingCents: number | null; title: string; condition: string | null; buyItNow: boolean; image?: string | null }
-export type SoldComp = { priceCents: number; shippingCents: number | null; soldOn: string; bestOffer: boolean; condition?: string | null; overseas?: boolean }
+export type ActiveComp = {
+  priceCents: number
+  shippingCents: number | null
+  title: string
+  condition: string | null
+  buyItNow: boolean
+  image?: string | null
+  /** eBay item number (legacy id). */
+  itemId?: string | null
+  /** Units this live listing has already sold (Browse estimatedSoldQuantity), when looked up. */
+  soldQty?: number | null
+  /** The day the listing was created (YYYY-MM-DD), when looked up. */
+  createdOn?: string | null
+}
+export type SoldComp = {
+  priceCents: number
+  shippingCents: number | null
+  soldOn: string
+  bestOffer: boolean
+  condition?: string | null
+  overseas?: boolean
+  title?: string
+  itemId?: string | null
+  /** Units the listing sold (Browse estimatedSoldQuantity); unknown counts as 1. */
+  units?: number | null
+  createdOn?: string | null
+  /** Auctions always sell one unit. */
+  auction?: boolean
+}
 
 export type CompStats = {
   /** Every live listing of this exact product on eBay (not just the sample read). */
   activeCount: number
   activeMedian: number | null
   activeLowest: number | null
+  /** Units sold in the last 7 / 30 / 90 full days (Eastern time, ending yesterday). */
+  sold7: number
   sold30: number
   sold90: number
+  /** Sold listings behind the unit counts (30 days), and how many of them sold more than one unit. */
+  soldListings30: number
+  multiUnitListings: number
   soldMedian30: number | null
   soldMedian90: number | null
   /** sold in 30 days ÷ (sold in 30 days + live now), as a fraction. */
@@ -60,16 +92,68 @@ const prices = (xs: { priceCents: number; shippingCents: number | null; overseas
  * (a busy product: a few hundred sales can be a couple of days). Uses the 90th-percentile age, so
  * one stray old sale in the list doesn't stretch the window. Null when the read already covers it.
  */
-export function soldPace(sold: { soldOn: string }[], now: Date): number | null {
+export function soldPace(sold: { soldOn: string }[], now: Date, window = 30): number | null {
   const ages = sold.map((x) => Math.max(daysAgo(x.soldOn, now), 0)).sort((a, b) => a - b)
   if (ages.length < 20) return null
   const i = Math.floor(ages.length * 0.9) - 1
   const span = Math.max(ages[i], 1)
-  if (span >= 25) return null
-  return Math.round((ages.filter((a) => a <= span).length / span) * 30)
+  if (span >= window * (25 / 30)) return null
+  return Math.round((ages.filter((a) => a <= span).length / span) * window)
 }
 
 const daysAgo = (iso: string, now: Date) => (now.getTime() - new Date(iso + "T12:00:00Z").getTime()) / 86_400_000
+
+/** Pre-sale listings sell before release at made-up prices: left out of prices (still counted as sales). */
+export const PRESALE = /\b(pre-?sale|pre-?order|presell|ships? (by|on|in|after)|confirmed (order|pre))\b/i
+
+/** Today's date in New York (eBay US days), YYYY-MM-DD. */
+export const etDay = (d: Date) => d.toLocaleDateString("en-CA", { timeZone: "America/New_York" })
+const shiftDay = (day: string, n: number) => new Date(Date.parse(day + "T12:00:00Z") + n * 86_400_000).toISOString().slice(0, 10)
+
+/**
+ * A listing's units over days (CompAmp's spreadUnits): one unit on the day it last sold, and the
+ * rest spread evenly from the day it was listed, because a 10-unit listing that last sold today
+ * sold its other 9 over the weeks it was up. Pure.
+ */
+export function spreadUnits(units: number, createdOn: string | null | undefined, soldOn: string): { day: string; qty: number }[] {
+  const n = Math.max(1, Math.floor(units))
+  const out = [{ day: soldOn, qty: 1 }]
+  if (n === 1) return out
+  let start = createdOn && createdOn < soldOn ? createdOn : soldOn
+  if (shiftDay(start, 365) < soldOn) start = shiftDay(soldOn, -365)
+  const days: string[] = []
+  for (let d = start; d <= soldOn; d = shiftDay(d, 1)) days.push(d)
+  for (const day of days) out.push({ day, qty: (n - 1) / days.length })
+  return out
+}
+
+/**
+ * Every unit sold, by day (CompAmp's reconciledSales): each sold listing once by item id at its
+ * unit count, then live listings that have sold units the sold search didn't show (or showed fewer
+ * of), spread from when they were listed to today. Pure.
+ */
+export function reconcileUnits(sold: SoldComp[], live: ActiveComp[], today: string): { day: string; qty: number }[] {
+  const byId = new Map<string, { units: number; createdOn: string | null | undefined; soldOn: string }>()
+  sold.forEach((s, i) => {
+    const id = s.itemId ?? `row:${i}`
+    const units = s.auction ? 1 : Math.max(1, Math.floor(s.units ?? 1))
+    const cur = byId.get(id)
+    if (!cur || units > cur.units || (units === cur.units && s.soldOn > cur.soldOn)) byId.set(id, { units, createdOn: s.createdOn, soldOn: s.soldOn })
+  })
+  for (const a of live) {
+    const q = Math.floor(a.soldQty ?? 0)
+    if (!a.itemId || q <= 0) continue
+    const cur = byId.get(a.itemId)
+    if (!cur || cur.units < q) byId.set(a.itemId, { units: q, createdOn: a.createdOn, soldOn: today })
+  }
+  return [...byId.values()].flatMap((x) => spreadUnits(x.units, x.createdOn, x.soldOn))
+}
+
+/** Units in the last `n` days, today included (a launch-day product sells most of its units today). Pure. */
+export function unitsIn(days: { day: string; qty: number }[], today: string, n: number): number {
+  const from = shiftDay(today, -(n - 1))
+  return Math.round(days.reduce((sum, d) => (d.day >= from && d.day <= today ? sum + d.qty : sum), 0))
+}
 
 /**
  * `liveTotal`: how many live listings eBay says match (the search reads at most a page of them),
@@ -84,23 +168,43 @@ export function compStats(
   soldRead?: { latest: SoldComp[]; total: number | null; within30?: number | null },
 ): CompStats {
   const bins = prices(active.filter((a) => a.buyItNow))
-  // Best-offer sales show the list price, not what it sold for, so they're left out of prices.
-  const priced = (days: number) => prices(sold.filter((s) => daysAgo(s.soldOn, now) <= days && !s.bestOffer))
-  // How far back the sales we have go. If they don't cover 30 days (a busy product: the newest few
-  // hundred sales can be a couple of days), the 30-day count comes from the pace instead.
-  const counted30 = sold.filter((x) => daysAgo(x.soldOn, now) <= 30).length
-  // Best case: the read found where eBay's results cross 30 days ago, so this is eBay's own count
-  // of 30-day sales for the product (already scaled by the judge's keep share).
+  // Prices: best offers (they show the asking price, not what it sold for) and pre-sales are left
+  // out, then a guard drops prices under 0.55x or over 1.9x the clean median (mislabeled lots,
+  // parts, the odd best offer the data can't flag). They still count as sales.
+  const clean = sold.filter((s) => !s.bestOffer && !PRESALE.test(s.title ?? ""))
+  const ref = median(prices(clean.filter((s) => daysAgo(s.soldOn, now) <= 90)))
+  const inBand = (s: SoldComp) => {
+    const p = landed(s)
+    return p != null && (ref == null || clean.length < 4 || (p >= ref * 0.55 && p <= ref * 1.9))
+  }
+  const priced = (days: number) => prices(clean.filter((s) => daysAgo(s.soldOn, now) <= days && inBand(s)))
+
+  // Units, not listings: a listing that sold 10 boxes is 10 sales (CompAmp's reconciliation).
+  const today = etDay(now)
+  const unitDays = reconcileUnits(sold, active, today)
+  const listings30 = sold.filter((x) => daysAgo(x.soldOn, now) <= 30)
+  const units30 = unitsIn(unitDays, today, 30)
+  // Units per sold listing in the read, to turn a listing count into units.
+  const perListing = listings30.length ? Math.max(1, units30 / listings30.length) : 1
+  // When the sales read don't reach back far enough (a busy product: a few thousand sales a month
+  // can be more than every page read), the count comes from eBay's own 30-day count or the pace.
+  // Best case: the read found where eBay's results cross 30 days ago (already scaled by the judge).
   const counted = soldRead?.within30 ?? null
-  // When the read already holds every sale eBay has for this search (Godzilla bucket: 111 read of
-  // 110), there's nothing to project: the count is the count. Otherwise project from the pace.
+  // When the read already holds every sale eBay has for this search, there's nothing to project.
   const readAll = !!soldRead?.total && soldRead.latest.length >= soldRead.total * 0.9
-  const pace = readAll ? null : soldPace(soldRead?.latest.length ? soldRead.latest : sold, now)
-  const sold30Estimated = counted != null ? false : pace != null && pace > counted30
-  let sold30: number = counted != null ? Math.max(counted, counted30) : sold30Estimated && pace != null ? pace : counted30
-  // eBay's sold count covers ~90 days, so a projected 30-day number can't be higher than it.
-  if (counted == null && sold30Estimated && soldRead?.total) sold30 = Math.max(counted30, Math.min(sold30, soldRead.total))
-  const sold90 = Math.max(sold.filter((x) => daysAgo(x.soldOn, now) <= 90).length, sold30Estimated ? sold30 : 0)
+  const paceRows = soldRead?.latest.length ? soldRead.latest : sold
+  const pace30 = readAll ? null : soldPace(paceRows, now, 30)
+  const pace7 = readAll ? null : soldPace(paceRows, now, 7)
+  let anchor30 = counted ?? pace30
+  // eBay's sold count covers ~90 days, so a projected 30-day count can't be higher than it.
+  if (counted == null && anchor30 != null && soldRead?.total) anchor30 = Math.min(anchor30, soldRead.total)
+  const projected30 = anchor30 != null && anchor30 > listings30.length ? Math.round(anchor30 * perListing) : null
+  const sold30Estimated = counted == null && projected30 != null && projected30 > units30
+  const sold30 = Math.max(units30, projected30 ?? 0)
+  const units7 = unitsIn(unitDays, today, 7)
+  const listings7 = sold.filter((x) => daysAgo(x.soldOn, now) <= 7).length
+  const sold7 = Math.min(sold30, Math.max(units7, pace7 != null && pace7 > listings7 ? Math.round(pace7 * perListing) : 0))
+  const sold90 = Math.max(unitsIn(unitDays, today, 90), sold30)
   const soldMedian30 = median(priced(30))
   const soldMedian90 = median(priced(90))
   const activeMedian = median(bins)
@@ -109,8 +213,8 @@ export function compStats(
   // showing the asking price, which the data can't tell apart (seen on UPC Night: real sales $345-$396,
   // best offers showing $540-$650).
   const newest = prices(
-    sold
-      .filter((x) => !x.bestOffer && daysAgo(x.soldOn, now) <= 7 && landed(x) != null)
+    clean
+      .filter((x) => daysAgo(x.soldOn, now) <= 7 && inBand(x))
       .sort((a, b) => b.soldOn.localeCompare(a.soldOn))
       .slice(0, 20),
   )
@@ -120,7 +224,7 @@ export function compStats(
   const liveCount = Math.max(active.length, liveTotal ?? 0)
   // Per condition: needs 3+ prices so one odd listing doesn't set it.
   const bucket = (wantNew: boolean) => {
-    const soldP = prices(sold.filter((x) => daysAgo(x.soldOn, now) <= (recentMedian != null ? 7 : 90) && !x.bestOffer && isNewCondition(x.condition) === wantNew))
+    const soldP = prices(clean.filter((x) => daysAgo(x.soldOn, now) <= (recentMedian != null ? 7 : 90) && inBand(x) && isNewCondition(x.condition) === wantNew))
     if (soldP.length >= 3) return median(soldP)
     const liveP = prices(active.filter((a) => a.buyItNow && isNewCondition(a.condition) === wantNew))
     return liveP.length >= 3 ? median(liveP) : null
@@ -132,8 +236,11 @@ export function compStats(
     activeMedian,
     // Under 60% of the median is almost always a scam, a pre-order or a mislabeled part, not a real buy.
     activeLowest: bins.length ? Math.min(...bins.filter((p) => !activeMedian || p >= activeMedian * 0.6)) : null,
+    sold7,
     sold30,
     sold90,
+    soldListings30: listings30.length,
+    multiUnitListings: listings30.filter((s) => !s.auction && (s.units ?? 1) > 1).length,
     soldMedian30,
     soldMedian90,
     sellThrough: sold30 + liveCount ? sold30 / (sold30 + liveCount) : null,

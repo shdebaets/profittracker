@@ -163,7 +163,9 @@ async function startComps(msg, sender) {
   if (q.length < 2) throw new Error("Nothing to search for")
   // 0.10.0: the app sends the cut-down search words (phrase); US sellers only, newest first.
   const words = String(msg.phrase || q).slice(0, 120)
-  const url = `https://www.ebay.com/sch/i.html?_nkw=${encodeURIComponent(words)}&LH_Sold=1&LH_Complete=1&LH_PrefLoc=1&_sop=13&_ipg=240&rt=nc`
+  // 0.13.0: the app pages through the results (240 a page) for busy products.
+  const page = Math.min(Math.max(Math.floor(Number(msg.page) || 1), 1), 20)
+  const url = `https://www.ebay.com/sch/i.html?_nkw=${encodeURIComponent(words)}&LH_Sold=1&LH_Complete=1&LH_PrefLoc=1&_sop=13&_ipg=240${page > 1 ? `&_pgn=${page}` : ""}&rt=nc`
   const tab = await chrome.tabs.create({ url, active: false })
   await saveJob(tab.id, { kind: "comps", jobId: msg.jobId, marketplace: "ebay", appTabId: sender.tab?.id ?? null, query: q })
 }
@@ -214,7 +216,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       await dropJob(tabId)
       chrome.tabs.remove(tabId).catch(() => {})
       if (msg.challenged) tellApp(job, { type: "ERROR", error: "eBay asked for a security check. Open ebay.com in Chrome, finish it, then try again." })
-      else tellApp(job, { type: "SOLD_COMPS", query: job.query, rows: Array.isArray(msg.rows) ? msg.rows : [], total: typeof msg.total === "number" ? msg.total : null })
+      else
+        tellApp(job, {
+          type: "SOLD_COMPS",
+          query: job.query,
+          rows: Array.isArray(msg.rows) ? msg.rows : [],
+          total: typeof msg.total === "number" ? msg.total : null,
+          cards: typeof msg.cards === "number" ? msg.cards : null,
+        })
       return { ok: true }
     }
     if (msg?.type === "DONE" && job.kind === "sales") {

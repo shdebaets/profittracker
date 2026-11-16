@@ -5,11 +5,12 @@ import "server-only"
 import { createHash } from "node:crypto"
 import { AI_MODEL } from "@/lib/ai/listing"
 import { createAdminClient } from "@/lib/supabase/admin"
+import { editionVerdict, excluded, type CompProfile } from "./profile"
 import { queryKey } from "./stats"
 
 const MAX_PER_CALL = 80
-// v2 in the hash: verdicts from the stricter prompt (designs, multi-packs) replace the old ones.
-const hash = (t: string) => createHash("sha256").update("v2|" + t.trim().toLowerCase()).digest("base64url").slice(0, 22)
+// v3 in the hash: verdicts that knew the product's other editions (profile) replace the old ones.
+const hash = (t: string) => createHash("sha256").update("v3|" + t.trim().toLowerCase()).digest("base64url").slice(0, 22)
 
 const TOOL = {
   name: "verdicts",
@@ -29,9 +30,11 @@ Reject: accessories or cases sold alone, empty boxes, manuals, parts or "for rep
 Different designs are different products: another print, character, artwork, colorway, scent, flavor or title in the same line is NOT the product (a "Velaris" throw is not a "Stars Who Listen" or "Bat Boys" throw; a "Night" box is not a "Day" box).
 Titles that name two or more designs, or say x2, x3, set of, all 3, are several units: reject them.
 Wording differences for the same item are fine ("Royal Plush" vs "Plush", "Throw" vs "Throw Blanket", spelling mistakes).
-Condition differences (new, used, open box) are fine. Missing accessories are fine unless the title says it's only part of the product.`
+Condition differences (new, used, open box) are fine. Missing accessories are fine unless the title says it's only part of the product.
+A single unit from a seller who has several in stock is fine ("in hand", "ships today", "multiple available").
+Other languages (Japanese, Korean, Chinese, etc.) and graded/slabbed copies are different products.`
 
-async function askClaude(product: string, titles: string[]): Promise<{ keep: Set<number>; usage: { input: number; output: number } } | null> {
+async function askClaude(product: string, titles: string[], editions?: string): Promise<{ keep: Set<number>; usage: { input: number; output: number } } | null> {
   const key = process.env.ANTHROPIC_API_KEY?.trim()
   if (!key) return null
   const res = await fetch("https://api.anthropic.com/v1/messages", {
@@ -46,7 +49,7 @@ async function askClaude(product: string, titles: string[]): Promise<{ keep: Set
       messages: [
         {
           role: "user",
-          content: `Product: ${product.slice(0, 200)}\nListings:\n${titles.map((t, i) => `${i}: ${t.slice(0, 140)}`).join("\n")}`,
+          content: `Product: ${product.slice(0, 200)}\n${editions ? `${editions}\n` : ""}Listings:\n${titles.map((t, i) => `${i}: ${t.slice(0, 140)}`).join("\n")}`,
         },
       ],
     }),
@@ -87,7 +90,18 @@ export function obviousMulti(title: string, product: string): boolean {
   return false
 }
 
-export async function judgeTitles(product: string, titles: string[], userId: string | null): Promise<{ keep: (t: string) => boolean; judged: boolean }> {
+export async function judgeTitles(
+  product: string,
+  titles: string[],
+  userId: string | null,
+  /** The product's profile: exclusion and other-edition words reject titles before the AI sees them. */
+  profile?: Pick<CompProfile, "exclusions" | "editionWords" | "otherEditions"> | null,
+): Promise<{ keep: (t: string) => boolean; judged: boolean }> {
+  const ruledOut = (t: string) => !!profile && (excluded(t, profile) || editionVerdict(t, profile) !== "keep")
+  const editions = profile?.otherEditions.length
+    ? `This is the ${profile.editionWords.join("/") || "named"} edition. Other editions that are NOT it: ${profile.otherEditions.map((e) => `${e.name} (${e.words.join(", ")})`).join("; ")}.`
+    : undefined
+  titles = titles.filter((t) => !ruledOut(t))
   const unique = [...new Set(titles.map((t) => t.trim()).filter(Boolean))]
   if (!unique.length || !product.trim()) return { keep: () => true, judged: false }
   const pk = queryKey(product)
@@ -105,7 +119,7 @@ export async function judgeTitles(product: string, titles: string[], userId: str
   for (let i = 0; i < todo.length; i += MAX_PER_CALL) {
     const batch = todo.slice(i, i + MAX_PER_CALL)
     try {
-      const out = await askClaude(product, batch)
+      const out = await askClaude(product, batch, editions)
       if (!out) {
         judged = false
         break
@@ -120,5 +134,5 @@ export async function judgeTitles(product: string, titles: string[], userId: str
       break
     }
   }
-  return { keep: (t) => !obviousMulti(t, product) && (verdicts.get(hash(t)) ?? true), judged }
+  return { keep: (t) => !ruledOut(t) && !obviousMulti(t, product) && (verdicts.get(hash(t.trim())) ?? true), judged }
 }

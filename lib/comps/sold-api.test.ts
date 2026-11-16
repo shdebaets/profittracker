@@ -37,7 +37,12 @@ describe("sold data parsing", () => {
       best_offer: false,
       condition: "Pre-Owned",
       overseas: false,
+      auction: false,
     })
+  })
+  it("marks auctions", () => {
+    const r = toSoldRow({ title: "Pokemon UPC Night", price: 400, caption: "Sold Nov 10, 2026", buying_format: "Auction", product_url: "https://www.ebay.com/itm/326512345679" })
+    expect(r?.auction).toBe(true)
   })
   it("skips unpriced, undated or non-USD results and makes a stable id when none is given", () => {
     expect(toSoldRow({ title: "x", price: 10, caption: "Ended" })).toBeNull()

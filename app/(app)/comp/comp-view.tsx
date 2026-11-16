@@ -92,9 +92,8 @@ export function CompView({ tracked, initialQuery }: { tracked: Tracked[]; initia
 
   // Desktop with the extension, or the phone app: this device reads eBay's sold prices itself.
   const source = soldSource(!!ext.info)
-  const lookup = useCallback((q: string, product?: string | null, paidFallback = false) => {
-    if (q.trim().length < 2) return
-    start(async () => {
+  const runLookup = useCallback(
+    async (q: string, product?: string | null, paidFallback = false) => {
       const res = await compLookup(q, product, !!source && !paidFallback)
       if (!res.ok) return void toast.error(res.error)
       if ("pick" in res) {
@@ -104,8 +103,16 @@ export function CompView({ tracked, initialQuery }: { tracked: Tracked[]; initia
         setPick(null)
         setResult(res.lookup)
       }
-    })
-  }, [source])
+    },
+    [source],
+  )
+  const lookup = useCallback(
+    (q: string, product?: string | null, paidFallback = false) => {
+      if (q.trim().length < 2) return
+      start(() => runLookup(q, product, paidFallback))
+    },
+    [runLookup],
+  )
 
   // Opened with ?q= (header search, the calculator's "Full comp"): run it right away.
   const ranInitial = useRef(false)
@@ -153,15 +160,20 @@ export function CompView({ tracked, initialQuery }: { tracked: Tracked[]; initia
     if (!source) return
     setCollecting(true)
     try {
-      const res = await pullSoldHere(source, q, result?.query === q ? result.searches : undefined)
-      const again = (paid: boolean) => lookup(result?.gtin ?? q, result?.gtin ? null : result?.product, paid)
+      const same = result?.query === q
+      // Never read (or over a day ago): page deep; otherwise the newest pages pick up what's new.
+      const deep = !same || !result?.soldCollectedAt || Date.now() - Date.parse(result.soldCollectedAt) > 24 * 3_600_000
+      const res = await pullSoldHere(source, q, same ? result?.searches : undefined, deep)
+      // Re-run the comp with the new sales and wait for it, so the card never shows "no sold data"
+      // next to a toast saying they were read (and the spinner stays until the numbers land).
+      const again = (paid: boolean) => runLookup(result?.gtin ?? q, result?.gtin ? null : result?.product, paid)
       // eBay blocked the read (signed out, captcha): fall back to the server's data for this one.
       if (!res.ok) {
         toast.error(res.error)
-        return again(true)
+        return await again(true)
       }
+      await again(false)
       toast.success(`Read ${res.count} sold listing${res.count === 1 ? "" : "s"} from eBay`)
-      again(false)
     } finally {
       setCollecting(false)
     }
@@ -291,7 +303,8 @@ export function CompView({ tracked, initialQuery }: { tracked: Tracked[]; initia
             <div className="min-w-0">
               <p className="line-clamp-2 font-bold">{result.product}</p>
               <p className="text-xs text-muted-foreground">
-                Searching eBay for &quot;{result.query}&quot;
+                {result.searches.length > 1 ? `Checked ${result.searches.length} eBay searches` : <>Searching eBay for &quot;{result.query}&quot;</>}
+                {result.otherEditions.length > 0 && <> · not the {result.otherEditions.slice(0, 3).join(", ")} version</>}
                 {!result.gtin && (
                   <>
                     {" · "}
@@ -381,15 +394,19 @@ export function CompView({ tracked, initialQuery }: { tracked: Tracked[]; initia
                 </p>
               )}
               <div className="grid grid-cols-3 gap-2 text-center font-mono text-xs">
+                <Stat label="sold 7d" value={s.sold30Estimated ? `~${s.sold7}` : String(s.sold7)} />
                 <Stat label={s.sold30Estimated ? "sold 30d (pace)" : "sold 30d"} value={s.sold30Estimated ? `~${s.sold30}` : String(s.sold30)} />
                 <Stat label="live now" value={String(s.activeCount)} />
                 <Stat label="sell-through" value={s.sellThrough == null ? "n/a" : `${Math.round(s.sellThrough * 100)}%`} />
-                <Stat label="lowest live" value={s.activeLowest == null ? "n/a" : formatCents(s.activeLowest)} />
-                <Stat label="sold median 90d" value={s.soldMedian90 == null ? "n/a" : formatCents(s.soldMedian90)} />
                 <Stat label="days of supply" value={s.daysOfSupply == null ? "n/a" : String(s.daysOfSupply)} />
+                <Stat label="lowest live" value={s.activeLowest == null ? "n/a" : formatCents(s.activeLowest)} />
+                <Stat label="sold median 30d" value={s.soldMedian30 == null ? "n/a" : formatCents(s.soldMedian30)} />
+                <Stat label="sold median 90d" value={s.soldMedian90 == null ? "n/a" : formatCents(s.soldMedian90)} />
+                <Stat label="sold 90d" value={String(s.sold90)} />
               </div>
               <p className="-mt-2 text-xs text-muted-foreground">
-                Days of supply: how long today&apos;s live listings would take to sell at the last 30 days&apos; pace. eBay&apos;s sold data doesn&apos;t say how long each one was listed.
+                Sold counts are units, not listings: {s.soldListings30} sold {s.soldListings30 === 1 ? "listing" : "listings"} in 30 days
+                {s.multiUnitListings > 0 ? `, ${s.multiUnitListings} of them selling more than one` : ""}. Days of supply: how long today&apos;s live listings would take to sell at the last 30 days&apos; pace.
               </p>
             </>
           )}
@@ -406,6 +423,17 @@ export function CompView({ tracked, initialQuery }: { tracked: Tracked[]; initia
                 ? ""
                 : "eBay had no recent sales we could read for this one."}
           </p>
+          {result.searches.length > 1 && (
+            <details className="rounded-2xl bg-muted/60 p-3 text-xs">
+              <summary className="cursor-pointer font-semibold">eBay searches checked ({result.searches.length})</summary>
+              <ul className="mt-2 flex flex-col gap-1 font-mono">
+                {result.searches.map((q) => (
+                  <li key={q} className="truncate">{q}</li>
+                ))}
+              </ul>
+              <p className="mt-2 text-muted-foreground">Sellers title the same item many ways, so every one of these is read and each listing counted once.</p>
+            </details>
+          )}
           {result.recentSales.length > 0 && (
             <details className="rounded-2xl bg-muted/60 p-3 text-xs">
               <summary className="cursor-pointer font-semibold">Recent sales behind this price ({result.recentSales.length})</summary>

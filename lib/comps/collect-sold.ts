@@ -10,6 +10,8 @@ export type CollectedSold = {
   sold_on: string
   best_offer: boolean
   condition: string | null
+  /** "3 bids": an auction, always one unit. */
+  auction: boolean
 }
 
 export function collectSoldPage(doc: Document): { rows: CollectedSold[]; total: number | null; challenged: boolean } {
@@ -55,6 +57,7 @@ export function collectSoldPage(doc: Document): { rows: CollectedSold[]; total: 
       sold_on: soldOn,
       best_offer: !!(priceEl?.matches(".strikethrough") || priceEl?.querySelector(".strikethrough")),
       condition: card.querySelector(".s-card__subtitle, .s-item__subtitle")?.textContent?.trim()?.slice(0, 80) ?? null,
+      auction: leaves.some((s) => /^\d+\s+bids?$/i.test(s)),
     })
   }
   // "1,113 results": eBay's own count of matching sold listings (about 90 days).
@@ -65,5 +68,5 @@ export function collectSoldPage(doc: Document): { rows: CollectedSold[]; total: 
 }
 
 /** eBay's sold search for a phrase: US sellers, newest first, 240 a page. */
-export const ebaySoldUrl = (phrase: string) =>
-  `https://www.ebay.com/sch/i.html?_nkw=${encodeURIComponent(phrase.slice(0, 120))}&LH_Sold=1&LH_Complete=1&LH_PrefLoc=1&_sop=13&_ipg=240&rt=nc`
+export const ebaySoldUrl = (phrase: string, page = 1) =>
+  `https://www.ebay.com/sch/i.html?_nkw=${encodeURIComponent(phrase.slice(0, 120))}&LH_Sold=1&LH_Complete=1&LH_PrefLoc=1&_sop=13&_ipg=240${page > 1 ? `&_pgn=${page}` : ""}&rt=nc`

@@ -233,6 +233,9 @@ export function importSalesWithExtension(marketplace: "mercari"): Promise<{ ok: 
 /** Reading eBay sold prices for comps arrived in extension 0.8.0. */
 export const extensionCanCollectComps = () => extensionAtLeast(8)
 
+/** Paging through eBay's sold results (page 2 and on) arrived in extension 0.13.0. */
+export const extensionCanPageComps = () => extensionAtLeast(13)
+
 export type SoldCompRow = {
   external_id: string
   title: string
@@ -241,17 +244,22 @@ export type SoldCompRow = {
   sold_on: string
   best_offer: boolean
   condition: string | null
+  auction?: boolean
 }
+
+type SoldPage = { ok: true; rows: SoldCompRow[]; total: number | null; cards: number | null } | { ok: false; error: string }
 
 /** Ask the extension to read eBay's public sold listings for a search (background tab, read only). */
 export function collectSoldWithExtension(
   query: string,
   /** The words to search (soldPhrase); extension 0.10.0+ also reads eBay's result count. */
   phrase?: string,
-): Promise<{ ok: true; rows: SoldCompRow[]; total: number | null } | { ok: false; error: string }> {
+  /** eBay results page, 240 a page (extension 0.13.0+). */
+  page = 1,
+): Promise<SoldPage> {
   const jobId = crypto.randomUUID()
   return new Promise((resolve) => {
-    const finish = (r: { ok: true; rows: SoldCompRow[]; total: number | null } | { ok: false; error: string }) => {
+    const finish = (r: SoldPage) => {
       clearTimeout(timer)
       window.removeEventListener("message", onMsg)
       resolve(r)
@@ -260,11 +268,12 @@ export function collectSoldWithExtension(
       if (e.source !== window || e.origin !== location.origin) return
       const d = e.data
       if (d?.source !== EXT_SOURCE || d.jobId !== jobId) return
-      if (d.type === "SOLD_COMPS") finish({ ok: true, rows: Array.isArray(d.rows) ? d.rows : [], total: typeof d.total === "number" ? d.total : null })
+      if (d.type === "SOLD_COMPS")
+        finish({ ok: true, rows: Array.isArray(d.rows) ? d.rows : [], total: typeof d.total === "number" ? d.total : null, cards: typeof d.cards === "number" ? d.cards : null })
       else if (d.type === "ERROR") finish({ ok: false, error: d.error })
     }
     const timer = setTimeout(() => finish({ ok: false, error: "eBay didn't show its sold listings. Since July 2026 eBay only shows them to signed-in members: sign in at ebay.com in this Chrome, then try again." }), 45_000)
     window.addEventListener("message", onMsg)
-    window.postMessage({ source: APP_SOURCE, type: "COMPS", jobId, query, phrase: phrase ?? query }, location.origin)
+    window.postMessage({ source: APP_SOURCE, type: "COMPS", jobId, query, phrase: phrase ?? query, page }, location.origin)
   })
 }
