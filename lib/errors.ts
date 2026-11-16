@@ -65,8 +65,12 @@ function fromEbay(e: Obj): string {
     return detail ? `eBay couldn't promote this listing: ${detail}` : "eBay couldn't promote this listing. Try again from the item's eBay row."
   }
   if (status === 403) return "eBay didn't allow that. Make sure your eBay account is set up to sell, then reconnect it in Settings."
-  if (/create a seller'?s account|register as a seller|seller registration|before you can list this item/i.test(text))
-    return "Your eBay account isn't set up to sell yet. On ebay.com, start a listing or open Seller Hub and finish eBay's seller setup (usually adding payout details), then try again."
+  // eBay's wording varies ("…to create a seller's account", "…verify your identity"), so quote the sentence that matched.
+  const setup = text.match(/[^.!?]*(create a seller'?s account|register as a seller|seller registration|before you can list this item)[^.!?]*[.!?]?/i)
+  if (setup) {
+    const said = setup[0].replace(/\s+/g, " ").trim().slice(0, 200)
+    return `Your eBay account isn't set up to sell yet. On ebay.com, start a listing or open Seller Hub and finish eBay's seller setup (usually adding payout details), then try again. eBay says: "${said}"`
+  }
   if (/picture|image|photo/i.test(text)) return "eBay couldn't use this item's photos. Try again, or remove and re-add the photos."
   // eBay's monthly selling limits ("You can list up to USD 500.00 more in total sales this month").
   const limit = text.match(/list up to (USD|US \$|\$)\s?([\d,.]+) more/i)
