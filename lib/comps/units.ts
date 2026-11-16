@@ -7,6 +7,7 @@ import "server-only"
 import { EbayError, ebayFetch } from "@/lib/marketplaces/ebay/client"
 import { getAppToken } from "@/lib/marketplaces/ebay/oauth"
 import { createAdminClient } from "@/lib/supabase/admin"
+import { etDay, type UnitHistory } from "./stats"
 
 export type ItemUnits = { soldQty: number | null; createdOn: string | null; ended: boolean }
 
@@ -80,7 +81,8 @@ export async function loadUnits(
       const { data } = await admin.from("comp_items").select("item_id, sold_qty, created_on, ended, fetched_at").in("item_id", unique.slice(i, i + 500))
       for (const r of data ?? []) {
         const u = { soldQty: r.sold_qty, createdOn: r.created_on, ended: r.ended }
-        if (!r.ended && live.has(r.item_id) && Date.now() - Date.parse(r.fetched_at) > LIVE_TTL_MS) stale.set(r.item_id, u)
+        // Anything still selling is read again daily: its count's daily change is what it sold.
+        if (!r.ended && Date.now() - Date.parse(r.fetched_at) > LIVE_TTL_MS) stale.set(r.item_id, u)
         else out.set(r.item_id, u)
       }
     }
@@ -100,11 +102,18 @@ export async function loadUnits(
     let calls = 0
     const save = async (rows: { id: string; units: ItemUnits }[]) => {
       for (const r of rows) out.set(r.id, r.units)
-      if (rows.length)
-        await admin.from("comp_items").upsert(
-          rows.map((r) => ({ item_id: r.id, sold_qty: r.units.soldQty, created_on: r.units.createdOn, ended: r.units.ended, fetched_at: new Date().toISOString() })),
-          { onConflict: "item_id" },
-        )
+      if (!rows.length) return
+      await admin.from("comp_items").upsert(
+        rows.map((r) => ({ item_id: r.id, sold_qty: r.units.soldQty, created_on: r.units.createdOn, ended: r.units.ended, fetched_at: new Date().toISOString() })),
+        { onConflict: "item_id" },
+      )
+      // Today's reading of each count (one per listing per day; the latest wins).
+      const day = etDay(new Date())
+      const counts = rows.filter((r) => r.units.soldQty != null).map((r) => ({ item_id: r.id, day, sold_qty: r.units.soldQty! }))
+      if (counts.length) {
+        const { error } = await admin.from("comp_item_counts").upsert(counts, { onConflict: "item_id,day" })
+        if (error) console.error("[comp units] counts", error)
+      }
     }
     // Batches of 20 (getItems) while eBay allows it for this keyset.
     let next = 0
@@ -148,6 +157,30 @@ export async function loadUnits(
     console.log("[comp units]", JSON.stringify({ asked: todo.length, calls, known: out.size }))
   } catch (e) {
     console.error("[comp units]", e)
+  }
+  return out
+}
+
+/** Daily readings of these listings' sold counts over the last 95 days (for reconcileUnits). Never throws. */
+export async function loadUnitHistory(ids: string[]): Promise<UnitHistory> {
+  const out: UnitHistory = new Map()
+  const unique = [...new Set(ids.filter((id) => /^\d{9,15}$/.test(id)))]
+  if (!unique.length) return out
+  const since = etDay(new Date(Date.now() - 95 * 86_400_000))
+  const admin = createAdminClient()
+  try {
+    for (let i = 0; i < unique.length; i += 300) {
+      const { data, error } = await admin
+        .from("comp_item_counts")
+        .select("item_id, day, sold_qty")
+        .in("item_id", unique.slice(i, i + 300))
+        .gte("day", since)
+        .limit(30_000)
+      if (error) throw error
+      for (const r of data ?? []) out.set(r.item_id, [...(out.get(r.item_id) ?? []), { day: r.day, qty: r.sold_qty }])
+    }
+  } catch (e) {
+    console.error("[comp units] history", e)
   }
   return out
 }
