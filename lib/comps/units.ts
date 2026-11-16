@@ -56,18 +56,29 @@ async function spend(calls: number): Promise<number> {
  * waits for the next lookup and counts as 1 meanwhile). `live`: ids of listings still for sale,
  * whose counts are re-read daily. Never throws.
  */
-export async function loadUnits(ids: string[], live: Set<string> = new Set()): Promise<Map<string, ItemUnits>> {
+export async function loadUnits(
+  ids: string[],
+  live: Set<string> = new Set(),
+  /** fetch: false = only what's on file (stale counts included), no eBay calls. */
+  { fetch = true }: { fetch?: boolean } = {},
+): Promise<Map<string, ItemUnits>> {
   const out = new Map<string, ItemUnits>()
   const unique = [...new Set(ids.filter((id) => /^\d{9,15}$/.test(id)))]
   if (!unique.length) return out
   const admin = createAdminClient()
   try {
+    const stale = new Map<string, ItemUnits>()
     for (let i = 0; i < unique.length; i += 500) {
       const { data } = await admin.from("comp_items").select("item_id, sold_qty, created_on, ended, fetched_at").in("item_id", unique.slice(i, i + 500))
       for (const r of data ?? []) {
-        const stale = !r.ended && live.has(r.item_id) && Date.now() - Date.parse(r.fetched_at) > LIVE_TTL_MS
-        if (!stale) out.set(r.item_id, { soldQty: r.sold_qty, createdOn: r.created_on, ended: r.ended })
+        const u = { soldQty: r.sold_qty, createdOn: r.created_on, ended: r.ended }
+        if (!r.ended && live.has(r.item_id) && Date.now() - Date.parse(r.fetched_at) > LIVE_TTL_MS) stale.set(r.item_id, u)
+        else out.set(r.item_id, u)
       }
+    }
+    if (!fetch) {
+      for (const [id, u] of stale) out.set(id, u)
+      return out
     }
     // Live listings first (they're where multi-unit sales sit), then the newest sold ones.
     const todo = unique.filter((id) => !out.has(id)).sort((a, b) => Number(live.has(b)) - Number(live.has(a)))

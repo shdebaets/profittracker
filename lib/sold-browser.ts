@@ -16,11 +16,11 @@ import { inPhoneApp, readSoldInApp } from "@/lib/native-ebay"
 export type SoldSource = "extension" | "app" | null
 
 /**
- * On (Nov 15 2026, Nick): the extension or phone app reads eBay first, the paid provider fills in
- * for everyone else. Both write the same comp_sales rows (one per listing) and units come from the
- * Browse API either way, so counts no longer depend on who read last.
+ * Off (Nov 16 2026, Nick): sold prices come only from the paid provider, so comps work the same
+ * for every member with no extension. Units still come from the Browse API. Flip to true to let
+ * the extension and phone app read eBay again (the paging and saving below still work).
  */
-export const BROWSER_SOLD_READS = true
+export const BROWSER_SOLD_READS = false
 
 export function soldSource(extensionReady: boolean): SoldSource {
   if (!BROWSER_SOLD_READS) return null

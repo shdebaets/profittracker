@@ -1,4 +1,5 @@
 import "server-only"
+import { after } from "next/server"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { cached, IDENTIFY_TTL_MS, LIVE_TTL_MS } from "./cache"
@@ -66,7 +67,18 @@ async function liveAcross(first: LiveSearch, keywords: string[]): Promise<{ comp
 export async function lookupComps(
   supabase: SupabaseClient,
   input: string,
-  opts: { now?: Date; userId?: string | null; product?: string | null; skipPaidSold?: boolean } = {},
+  opts: {
+    now?: Date
+    userId?: string | null
+    product?: string | null
+    skipPaidSold?: boolean
+    /**
+     * In a request (server action): when the product already has sold data, answer from it now
+     * and refresh sold listings and units after the response (`after`). The next lookup shows
+     * them. Cron jobs leave this off and wait.
+     */
+    background?: boolean
+  } = {},
 ): Promise<CompLookup | CompPick> {
   const now = opts.now ?? new Date()
   const raw = input.trim()
@@ -107,8 +119,14 @@ export async function lookupComps(
   // Live listings from every keyword (each cached 2 hours), merged by item id.
   const market = gtin ? { comps: live.comps, total: live.total } : await liveAcross(live, searches)
   // Sold prices from the data provider when nobody has read this product in 12 hours (no-op without a key).
-  if (!opts.skipPaidSold) await refreshSoldFromApi(query, searches)
-  const read = await lastSoldRead(query).catch(() => null)
+  const before = await lastSoldRead(query).catch(() => null)
+  // Instant when there's something to show: a product read before refreshes in the background.
+  const later = !!opts.background && !!before
+  if (!opts.skipPaidSold) {
+    if (later) after(() => refreshSoldFromApi(query, searches).then(() => undefined))
+    else await refreshSoldFromApi(query, searches)
+  }
+  const read = later ? before : await lastSoldRead(query).catch(() => null)
   const since = new Date(now.getTime() - 90 * 86_400_000).toISOString().slice(0, 10)
   // Every sale on file for the product in 90 days, from any reader (extension, phone app, paid
   // provider), one row per listing. PostgREST returns 1,000 rows a request, so page.
@@ -132,10 +150,11 @@ export async function lookupComps(
   // eBay's total counts every match; scale it by the share of the sample that was really this product.
   const liveTotal = market.comps.length ? Math.max(keptLive.length, Math.round((market.total * keptLive.length) / market.comps.length)) : 0
   // Units per listing (Browse API, cached per listing): live ones and non-auction sales from the last 90 days.
-  const units = await loadUnits(
-    [...keptLive.flatMap((c) => (c.itemId ? [c.itemId] : [])), ...rows.filter((r) => !r.auction).map((r) => r.external_id)],
-    new Set(keptLive.flatMap((c) => (c.itemId ? [c.itemId] : []))),
-  )
+  const unitIds = [...keptLive.flatMap((c) => (c.itemId ? [c.itemId] : [])), ...rows.filter((r) => !r.auction).map((r) => r.external_id)]
+  const liveIds = new Set(keptLive.flatMap((c) => (c.itemId ? [c.itemId] : [])))
+  // In the background mode, use the units already on file now and look up the rest afterwards.
+  const units = await loadUnits(unitIds, liveIds, { fetch: !later })
+  if (later) after(() => loadUnits(unitIds, liveIds).then(() => undefined))
   const active: ActiveComp[] = keptLive.map((c) => {
     const u = c.itemId ? units.get(c.itemId) : undefined
     return { ...c, soldQty: u?.soldQty ?? null, createdOn: u?.createdOn ?? null }

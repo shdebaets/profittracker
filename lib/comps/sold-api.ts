@@ -164,76 +164,93 @@ export async function refreshSoldFromApi(query: string, searches?: string[]): Pr
     return 0
   }
   try {
-    // Newest sales first; keep paging while a full page is still inside the last 30 days, so busy
-    // products get a real 30-day count. Slow products stop after one page.
     const rows: SoldRow[] = []
     let requests = 0
     let total: number | null = null
     const monthAgo = new Date(Date.now() - 30 * 86_400_000).toISOString().slice(0, 10)
     const phrases = searches?.length ? searches : [soldPhrase(query)]
-    // Every search is read: the first pages deepest (busy products), the others page on while
-    // they keep finding sales the earlier searches didn't (sales titled differently), within the
-    // per-product request budget. eBay's count per search overlaps, so the biggest one is kept.
-    let oldest: string | null = null
     // eBay results (before the AI judge) sold in the last 30 days, when the read could tell.
     let within30: number | null = null
     const seen = new Set<string>()
-    for (const [n, phrase] of phrases.entries()) {
-      let lastRead = 0
-      let phraseTotal: number | null = null
-      // Keep a request for each search still to come, and 5 for the 30-day probe.
-      const reserve = phrases.length - n - 1 + (n === 0 ? 5 : 0)
-      for (let page = 1; page <= (n === 0 ? MAX_PAGES() : 4); page++) {
-        if (page > 1 && requests >= MAX_REQUESTS() - reserve) break
-        const res = await fetchPage(phrase, page)
+    type Page = { n: number; page: number; got: SoldRow[]; full: boolean; oldest: string | null; total: number | null; fresh: number }
+    const pages: Page[] = []
+    // Pages run in parallel (the comp screen waits on this), counted in keyword order so "fresh"
+    // means listings no earlier keyword found.
+    const read = async (jobs: { n: number; page: number }[]) => {
+      jobs = jobs.slice(0, Math.max(0, MAX_REQUESTS() - requests))
+      requests += jobs.length
+      const done = await Promise.all(
+        jobs.map(async ({ n, page }) => {
+          const res = await fetchPage(phrases[n], page)
+          const got = res.items.map(toSoldRow).filter((r): r is SoldRow => !!r)
+          return { n, page, got, full: res.items.length >= 60, oldest: got.map((r) => r.sold_on).sort()[0] ?? null, total: res.total, fresh: 0 }
+        }),
+      )
+      for (const p of done.sort((a, b) => a.n - b.n || a.page - b.page)) {
+        p.fresh = p.got.filter((r) => !seen.has(r.external_id)).length
+        for (const r of p.got) seen.add(r.external_id)
+        rows.push(...p.got)
+        if (p.total != null) total = Math.max(total ?? 0, p.total)
+        pages.push(p)
+      }
+      return done
+    }
+    // A full page still inside 30 days: the keyword has more recent sales on the next page.
+    const more = (p: Page) => p.full && !!p.oldest && p.oldest >= monthAgo && (p.n === 0 || p.fresh > 5)
+    // Wave 1: page 1 of the first three keywords.
+    const first = await read(phrases.slice(0, 3).map((_, n) => ({ n, page: 1 })))
+    if (first[0]?.got[0]) console.log("[sold data] fields", Object.keys(first[0].got[0]).join(","))
+    // Wave 2: the other keywords, unless the second and third found almost nothing new (everyone
+    // titles this product the same way, so more keywords would only cost requests).
+    const extra = first.filter((p) => p.n > 0).reduce((s, p) => s + p.fresh, 0)
+    const base = first.find((p) => p.n === 0)?.got.length ?? 0
+    if (phrases.length > 3 && (extra >= 10 || extra > base * 0.15)) await read(phrases.slice(3).map((_, i) => ({ n: i + 3, page: 1 })))
+    // Deeper pages for busy keywords, a few at a time: the first keyword up to SOLD_DATA_MAX_PAGES,
+    // the others up to 4 while they keep finding listings the rest didn't. Keep 5 for the probe.
+    for (let wave = 0; wave < 10; wave++) {
+      const last = new Map<number, Page>()
+      for (const p of pages) if (!last.has(p.n) || last.get(p.n)!.page < p.page) last.set(p.n, p)
+      const jobs = [...last.values()]
+        .filter((p) => more(p) && p.page < (p.n === 0 ? MAX_PAGES() : 4))
+        .flatMap((p) => (p.n === 0 ? [p.page + 1, p.page + 2] : [p.page + 1]).filter((pg) => pg <= (p.n === 0 ? MAX_PAGES() : 4)).map((page) => ({ n: p.n, page })))
+      if (!jobs.length || requests >= MAX_REQUESTS() - 5) break
+      await read(jobs.slice(0, Math.max(0, MAX_REQUESTS() - 5 - requests)))
+    }
+    // A busy product: the pages read are only the newest few days. Find the page where the first
+    // keyword's results cross 30 days ago (binary search, at most 5 requests), so the 30-day count
+    // is eBay's own count, not a guess from the pace.
+    const firstPages = pages.filter((p) => p.n === 0)
+    const lastRead = Math.max(0, ...firstPages.map((p) => p.page))
+    const phraseTotal = firstPages[0]?.total ?? null
+    const oldest = firstPages.map((p) => p.oldest).filter((d): d is string => !!d).sort()[0] ?? null
+    const lastPage = phraseTotal ? Math.min(100, Math.ceil(phraseTotal / 60)) : 0
+    // The first keyword ran out of results (every page read in order, the last one not full): the
+    // read holds all of eBay's sales for it, so its 30-day count is exact and nothing is projected.
+    // eBay's result total can't tell us this: it changes from page to page (192 on page 1, then 122).
+    const tail = firstPages.find((p) => p.page === lastRead)
+    if (tail && !tail.full && firstPages.length === lastRead) within30 = firstPages.flatMap((p) => p.got).filter((r) => r.sold_on >= monthAgo).length
+    // The probe stays inside the per-product budget (it needs 2 requests to be worth starting).
+    if (phraseTotal && lastPage > lastRead && oldest && oldest >= monthAgo && firstPages.every((p) => p.full) && requests + 2 <= MAX_REQUESTS()) {
+      let inside = lastRead
+      const probe = async (page: number) => {
+        const res = await fetchPage(phrases[0], page)
         requests++
-        lastRead = page
-        phraseTotal ??= res.total
-        if (res.total != null) total = Math.max(total ?? 0, res.total)
         const got = res.items.map(toSoldRow).filter((r): r is SoldRow => !!r)
         rows.push(...got)
-        const fresh = got.filter((r) => !seen.has(r.external_id))
-        for (const r of got) seen.add(r.external_id)
-        if (n > 0 && !fresh.length) break
-        if (page === 1 && n === 0 && res.items[0] && typeof res.items[0] === "object")
-          console.log("[sold data] fields", Object.keys(res.items[0] as object).join(","))
-        if (page === 1 && n === 0)
-          console.log("[sold data] sample", JSON.stringify(res.items.slice(0, 8).map((x) => {
-            const o = x as Record<string, unknown>
-            return { p: o.price, s: o.shipping, loc: o.location, bf: o.buying_format, c: o.caption }
-          })))
-        const pageOldest = got.map((r) => r.sold_on).sort()[0]
-        if (pageOldest && (!oldest || pageOldest < oldest)) oldest = pageOldest
-        if (res.items.length < 60 || !pageOldest || pageOldest < monthAgo) break
+        return got.map((r) => r.sold_on).sort()[0] ?? null
       }
-      // A busy product: the pages read are only the newest few days. Find the page where eBay's
-      // results cross 30 days ago (binary search, at most 5 requests), so the 30-day count is a
-      // real count of eBay's results, not a guess from the pace.
-      const lastPage = phraseTotal ? Math.min(100, Math.ceil(phraseTotal / 60)) : 0
-      if (n === 0 && phraseTotal && lastPage > lastRead && oldest && oldest >= monthAgo) {
-        let inside = lastRead // newest pages: all inside 30 days
-        let outside: number
-        const probe = async (page: number) => {
-          const res = await fetchPage(phrase, page)
-          requests++
-          const got = res.items.map(toSoldRow).filter((r): r is SoldRow => !!r)
-          rows.push(...got)
-          const dates = got.map((r) => r.sold_on).sort()
-          return { oldest: dates[0] ?? null }
+      const end = await probe(lastPage)
+      if (end && end >= monthAgo) within30 = phraseTotal
+      else {
+        let outside = lastPage
+        for (let i = 0; i < 4 && outside - inside > 1 && requests < MAX_REQUESTS(); i++) {
+          const mid = Math.floor((inside + outside) / 2)
+          const o = await probe(mid)
+          if (o && o >= monthAgo) inside = mid
+          else outside = mid
         }
-        const last = await probe(lastPage)
-        if (last.oldest && last.oldest >= monthAgo) within30 = phraseTotal
-        else {
-          outside = lastPage
-          for (let i = 0; i < 4 && outside - inside > 1; i++) {
-            const mid = Math.floor((inside + outside) / 2)
-            const r = await probe(mid)
-            if (r.oldest && r.oldest >= monthAgo) inside = mid
-            else outside = mid
-          }
-          // Whole pages inside, plus about half of the page that crosses the line.
-          within30 = Math.min(phraseTotal, inside * 60 + 30)
-        }
+        // Whole pages inside, plus about half of the page that crosses the line.
+        within30 = Math.min(phraseTotal, inside * 60 + 30)
       }
     }
     // Pages can overlap while new sales come in: one row per sale, or the upsert refuses the batch.

@@ -188,3 +188,19 @@ describe("units, not listings", () => {
     expect(st.sold30).toBe(9)
   })
 })
+
+describe("item price, not shipping", () => {
+  const now = new Date("2026-11-14T20:00:00Z")
+  it("prices sales by item price (shipping varies by viewer) but lowest live includes shipping", () => {
+    const sold = [9000, 9400, 9700, 9800, 11800].map((p, i) => ({ priceCents: p, shippingCents: [2103, 750, 982, 0, 1195][i], soldOn: "2026-11-13", bestOffer: false, itemId: `g${i}` }))
+    const live = [
+      { priceCents: 9999, shippingCents: 1500, title: "a", condition: null, buyItNow: true },
+      { priceCents: 10500, shippingCents: 0, title: "b", condition: null, buyItNow: true },
+    ]
+    const st = compStats(live, sold, now)
+    expect(st.soldMedian30).toBe(9700)
+    expect(st.activeLowest).toBe(10500)
+    // Overseas sellers (shipping over $25) still stay out.
+    expect(compStats([], [...sold, { priceCents: 50000, shippingCents: 6000, soldOn: "2026-11-13", bestOffer: false }], now).soldMedian30).toBe(9700)
+  })
+})
