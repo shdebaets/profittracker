@@ -195,6 +195,7 @@ Local QA logins live in `.env.example` (`qa-a@flipledger.test`, `qa-b@flipledger
 - **Item specifics:** required ones must be filled; the List button stays disabled until they are.
 - **Keys must match the environment:** sandbox and production keys must never be mixed. `EBAY_ENV`, `EBAY_CLIENT_ID` (`SBX` vs `PRD`), `EBAY_CLIENT_SECRET` and `EBAY_RUNAME` must all come from the same keyset. Each keyset has its own RuName, and a mismatch shows up as `unauthorized_client` or a vague `temporarily_unavailable`.
 - **Sandbox logins:** the sandbox only accepts sandbox test users, not real eBay accounts.
+- **Word filter (error 25019):** "The title and/or description may contain improper words" is eBay's keyword filter, not a length problem. Slang like "dope" trips it. `friendlyError` says so and quotes eBay; one-word guesses (title, price, category) also end with eBay's own sentence.
 - **Seller setup:** "need some additional information to create a seller's account" means the user must finish seller setup on ebay.com. It isn't a field in our form.
 - **Adding OAuth scopes:** a refresh may only ask for scopes the seller already granted, or eBay rejects it and the connection looks expired. Granted scopes are saved in `marketplace_accounts.scopes` (null means `LEGACY_EBAY_SCOPES`), refreshes use them, and features that need a new scope check for it (e.g. `canPromote`) and ask the seller to reconnect. Reconnecting the same eBay account keeps its settings (callback route).
 

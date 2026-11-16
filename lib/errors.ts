@@ -54,6 +54,10 @@ function fromEbay(e: Obj): string {
   const errors = Array.isArray(e.errors) ? (e.errors as Obj[]) : []
   const ids = errors.map((x) => Number(x.errorId))
   const text = [str(e.message), ...errors.map((x) => `${str(x.message)} ${str(x.longMessage)}`)].join(" ")
+  // eBay's own explanation, minus its generic "A user error has occurred." opener.
+  const raw = (str(errors[0]?.longMessage) || str(errors[0]?.message) || str(e.message)).replace(/^\s*A user error has occurred\.\s*/i, "")
+  const said = firstSentence(raw)
+  const says = said ? ` eBay says: "${said}"` : ""
 
   if (status === 401 || ids.includes(1001) || /invalid_grant|refresh token|access token/i.test(text)) return RECONNECT_EBAY
   if (status === 429) return "eBay is busy right now. Wait a minute and try again."
@@ -71,6 +75,12 @@ function fromEbay(e: Obj): string {
     const said = setup[0].replace(/\s+/g, " ").trim().slice(0, 200)
     return `Your eBay account isn't set up to sell yet. On ebay.com, start a listing or open Seller Hub and finish eBay's seller setup (usually adding payout details), then try again. eBay says: "${said}"`
   }
+  // 25019: eBay's word filter or a policy block ("The title and/or description may contain improper words…").
+  if (ids.includes(25019) || /improper words|in violation of eBay policy/i.test(text)) {
+    const why = text.match(/[^.!?]*(improper words|violation of eBay policy)[^.!?]*[.!?]?/i)
+    const quote = why ? ` eBay says: "${why[0].replace(/\s+/g, " ").trim().slice(0, 200)}"` : says
+    return `eBay blocked this listing because of a word in the title or description, or a policy issue. Remove slang and anything that could read as drugs, weapons or adult content (eBay filters words like "dope"), then try again.${quote}`
+  }
   if (/picture|image|photo/i.test(text)) return "eBay couldn't use this item's photos. Try again, or remove and re-add the photos."
   // eBay's monthly selling limits ("You can list up to USD 500.00 more in total sales this month").
   const limit = text.match(/list up to (USD|US \$|\$)\s?([\d,.]+) more/i)
@@ -83,9 +93,10 @@ function fromEbay(e: Obj): string {
   if (/location/i.test(text)) return "eBay needs your ship-from ZIP code. Add it in Settings → Marketplaces."
   if (/condition/i.test(text)) return "eBay doesn't allow that condition in this category. Pick a different condition."
   if (/item specific|aspect/i.test(text)) return `eBay needs more item specifics: ${firstSentence(errors[0] ? str(errors[0].longMessage) || str(errors[0].message) : str(e.message))}`
-  if (/category/i.test(text)) return "eBay doesn't accept this category for this item. Pick a different category."
-  if (/price/i.test(text)) return "eBay didn't accept the price. Check it and try again."
-  if (/title/i.test(text)) return "eBay didn't accept the title. Shorten it or remove special characters."
+  // These match on one word, so they can be a wrong guess: always end with what eBay actually said.
+  if (/category/i.test(text)) return `eBay doesn't accept this category for this item. Pick a different category.${says}`
+  if (/price/i.test(text)) return `eBay didn't accept the price. Check it and try again.${says}`
+  if (/title/i.test(text)) return `eBay didn't accept the title. Shorten it or remove special characters.${says}`
   if (/header|content-type|content-language|accept-language|marketplace-id/i.test(text)) return OUR_SIDE
   const detail = firstSentence(str(errors[0]?.longMessage) || str(errors[0]?.message) || str(e.message))
   return detail ? `eBay couldn't do that: ${detail}` : "eBay couldn't do that. Please try again."
