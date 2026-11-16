@@ -19,7 +19,10 @@ type Item = {
 }
 
 const LIVE_TTL_MS = 24 * 60 * 60_000
-const maxCalls = () => Number(process.env.COMP_UNITS_MAX_CALLS) || 40
+const maxCalls = () => Number(process.env.COMP_UNITS_MAX_CALLS) || 80
+/** Single-item calls in flight at once (getItems batches are a restricted API: our keyset gets 403). */
+const PARALLEL = 8
+let batchDenied = false
 const dailyLimit = () => Number(process.env.COMP_UNITS_DAILY_LIMIT) || 2000
 
 /** One Browse item → its units, or null for an item without a number. Pure. */
@@ -84,8 +87,10 @@ export async function loadUnits(ids: string[], live: Set<string> = new Set()): P
           { onConflict: "item_id" },
         )
     }
-    for (let i = 0; i < todo.length && calls < budget; i += 20) {
-      const batch = todo.slice(i, i + 20)
+    // Batches of 20 (getItems) while eBay allows it for this keyset.
+    let next = 0
+    while (!batchDenied && next < todo.length && calls < budget) {
+      const batch = todo.slice(next, next + 20)
       calls++
       try {
         const res = await ebayFetch<{ items?: Item[] }>(token, `/buy/browse/v1/item/?item_ids=${batch.map((id) => `v1|${id}|0`).join(",")}`)
@@ -94,23 +99,31 @@ export async function loadUnits(ids: string[], live: Set<string> = new Set()): P
         // Not returned: ended or removed, or a multi-variation listing. One unit, and don't ask again.
         const gone = batch.filter((id) => !found.has(id) && !live.has(id)).map((id) => ({ id, units: { soldQty: null, createdOn: null, ended: true } }))
         await save([...got, ...gone])
+        next += 20
       } catch (e) {
-        // getItems not allowed for this keyset: fall back to one call per listing, live ones first.
+        // getItems is a restricted API (403 for our keyset): one call per listing from here on.
         if (!(e instanceof EbayError) || (e.status !== 403 && e.status !== 400)) throw e
-        for (const id of batch) {
-          if (calls >= budget) break
-          calls++
-          try {
-            const item = await ebayFetch<Item>(token, `/buy/browse/v1/item/get_item_by_legacy_id?legacy_item_id=${id}`)
-            const u = toItemUnits(item)
-            await save(u ? [u] : [])
-          } catch (err) {
-            if (err instanceof EbayError && (err.status === 404 || err.has(11006) || err.status === 400))
-              await save([{ id, units: { soldQty: null, createdOn: null, ended: !live.has(id) } }])
-            else throw err
-          }
-        }
+        batchDenied = true
       }
+    }
+    // One call per listing, several at once, live listings first.
+    const single = todo.slice(next, next + Math.max(0, budget - calls))
+    calls += single.length
+    for (let i = 0; i < single.length; i += PARALLEL) {
+      const rows = await Promise.all(
+        single.slice(i, i + PARALLEL).map(async (id) => {
+          try {
+            return toItemUnits(await ebayFetch<Item>(token, `/buy/browse/v1/item/get_item_by_legacy_id?legacy_item_id=${id}`))
+          } catch (err) {
+            // Ended or removed (404), or a multi-variation listing (11006): one unit.
+            if (err instanceof EbayError && (err.status === 404 || err.has(11006) || err.status === 400))
+              return { id, units: { soldQty: null, createdOn: null, ended: !live.has(id) } }
+            console.error("[comp units] item", id, err)
+            return null
+          }
+        }),
+      )
+      await save(rows.filter((r): r is { id: string; units: ItemUnits } => !!r))
     }
     await spend(calls)
     console.log("[comp units]", JSON.stringify({ asked: todo.length, calls, known: out.size }))

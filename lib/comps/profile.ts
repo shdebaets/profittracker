@@ -118,10 +118,11 @@ export async function buildProfile(product: string, liveTitles: string[]): Promi
     headers: { "x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json" },
     body: JSON.stringify({
       model: PROFILE_MODEL(),
-      max_tokens: 1200,
+      max_tokens: 2000,
       tools: [TOOL],
-      tool_choice: { type: "tool", name: TOOL.name },
-      system: SYSTEM,
+      // Sonnet 5.5 refuses forced tool choice ("tool"/"any"), so the prompt asks for the tool instead.
+      tool_choice: { type: "auto" },
+      system: `${SYSTEM}\nAlways answer by calling the ${TOOL.name} tool, once, with no other text.`,
       messages: [
         {
           role: "user",
@@ -133,7 +134,10 @@ export async function buildProfile(product: string, liveTitles: string[]): Promi
       ],
     }),
   })
-  if (!res.ok) throw new Error(`Claude ${res.status}`)
+  if (!res.ok) throw new Error(`Claude ${res.status}: ${(await res.text()).slice(0, 300)}`)
   const body = (await res.json()) as { content?: { type: string; input?: unknown }[] }
-  return cleanProfile(product, body.content?.find((c) => c.type === "tool_use")?.input)
+  const input = body.content?.find((c) => c.type === "tool_use")?.input
+  // No tool call: throw so the fallback isn't cached for a week.
+  if (!input) throw new Error("Claude gave no profile")
+  return cleanProfile(product, input)
 }
