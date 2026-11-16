@@ -20,11 +20,14 @@ type Item = {
 
 const LIVE_TTL_MS = 24 * 60 * 60_000
 const maxCalls = () => Number(process.env.COMP_UNITS_MAX_CALLS) || 80
+/** Calls for the rest, after the comp screen has its answer (Night needs ~1,100 listings read once). */
+export const backgroundUnitCalls = () => Number(process.env.COMP_UNITS_BACKGROUND_CALLS) || 1000
 /** Single-item calls in flight at once (getItems batches are a restricted API: our keyset gets 403). */
 // 16 at once: eBay slows each call past ~16 (0.85 s at 8, 1.5 s at 20), so more buys little.
 const PARALLEL = 16
 let batchDenied = false
-const dailyLimit = () => Number(process.env.COMP_UNITS_DAILY_LIMIT) || 2000
+// eBay allows 5,000 Browse calls a day; live searches use some of them.
+const dailyLimit = () => Number(process.env.COMP_UNITS_DAILY_LIMIT) || 4000
 
 /** One Browse item → its units, or null for an item without a number. Pure. */
 export function toItemUnits(i: Item, now = Date.now()): { id: string; units: ItemUnits } | null {
@@ -42,26 +45,30 @@ export function toItemUnits(i: Item, now = Date.now()): { id: string; units: Ite
   }
 }
 
+/** Browse calls used today; adds `calls` atomically (background loads can run side by side). */
 async function spend(calls: number): Promise<number> {
   const admin = createAdminClient()
   const key = `units-calls:${new Date().toISOString().slice(0, 10)}`
+  if (calls) {
+    const { data, error } = await admin.rpc("comp_count_add", { p_key: key, p_n: calls })
+    if (!error) return Number(data) || 0
+    console.error("[comp units] count", error)
+  }
   const { data } = await admin.from("comp_cache").select("payload").eq("key", key).maybeSingle()
-  const used = Number((data?.payload as { calls?: number })?.calls ?? 0)
-  if (calls) await admin.from("comp_cache").upsert({ key, payload: { calls: used + calls, requests: 0 }, fetched_at: new Date().toISOString() })
-  return used
+  return Number((data?.payload as { calls?: number })?.calls ?? 0)
 }
 
 /**
- * Units for these listings: cached ones from comp_items, the rest from the Browse API (20 a call,
- * at most COMP_UNITS_MAX_CALLS calls per lookup and COMP_UNITS_DAILY_LIMIT a day; whatever's left
- * waits for the next lookup and counts as 1 meanwhile). `live`: ids of listings still for sale,
+ * Units for these listings: cached ones from comp_items, the rest from the Browse API (at most
+ * `calls` calls, default COMP_UNITS_MAX_CALLS, and COMP_UNITS_DAILY_LIMIT a day; whatever's left
+ * waits for a later load and counts as 1 meanwhile). `live`: ids of listings still for sale,
  * whose counts are re-read daily. Never throws.
  */
 export async function loadUnits(
   ids: string[],
   live: Set<string> = new Set(),
-  /** fetch: false = only what's on file (stale counts included), no eBay calls. */
-  { fetch = true }: { fetch?: boolean } = {},
+  /** fetch: false = only what's on file (stale counts included), no eBay calls. calls: this call's cap. */
+  { fetch = true, calls: cap = maxCalls() }: { fetch?: boolean; calls?: number } = {},
 ): Promise<Map<string, ItemUnits>> {
   const out = new Map<string, ItemUnits>()
   const unique = [...new Set(ids.filter((id) => /^\d{9,15}$/.test(id)))]
@@ -84,7 +91,7 @@ export async function loadUnits(
     // Live listings first (they're where multi-unit sales sit), then the newest sold ones.
     const todo = unique.filter((id) => !out.has(id)).sort((a, b) => Number(live.has(b)) - Number(live.has(a)))
     if (!todo.length || !process.env.EBAY_CLIENT_ID) return out
-    const budget = Math.min(maxCalls(), dailyLimit() - (await spend(0)))
+    const budget = Math.min(cap, dailyLimit() - (await spend(0)))
     if (budget <= 0) {
       console.warn("[comp units] daily limit reached", dailyLimit())
       return out

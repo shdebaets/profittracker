@@ -10,7 +10,7 @@ import { judgeTitles } from "./judge"
 import { buildProfile, cleanProfile, type CompProfile } from "./profile"
 import { lastSoldRead, refreshSoldFromApi } from "./sold-api"
 import { compStats, isGtin, queryKey, type ActiveComp, type CompStats, type SoldComp } from "./stats"
-import { loadUnits } from "./units"
+import { backgroundUnitCalls, loadUnits } from "./units"
 
 export type CompLookup = {
   /** What sold history is filed under (and what the extension searches eBay for). */
@@ -159,7 +159,9 @@ export async function lookupComps(
   const liveIds = new Set(keptLive.flatMap((c) => (c.itemId ? [c.itemId] : [])))
   // In the background mode, use the units already on file now and look up the rest afterwards.
   const units = await loadUnits(unitIds, liveIds, { fetch: !later })
-  if (later) after(() => loadUnits(unitIds, liveIds).then(() => undefined))
+  // In a request, read the rest of the listings' unit counts after the response, so the next open
+  // has them all (a busy product has 1,000+ listings; one lookup only waits for 80).
+  if (opts.background) after(() => loadUnits(unitIds, liveIds, { calls: backgroundUnitCalls() }).then(() => undefined))
   const active: ActiveComp[] = keptLive.map((c) => {
     const u = c.itemId ? units.get(c.itemId) : undefined
     return { ...c, soldQty: u?.soldQty ?? null, createdOn: u?.createdOn ?? null }
