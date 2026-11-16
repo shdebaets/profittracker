@@ -31,7 +31,7 @@ export async function compLookup(
     const q = z.string().trim().min(2, "Scan a barcode or type what it is").max(120).parse(input)
     const p = z.string().trim().max(120).nullable().optional().parse(product)
     const { supabase, userId } = await requireMember()
-    const r = await lookupComps(supabase, q, { userId, product: p, skipPaidSold: z.boolean().parse(readsSoldHere) })
+    const r = await lookupComps(supabase, q, { userId, product: p, skipPaidSold: z.boolean().parse(readsSoldHere), background: true })
     return isPick(r) ? { ok: true, pick: r } : { ok: true, lookup: r }
   } catch (e) {
     return fail(e) as { ok: false; error: string }

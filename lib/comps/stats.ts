@@ -84,8 +84,16 @@ export const isNewCondition = (c: string | null | undefined) =>
 export const MAX_SHIPPING_CENTS = 2500
 export const landed = (x: { priceCents: number; shippingCents: number | null; overseas?: boolean }): number | null =>
   x.overseas || (x.shippingCents != null && x.shippingCents > MAX_SHIPPING_CENTS) ? null : x.priceCents + (x.shippingCents ?? 0)
+/**
+ * The item price alone (overseas sales still left out), what sold medians and the estimate use, as
+ * CompAmp does. eBay shows calculated shipping for the viewer's location, so the same sale's
+ * shipping differs between readers (45% of matched Night and Godzilla sales did, API vs
+ * extension); the item price never did.
+ */
+export const itemPrice = (x: { priceCents: number; shippingCents: number | null; overseas?: boolean }): number | null =>
+  landed(x) == null ? null : x.priceCents
 const prices = (xs: { priceCents: number; shippingCents: number | null; overseas?: boolean }[]) =>
-  xs.map(landed).filter((p): p is number => p != null)
+  xs.map(itemPrice).filter((p): p is number => p != null)
 
 /**
  * Sales per 30 days from how fast the newest reads came in, when they don't reach back 25 days
@@ -168,13 +176,15 @@ export function compStats(
   soldRead?: { latest: SoldComp[]; total: number | null; within30?: number | null },
 ): CompStats {
   const bins = prices(active.filter((a) => a.buyItNow))
+  // Lowest live is what a buyer pays today, shipping included (CompAmp's lowest BIN).
+  const binsLanded = active.filter((a) => a.buyItNow).map(landed).filter((p): p is number => p != null)
   // Prices: best offers (they show the asking price, not what it sold for) and pre-sales are left
   // out, then a guard drops prices under 0.55x or over 1.9x the clean median (mislabeled lots,
   // parts, the odd best offer the data can't flag). They still count as sales.
   const clean = sold.filter((s) => !s.bestOffer && !PRESALE.test(s.title ?? ""))
   const ref = median(prices(clean.filter((s) => daysAgo(s.soldOn, now) <= 90)))
   const inBand = (s: SoldComp) => {
-    const p = landed(s)
+    const p = itemPrice(s)
     return p != null && (ref == null || clean.length < 4 || (p >= ref * 0.55 && p <= ref * 1.9))
   }
   const priced = (days: number) => prices(clean.filter((s) => daysAgo(s.soldOn, now) <= days && inBand(s)))
@@ -235,7 +245,11 @@ export function compStats(
     activeCount: liveCount,
     activeMedian,
     // Under 60% of the median is almost always a scam, a pre-order or a mislabeled part, not a real buy.
-    activeLowest: bins.length ? Math.min(...bins.filter((p) => !activeMedian || p >= activeMedian * 0.6)) : null,
+    activeLowest: (() => {
+      const lowMedian = median(binsLanded)
+      const ok = binsLanded.filter((p) => !lowMedian || p >= lowMedian * 0.6)
+      return ok.length ? Math.min(...ok) : null
+    })(),
     sold7,
     sold30,
     sold90,

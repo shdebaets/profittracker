@@ -1,4 +1,4 @@
-import { landed, median } from "./stats"
+import { itemPrice, median } from "./stats"
 
 export type HistoryDay = {
   /** YYYY-MM-DD */
@@ -25,7 +25,7 @@ export function buildHistory(sales: Sale[], snaps: Snap[], now: Date, days = 90)
   for (let i = days - 1; i >= 0; i--) {
     const day = new Date(now.getTime() - i * 86_400_000).toISOString().slice(0, 10)
     const list = byDay.get(day) ?? []
-    const prices = list.filter((s) => !s.bestOffer).map(landed).filter((p): p is number => p != null)
+    const prices = list.filter((s) => !s.bestOffer).map(itemPrice).filter((p): p is number => p != null)
     const snap = lastSnap.get(day)
     out.push({ day, sold: list.length, soldMedian: median(prices), live: snap?.live_count ?? null, lowest: snap?.lowest_cents ?? null })
   }
