@@ -35,6 +35,10 @@ describe("friendlyError", () => {
       expect(
         friendlyError(ebay(400, "A user error has occurred. Before you can list this item we need some additional information to create a seller's account.")),
       ).toMatch(/isn't set up to sell yet/)
+      // Quotes eBay's own sentence (not the generic "A user error has occurred.") so the seller knows what eBay wants.
+      const msg = friendlyError(ebay(400, "A user error has occurred. Before you can list this item, we need to verify your identity. Please call us."))
+      expect(msg).toContain('eBay says: "Before you can list this item, we need to verify your identity."')
+      expect(msg).not.toContain("user error")
       expect(friendlyError(ebay(400, "The provided condition id is invalid for the selected primary category id."))).toMatch(/condition/)
     })
     it("auth, rate limit, outage", () => {
