@@ -3,8 +3,8 @@
 // signed-in members since 22 July 2026, so servers can't read them directly.
 // One request = one page of up to 60 sold listings. A product's read is cached SOLD_DATA_TTL_HOURS
 // (default 24) and shared by everyone. Requests are counted per UTC day and capped by
-// SOLD_DATA_MONTHLY_LIMIT (default 10,000, the plan) over 30 days and SOLD_DATA_DAILY_LIMIT
-// (default a 30th of the monthly limit) a day.
+// SOLD_DATA_MONTHLY_LIMIT (default 10,000, the plan) over 30 days; SOLD_DATA_DAILY_LIMIT is an
+// optional extra cap a day (unset = none).
 import "server-only"
 import { createHash } from "node:crypto"
 import { createAdminClient } from "@/lib/supabase/admin"
@@ -14,7 +14,9 @@ export const SOLD_TTL_MS = (Number(process.env.SOLD_DATA_TTL_HOURS) || 24) * 60 
 const EMPTY_TTL_MS = 2 * 60 * 60_000
 const ENDPOINT = "https://api.openwebninja.com/real-time-ebay-data/search"
 const monthlyLimit = () => Number(process.env.SOLD_DATA_MONTHLY_LIMIT) || 10_000
-const dailyLimit = () => Number(process.env.SOLD_DATA_DAILY_LIMIT) || Math.floor(monthlyLimit() / 30)
+// No app-wide daily cap unless SOLD_DATA_DAILY_LIMIT is set (Nick, Nov 16: the limit is per member,
+// 5 products a day, in checks.ts). The monthly cap matches the plan, so reads stop cleanly at it.
+const dailyLimit = () => Number(process.env.SOLD_DATA_DAILY_LIMIT) || Infinity
 
 export type SoldRow = {
   external_id: string
@@ -147,6 +149,7 @@ export async function lastSoldRead(query: string): Promise<{ at: string; total: 
 }
 
 export const soldDailyLimit = dailyLimit
+export const soldMonthlyLimit = monthlyLimit
 
 const callsKey = (d: Date) => `paid-sold-calls:${d.toISOString().slice(0, 10)}`
 
