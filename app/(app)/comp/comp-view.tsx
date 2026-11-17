@@ -402,19 +402,30 @@ export function CompView({ tracked, initialQuery }: { tracked: Tracked[]; initia
                 </p>
               )}
               <div className="grid grid-cols-3 gap-2 text-center font-mono text-xs">
-                <Stat label="sold 7d" value={s.sold30Estimated ? `~${s.sold7}` : String(s.sold7)} />
-                <Stat label={s.sold30Estimated ? "sold 30d (pace)" : "sold 30d"} value={s.sold30Estimated ? `~${s.sold30}` : String(s.sold30)} />
+                {/* "+": multi-unit listings are still being counted from daily readings (a floor). */}
+                <Stat label="sold 7d" value={s.sold7Partial ? `${s.sold7}+` : s.sold30Estimated ? `~${s.sold7}` : String(s.sold7)} />
+                <Stat
+                  label={s.sold30Estimated ? "sold 30d (pace)" : "sold 30d"}
+                  value={s.sold30Estimated ? `~${s.sold30}` : s.sold30Partial ? `${s.sold30}+` : String(s.sold30)}
+                />
                 <Stat label="live now" value={String(s.activeCount)} />
                 <Stat label="sell-through" value={s.sellThrough == null ? "n/a" : `${Math.round(s.sellThrough * 100)}%`} />
                 <Stat label="days of supply" value={s.daysOfSupply == null ? "n/a" : String(s.daysOfSupply)} />
                 <Stat label="lowest live" value={s.activeLowest == null ? "n/a" : formatCents(s.activeLowest)} />
                 <Stat label="sold median 30d" value={s.soldMedian30 == null ? "n/a" : formatCents(s.soldMedian30)} />
                 <Stat label="sold median 90d" value={s.soldMedian90 == null ? "n/a" : formatCents(s.soldMedian90)} />
-                <Stat label="sold 90d" value={String(s.sold90)} />
+                <Stat label="sold 90d" value={s.sold90Partial ? `${s.sold90}+` : String(s.sold90)} />
               </div>
               <p className="-mt-2 text-xs text-muted-foreground">
                 Sold counts are units, not listings: {s.soldListings30} sold {s.soldListings30 === 1 ? "listing" : "listings"} in 30 days
                 {s.multiUnitListings > 0 ? `, ${s.multiUnitListings} of them selling more than one` : ""}. Days of supply: how long today&apos;s live listings would take to sell at the last 30 days&apos; pace.
+                {s.sold7Partial && s.countingSince && (
+                  <>
+                    {" "}
+                    Counts with a + are still filling in: listings that sell more than one are counted from daily readings that started{" "}
+                    {new Date(s.countingSince + "T12:00:00Z").toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" })}, so the real number is at least this.
+                  </>
+                )}
               </p>
             </>
           )}

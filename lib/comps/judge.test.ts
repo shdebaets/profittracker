@@ -46,3 +46,11 @@ describe("obviousMulti on throws", () => {
       expect(obviousMulti(t, velaris)).toBe(false)
   })
 })
+
+describe("obviousMulti series names", () => {
+  it("doesn't treat a series name with & as two products", () => {
+    expect(obviousMulti("Pokémon Scarlet & Violet Prismatic Evolutions Elite Trainer Box", "Pokemon Prismatic Evolutions Elite Trainer Box")).toBe(false)
+    expect(obviousMulti("Pokemon Sword & Shield Evolving Skies ETB", "Pokemon Evolving Skies ETB")).toBe(false)
+    expect(obviousMulti("Bat Boys & Velaris throw", "Velaris throw")).toBe(true)
+  })
+})

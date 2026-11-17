@@ -67,6 +67,14 @@ export type CompStats = {
   estimateSource: "recent" | "sold30" | "sold90" | "active" | null
   /** sold30 worked out from the selling pace, because the sales read don't reach back 30 days. */
   sold30Estimated: boolean
+  /**
+   * Multi-unit listings are counted from daily readings of their sold counts. Until those readings
+   * cover the whole window, the count is a floor ("at least"). countingSince: the first day read.
+   */
+  sold7Partial?: boolean
+  sold30Partial?: boolean
+  sold90Partial?: boolean
+  countingSince?: string | null
   /** The same estimate for new and for used/open-box units alone, when there's enough of each. */
   newEstimate: number | null
   usedEstimate: number | null
@@ -211,6 +219,15 @@ export function compStats(
   const sold30Estimated = counted == null && projected30 != null && projected30 > units30
   const sold30 = Math.max(units30, projected30 ?? 0)
   const units7 = unitsIn(unitDays, today, 7)
+  // Readings cover a window when the first one is from the day before it starts (changes are
+  // counted from the day after a reading). Only listings that sell more than one unit need them.
+  const multiIds = new Set([
+    ...sold.filter((s) => !s.auction && (s.units ?? 1) > 1 && s.itemId).map((s) => s.itemId!),
+    ...active.filter((a) => (a.soldQty ?? 0) > 1 && a.itemId).map((a) => a.itemId!),
+  ])
+  const firstReadings = [...multiIds].map((id) => history?.get(id)?.reduce((m, h) => (h.day < m ? h.day : m), "9999") ?? today)
+  const countingSince = firstReadings.length ? firstReadings.reduce((m, d) => (d < m ? d : m), today) : null
+  const partial = (n: number) => countingSince != null && countingSince > shiftDay(today, -n)
   const listings7 = sold.filter((x) => daysAgo(x.soldOn, now) <= 7).length
   const sold7 = Math.min(sold30, Math.max(units7, pace7 != null && pace7 > listings7 ? Math.round(pace7 * perListing) : 0))
   const sold90 = Math.max(unitsIn(unitDays, today, 90), sold30)
@@ -260,6 +277,10 @@ export function compStats(
     daysOfSupply: sold30 ? Math.round(liveCount / (sold30 / 30)) : null,
     estimate,
     sold30Estimated,
+    sold7Partial: partial(7),
+    sold30Partial: partial(30),
+    sold90Partial: partial(90),
+    countingSince,
     estimateSource: recentMedian != null ? "recent" : soldMedian30 != null ? "sold30" : soldMedian90 != null ? "sold90" : activeMedian != null ? "active" : null,
   }
 }
