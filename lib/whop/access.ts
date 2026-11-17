@@ -1,5 +1,6 @@
 // Who has an active FlipLedger membership (the whole app is paid; without one it is view and export only):
-// allowlisted emails, or anyone Whop says has one of the membership products (WHOP_CROSSLIST_PRODUCT_IDS).
+// allowlisted emails, or anyone Whop says has one of the membership products (WHOP_CROSSLIST_PRODUCT_IDS)
+// or a bundle product on another Whop business (WHOP_BUNDLE_PRODUCT_IDS, checked with WHOP_BUNDLE_API_KEY).
 // Whop's answer is cached in whop_links for ACCESS_TTL_MS so a page load doesn't call Whop every time.
 import "server-only"
 import { createAdminClient } from "@/lib/supabase/admin"
@@ -27,15 +28,33 @@ export function decideCached(cfg: Cfg, email: string, row: AccessRow | null, now
 type WhopAccess = { has_access?: boolean; access_level?: string }
 export const grantsAccess = (a: WhopAccess) => a.has_access === true || a.access_level === "admin"
 
-async function askWhop(apiKey: string, whopUserId: string, productIds: string[]): Promise<boolean> {
-  for (const productId of productIds) {
-    const res = await fetch(
-      `https://api.whop.com/api/v1/users/${encodeURIComponent(whopUserId)}/access/${encodeURIComponent(productId)}`,
-      { headers: { Authorization: `Bearer ${apiKey}` }, cache: "no-store" },
-    )
-    if (!res.ok) throw new Error(`Whop access check failed (${res.status}) for ${productId}`)
-    if (grantsAccess((await res.json()) as WhopAccess)) return true
+/** One access check: a product and the API key of the Whop business that owns it. */
+export type AccessCheck = { apiKey: string; productId: string }
+
+/** Main products use WHOP_API_KEY; bundle products use their own business's key. Checks without a key are dropped. Pure. */
+export function accessChecks(cfg: { apiKey: string; productIds: string[]; bundleApiKey: string; bundleProductIds: string[] }): AccessCheck[] {
+  return [
+    ...cfg.productIds.map((productId) => ({ apiKey: cfg.apiKey, productId })),
+    ...cfg.bundleProductIds.map((productId) => ({ apiKey: cfg.bundleApiKey, productId })),
+  ].filter((c) => c.apiKey)
+}
+
+/** True if any product grants access. Throws only if none did and at least one check failed, so the last answer stands. */
+async function askWhop(whopUserId: string, checks: AccessCheck[]): Promise<boolean> {
+  let failure: Error | null = null
+  for (const { apiKey, productId } of checks) {
+    try {
+      const res = await fetch(
+        `https://api.whop.com/api/v1/users/${encodeURIComponent(whopUserId)}/access/${encodeURIComponent(productId)}`,
+        { headers: { Authorization: `Bearer ${apiKey}` }, cache: "no-store" },
+      )
+      if (!res.ok) throw new Error(`Whop access check failed (${res.status}) for ${productId}`)
+      if (grantsAccess((await res.json()) as WhopAccess)) return true
+    } catch (e) {
+      failure = e as Error
+    }
   }
+  if (failure) throw failure
   return false
 }
 
@@ -62,8 +81,9 @@ export async function hasCrosslistAccess(userId: string, email: string, force = 
     console.error("[whop access] WHOP_API_KEY is not set")
     return row.has_access
   }
+  if (cfg.bundleProductIds.length && !cfg.bundleApiKey) console.error("[whop access] WHOP_BUNDLE_API_KEY is not set; bundle products skipped")
   try {
-    const hasAccess = await askWhop(cfg.apiKey, row.whop_user_id, cfg.productIds)
+    const hasAccess = await askWhop(row.whop_user_id, accessChecks(cfg))
     await admin
       .from("whop_links")
       .update({ has_access: hasAccess, checked_at: new Date().toISOString() })

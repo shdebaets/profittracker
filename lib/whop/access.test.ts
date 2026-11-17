@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { ACCESS_TTL_MS, decideCached, grantsAccess, type AccessRow } from "./access"
+import { ACCESS_TTL_MS, accessChecks, decideCached, grantsAccess, type AccessRow } from "./access"
 
 const now = Date.parse("2026-11-05T12:00:00Z")
 const cfg = { productIds: ["prod_a"], freeEmails: ["nick@example.com"] }
@@ -35,5 +35,18 @@ describe("grantsAccess", () => {
     expect(grantsAccess({ has_access: false, access_level: "admin" })).toBe(true)
     expect(grantsAccess({ has_access: false, access_level: "no_access" })).toBe(false)
     expect(grantsAccess({})).toBe(false)
+  })
+})
+
+describe("accessChecks", () => {
+  it("checks bundle products with their own business's key", () => {
+    const cfg = { apiKey: "k_main", productIds: ["prod_main"], bundleApiKey: "k_bundle", bundleProductIds: ["prod_bundle"] }
+    expect(accessChecks(cfg)).toEqual([
+      { apiKey: "k_main", productId: "prod_main" },
+      { apiKey: "k_bundle", productId: "prod_bundle" },
+    ])
+  })
+  it("skips bundle products until their key is set", () => {
+    expect(accessChecks({ apiKey: "k", productIds: ["p"], bundleApiKey: "", bundleProductIds: ["b"] })).toEqual([{ apiKey: "k", productId: "p" }])
   })
 })

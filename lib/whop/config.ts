@@ -15,6 +15,12 @@ export function whopConfig() {
     apiKey: process.env.WHOP_API_KEY?.trim() ?? "",
     /** Products that unlock cross-listing. Empty means cross-listing is open to everyone. */
     productIds: list(process.env.WHOP_CROSSLIST_PRODUCT_IDS),
+    /**
+     * Products on another Whop business that include FlipLedger (e.g. "Accelerator Utilities" on eMoney Reselling).
+     * Access only: billing and the cancel flow ignore them. Checked with `bundleApiKey`, a key on that business.
+     */
+    bundleProductIds: list(process.env.WHOP_BUNDLE_PRODUCT_IDS),
+    bundleApiKey: process.env.WHOP_BUNDLE_API_KEY?.trim() ?? "",
     /** Where "Get the Cross-Lister" sends people. */
     checkoutUrl: process.env.WHOP_CROSSLIST_CHECKOUT_URL?.trim() ?? "",
     /** Yearly plan checkout and id: the "switch to yearly" save offer in the cancel flow. */
