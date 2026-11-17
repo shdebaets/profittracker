@@ -69,7 +69,7 @@ export async function loadUnits(
   ids: string[],
   live: Set<string> = new Set(),
   /** fetch: false = only what's on file (stale counts included), no eBay calls. calls: this call's cap. */
-  { fetch = true, calls: cap = maxCalls() }: { fetch?: boolean; calls?: number } = {},
+  { fetch = true, calls: cap = maxCalls(), staleMs = LIVE_TTL_MS }: { fetch?: boolean; calls?: number; staleMs?: number } = {},
 ): Promise<Map<string, ItemUnits>> {
   const out = new Map<string, ItemUnits>()
   const unique = [...new Set(ids.filter((id) => /^\d{9,15}$/.test(id)))]
@@ -82,7 +82,7 @@ export async function loadUnits(
       for (const r of data ?? []) {
         const u = { soldQty: r.sold_qty, createdOn: r.created_on, ended: r.ended }
         // Anything still selling is read again daily: its count's daily change is what it sold.
-        if (!r.ended && Date.now() - Date.parse(r.fetched_at) > LIVE_TTL_MS) stale.set(r.item_id, u)
+        if (!r.ended && Date.now() - Date.parse(r.fetched_at) > staleMs) stale.set(r.item_id, u)
         else out.set(r.item_id, u)
       }
     }

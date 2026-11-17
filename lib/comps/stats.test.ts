@@ -180,6 +180,20 @@ describe("units, not listings", () => {
     expect(st.soldListings30).toBe(8)
     expect(st.multiUnitListings).toBe(1)
   })
+  it("marks counts as partial until readings cover the window", () => {
+    const sold = [{ priceCents: 4000, shippingCents: 0, soldOn: "2026-11-13", bestOffer: false, itemId: "multi", units: 8 }]
+    const fresh = compStats([], sold, now, undefined, undefined, new Map([["multi", [{ day: "2026-11-13", qty: 8 }]]]))
+    expect(fresh.sold7Partial).toBe(true)
+    expect(fresh.countingSince).toBe("2026-11-13")
+    // A reading from before the 7-day window: 7 days are complete, 30 aren't.
+    const week = compStats([], sold, now, undefined, undefined, new Map([["multi", [{ day: "2026-11-01", qty: 2 }, { day: "2026-11-13", qty: 8 }]]]))
+    expect(week.sold7Partial).toBe(false)
+    expect(week.sold30Partial).toBe(true)
+    // No multi-unit listings: nothing to wait for.
+    const single = compStats([], [{ ...sold[0], units: 1 }], now)
+    expect(single.sold7Partial).toBe(false)
+    expect(single.countingSince).toBeNull()
+  })
   it("keeps far-off prices and pre-sales out of the median, but counts them", () => {
     const sold = [
       ...Array.from({ length: 6 }, (_, i) => ({ priceCents: 6000, shippingCents: 0, soldOn: "2026-11-10", bestOffer: false, itemId: `a${i}`, title: "Merry camo set" })),

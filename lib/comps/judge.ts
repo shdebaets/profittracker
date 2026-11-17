@@ -9,8 +9,9 @@ import { editionVerdict, excluded, type CompProfile } from "./profile"
 import { queryKey } from "./stats"
 
 const MAX_PER_CALL = 80
-// v3 in the hash: verdicts that knew the product's other editions (profile) replace the old ones.
-const hash = (t: string) => createHash("sha256").update("v3|" + t.trim().toLowerCase()).digest("base64url").slice(0, 22)
+// v5: other sets/series and cosmetic damage. v4: rules for accessories made for the product, promo-only kits and other languages (Nov 17 check
+// against Terapeak: a Pocket Dock counted as a Pocket, Italian and promo-kit Night boxes counted as Night).
+const hash = (t: string) => createHash("sha256").update("v5|" + t.trim().toLowerCase()).digest("base64url").slice(0, 22)
 
 const TOOL = {
   name: "verdicts",
@@ -32,7 +33,13 @@ Titles that name two or more designs, or say x2, x3, set of, all 3, are several 
 Wording differences for the same item are fine ("Royal Plush" vs "Plush", "Throw" vs "Throw Blanket", spelling mistakes).
 Condition differences (new, used, open box) are fine. Missing accessories are fine unless the title says it's only part of the product.
 A single unit from a seller who has several in stock is fine ("in hand", "ships today", "multiple available").
-Other languages (Japanese, Korean, Chinese, etc.) and graded/slabbed copies are different products.`
+Other languages (Japanese, Korean, Chinese, Italian, German, French, Spanish, etc.: words like "Ita", "Collezione", "JP", "Japanese") and graded/slabbed copies are different products.
+Things made for the product are not the product: a dock, case, charger, adapter or cartridge for a handheld; a playmat, sleeves or binder from a box. "Pocket Dock" is a dock, not the Pocket.
+Partial contents are not the product: promo cards, promos-only kits, "kit w/ promos", the figure or pin only, the box without its contents.
+A store-exclusive version (Pokemon Center, Target, Costco) is a different product unless the product is that version.
+A different set, series or expansion name is a different product even in the same format (a "Surging Sparks" Elite Trainer Box is not a "Prismatic Evolutions" one).
+Cosmetic box damage is fine and still the product: "slight dent", "small tear", "crushed corner", "damaged box", "read description".
+A title that leaves out a detail of the product (no "King Ghidorah", no color) is still the product unless it names something that contradicts it.`
 
 async function askClaude(product: string, titles: string[], editions?: string): Promise<{ keep: Set<number>; usage: { input: number; output: number } } | null> {
   const key = process.env.ANTHROPIC_API_KEY?.trim()
@@ -75,8 +82,12 @@ async function askClaude(product: string, titles: string[], editions?: string): 
  * Titles that are plainly several units or a mix ("lot", "bundle", "x3", "set of 2", "all 3",
  * "Bat Boys & Velaris"), unless the product itself is named that way. The AI misses some. Pure.
  */
+// Names with "&" in them that are one thing, not two products joined ("Scarlet & Violet" is a
+// Pokemon series: every Prismatic Evolutions ETB titled with it was being dropped, Nov 17).
+const ONE_NAME = /\b(scarlet|sword|sun|black|diamond|ruby|heart ?gold|x|sonic|mario|banjo|ratchet|jak|dungeons|barnes|bath|crate|ben|m|procter|black ?\+? ?decker|johnson|dolce|abercrombie|tom|rock|mega ?man|pokemon sun) ?& ?(violet|shield|moon|white|pearl|sapphire|soul ?silver|y|knuckles|luigi|kazooie|clank|daxter|dragons|noble|body|barrel|jerry|ms|gamble|decker|johnson|gabbana|fitch|jerry|roll|bass)\b/g
+
 export function obviousMulti(title: string, product: string): boolean {
-  const t = title.toLowerCase()
+  const t = title.toLowerCase().replace(ONE_NAME, "one-name")
   const p = product.toLowerCase()
   const has = (re: RegExp) => re.test(t) && !re.test(p)
   // Counts: "x3", "3x", "x 2" (but not sizes like "50 x 60" or "50x60").
