@@ -100,6 +100,12 @@ export function ImportListings() {
             {preview.link > 0 && <li>{preview.link} added to items you already have</li>}
             {preview.skip > 0 && <li>{preview.skip} already in FlipLedger (skipped)</li>}
           </ul>
+          {preview.incomplete && (
+            <p className="text-xs text-muted-foreground">
+              FlipLedger couldn&apos;t read your whole closet, so some listings aren&apos;t here. Import these, then
+              add the rest from their item pages or try again later.
+            </p>
+          )}
           <div className="flex gap-2">
             <button disabled={!!busy || preview.create + preview.link === 0} onClick={runImport} className={`${btn} flex-1 bg-brand text-ink`}>
               {busy && <Loader2 className="size-4 animate-spin" />} {busy ?? "Import"}

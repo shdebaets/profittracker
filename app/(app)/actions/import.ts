@@ -14,7 +14,14 @@ import { fail } from "./result"
 type Result<T> = { ok: true; data: T } | { ok: false; error: string }
 type SupabaseClient = Awaited<ReturnType<typeof requireUser>>["supabase"]
 
-export type ImportPreview = { candidates: ImportCandidate[]; create: number; link: number; skip: number }
+export type ImportPreview = {
+  candidates: ImportCandidate[]
+  create: number
+  link: number
+  skip: number
+  /** The closet had more listings than one read covers, or a later page couldn't be read. */
+  incomplete?: boolean
+}
 
 const MAX_IMPORT = 600
 const PHOTO_CONCURRENCY = 6
@@ -72,8 +79,9 @@ export async function findPoshmarkListings(closet: string): Promise<Result<Impor
     if (!username) throw new UserError("Enter your Poshmark username, or paste your closet link.")
     const { supabase } = await requireMember()
     let candidates: ImportCandidate[]
+    let complete: boolean
     try {
-      candidates = await fetchPoshmarkCloset(username)
+      ;({ listings: candidates, complete } = await fetchPoshmarkCloset(username))
     } catch (e) {
       if (e instanceof PoshmarkClosetError) {
         throw new UserError(
@@ -85,7 +93,7 @@ export async function findPoshmarkListings(closet: string): Promise<Result<Impor
       throw e
     }
     if (!candidates.length) throw new UserError(`No live listings in ${username}'s closet.`)
-    return { ok: true, data: preview(candidates, await plan(supabase, candidates)) }
+    return { ok: true, data: { ...preview(candidates, await plan(supabase, candidates)), incomplete: !complete } }
   } catch (e) {
     return fail(e) as { ok: false; error: string }
   }

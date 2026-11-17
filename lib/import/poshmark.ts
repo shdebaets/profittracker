@@ -2,8 +2,8 @@ import type { ItemCondition } from "@/lib/marketplaces/registry"
 import type { ImportCandidate } from "./plan"
 
 const USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36"
-/** 48 listings a page, so this covers closets up to ~580 live listings. */
-const MAX_PAGES = 12
+/** 48 listings a page, so this covers closets up to ~2,400 live listings (about a minute to read). */
+const MAX_PAGES = 50
 export const POSHMARK_PHOTO_HOST = "di2ponv0v5otw.cloudfront.net"
 
 const CONDITIONS: Record<string, ItemCondition> = { nwt: "new_with_tags", ret: "new_with_tags", nwot: "new", uln: "like_new", ug: "good", uf: "fair" }
@@ -89,31 +89,39 @@ export function parsePoshmarkCloset(html: string): { listings: ImportCandidate[]
 }
 
 /**
- * Every live listing in a public Poshmark closet. Throws if the first page can't be read.
+ * Every live listing in a public Poshmark closet, and whether the read reached the last page
+ * (false when the closet is bigger than MAX_PAGES or a later page couldn't be read). Throws if
+ * the first page can't be read.
  * Closets are ordered by last share, so a listing shared mid-read can shift pages: it
  * shows up twice (dropped here) and another can be missed (the next import catches it).
  */
-export async function fetchPoshmarkCloset(username: string, fetcher: typeof fetch = fetch): Promise<ImportCandidate[]> {
+export async function fetchPoshmarkCloset(
+  username: string,
+  fetcher: typeof fetch = fetch,
+): Promise<{ listings: ImportCandidate[]; complete: boolean }> {
   const all = new Map<string, ImportCandidate>()
   let maxId: string | null = null
+  let complete = false
   for (let page = 0; page < MAX_PAGES; page++) {
-    const url = `https://poshmark.com/closet/${encodeURIComponent(username)}${maxId ? `?max_id=${encodeURIComponent(maxId)}` : ""}`
-    const res = await fetcher(url, {
+    const url: string = `https://poshmark.com/closet/${encodeURIComponent(username)}${maxId ? `?max_id=${encodeURIComponent(maxId)}` : ""}`
+    const res: Response = await fetcher(url, {
       headers: { "user-agent": USER_AGENT, accept: "text/html", "accept-language": "en-US" },
       signal: AbortSignal.timeout(15_000),
     })
-    if (res.status === 404) throw new PoshmarkClosetError("not_found")
-    if (!res.ok) throw new PoshmarkClosetError("blocked")
-    const parsed = parsePoshmarkCloset(await res.text())
+    if (page === 0 && res.status === 404) throw new PoshmarkClosetError("not_found")
+    const parsed: ReturnType<typeof parsePoshmarkCloset> = res.ok ? parsePoshmarkCloset(await res.text()) : null
     if (!parsed) {
       if (page === 0) throw new PoshmarkClosetError("blocked")
       break
     }
     for (const l of parsed.listings) if (!all.has(l.externalId)) all.set(l.externalId, l)
-    if (!parsed.nextMaxId) break
+    if (!parsed.nextMaxId) {
+      complete = true
+      break
+    }
     maxId = parsed.nextMaxId
   }
-  return [...all.values()]
+  return { listings: [...all.values()], complete }
 }
 
 export class PoshmarkClosetError extends Error {
