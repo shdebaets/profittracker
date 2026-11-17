@@ -10,7 +10,7 @@ beforeAll(async () => {
   extensionParser = (globalThis as unknown as { FL: { saleStatus: Parser } }).FL.saleStatus
 })
 
-// Built to match the structure of real pages (checked 2026-10-30).
+// Built to match the structure of real pages (checked 2026-10-30; rechecked on live pages 2026-11-17).
 const POSH_ID = "6ae39b435ac6f2cd42f32233"
 const POSH_URL = `https://poshmark.com/listing/Nike-Track-Jacket-${POSH_ID}`
 const ld = (price: string, availability: string) =>

@@ -53,9 +53,20 @@ describe("Poshmark closet import", () => {
       const html = url.includes("max_id") ? closetPage([post(B), post(A)]) : closetPage([post(A)], "ENC 2")
       return new Response(html)
     }) as typeof fetch
-    const all = await fetchPoshmarkCloset("fxfx", fetcher)
-    expect(all.map((c) => c.externalId)).toEqual([A, B])
+    const { listings, complete } = await fetchPoshmarkCloset("fxfx", fetcher)
+    expect(listings.map((c) => c.externalId)).toEqual([A, B])
+    expect(complete).toBe(true)
     expect(urls).toEqual(["https://poshmark.com/closet/fxfx", "https://poshmark.com/closet/fxfx?max_id=ENC%202"])
+  })
+
+  it("says when it stopped before the last page", async () => {
+    // Every page points at another one, like a closet bigger than the page cap.
+    let n = 0
+    const endless = (async () => new Response(closetPage([post(A)], `NEXT ${++n}`))) as typeof fetch
+    expect((await fetchPoshmarkCloset("huge", endless)).complete).toBe(false)
+    // Page 2 blocked: keep page 1, but say it's not the whole closet.
+    const blocked = (async (url: string) => new Response(url.includes("max_id") ? "<html>captcha</html>" : closetPage([post(A)], "ENC 2"))) as typeof fetch
+    expect(await fetchPoshmarkCloset("fxfx", blocked)).toMatchObject({ complete: false, listings: [{ externalId: A }] })
   })
 
   it("says why a closet couldn't be read", async () => {
