@@ -75,7 +75,7 @@ export function CompDetails({ history }: { history: HistoryDay[] }) {
             note="Fills in as this product gets looked up (one reading every 2 hours at most)."
           />
           <p className="text-xs text-muted-foreground">
-            Sold prices are US sales with shipping, best offers left out. We count sales, not units: a listing that sold 5 counts once.
+            Sold prices are US item prices without shipping, best offers left out. These charts count sold listings, not units: a listing that sold 5 counts once here, while the counts above add up every unit.
           </p>
         </div>
       )}

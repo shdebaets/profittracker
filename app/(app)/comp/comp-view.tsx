@@ -9,7 +9,7 @@ import { useEntry } from "@/components/entry/entry-provider"
 import { MoneyInput, NativeSelect, TextInput } from "@/components/fields"
 import type { CompLookup, CompPick } from "@/lib/comps/lookup"
 import { feeText, platformProfit, PROFIT_PLATFORMS, profitPlatform } from "@/lib/comps/profit"
-import { buyProfit, DEFAULT_LABEL_CENTS, type CompStats } from "@/lib/comps/stats"
+import { DEFAULT_LABEL_CENTS, type CompStats } from "@/lib/comps/stats"
 import { compressImage } from "@/lib/image"
 import type { MarketplaceId } from "@/lib/marketplaces/registry"
 import { relativeTime } from "@/lib/dates"
@@ -462,7 +462,7 @@ export function CompView({ tracked, initialQuery }: { tracked: Tracked[]; initia
                     <span className="w-12 shrink-0 font-mono text-muted-foreground">{r.soldOn.slice(5)}</span>
                     <span className="min-w-0 flex-1 truncate">{r.title}</span>
                     <span className="shrink-0 font-mono">
-                      {formatCents(r.priceCents + (r.shippingCents ?? 0))}
+                      {formatCents(r.priceCents)}
                       {r.bestOffer ? " BO" : ""}
                     </span>
                   </li>
@@ -482,7 +482,7 @@ export function CompView({ tracked, initialQuery }: { tracked: Tracked[]; initia
                   </ul>
                 </>
               )}
-              <p className="mt-2 text-muted-foreground">Prices include shipping. Best-offer sales show the asking price, because eBay hides the accepted amount, so they&apos;re left out of the median.</p>
+              <p className="mt-2 text-muted-foreground">Item prices without shipping, like the estimate above. Best-offer sales show the asking price, because eBay hides the accepted amount, so they&apos;re left out of the median.</p>
             </details>
           )}
           <div className="grid grid-cols-2 gap-2">
@@ -540,7 +540,7 @@ export function CompView({ tracked, initialQuery }: { tracked: Tracked[]; initia
         </section>
       )}
 
-      {tracked.length > 0 && <TrackedList tracked={tracked} onOpen={(t) => { setQuery(t.gtin ?? t.query); lookup(t.gtin ?? t.query, t.gtin ? null : t.product ?? t.query); if (t.target_cost_cents) setCost(centsToInput(t.target_cost_cents)) }} />}
+      {tracked.length > 0 && <TrackedList tracked={tracked} platform={platform} shipCents={shipCents} onOpen={(t) => { setQuery(t.gtin ?? t.query); lookup(t.gtin ?? t.query, t.gtin ? null : t.product ?? t.query); if (t.target_cost_cents) setCost(centsToInput(t.target_cost_cents)) }} />}
     </>
   )
 }
@@ -554,14 +554,14 @@ function Stat({ label, value }: { label: string; value: string }) {
   )
 }
 
-function TrackedList({ tracked, onOpen }: { tracked: Tracked[]; onOpen: (t: Tracked) => void }) {
+function TrackedList({ tracked, platform, shipCents, onOpen }: { tracked: Tracked[]; platform: MarketplaceId; shipCents: number; onOpen: (t: Tracked) => void }) {
   const [pending, start] = useTransition()
   return (
     <section className="flex flex-col gap-2">
       <p className="text-xs font-bold tracking-wider text-muted-foreground uppercase">Tracked products</p>
       {tracked.map((t) => {
         const est = t.stats?.estimate ?? null
-        const p = est != null && t.target_cost_cents ? buyProfit(t.target_cost_cents, est) : null
+        const p = est != null && t.target_cost_cents ? platformProfit(t.target_cost_cents, est, platform, shipCents) : null
         return (
           <div key={t.id} className="flex items-center gap-3 rounded-2xl border bg-card p-3">
             <button onClick={() => onOpen(t)} className="min-w-0 flex-1 text-left">
