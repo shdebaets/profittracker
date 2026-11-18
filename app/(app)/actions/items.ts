@@ -95,10 +95,13 @@ export async function createItem(input: ItemInput): Promise<ActionResult> {
     const i = itemSchema.parse(input)
     if (i.mode === "sold" && !i.sale) throw new UserError("Enter the sale details.")
     const { supabase } = await requireMember()
+    // A sale logged here isn't tied to a marketplace order, so it counts as handed over (like
+    // "Somewhere else" in markSold) and stays out of Orders → To ship.
+    const sale = i.mode === "sold" && i.sale ? saleColumns(i.sale) : null
     const { error } = await supabase.from("items").insert({
       ...baseColumns(i),
       status: i.mode,
-      ...(i.mode === "sold" && i.sale ? saleColumns(i.sale) : {}),
+      ...(sale ? { ...sale, shipped_at: sale.sold_at } : {}),
     })
     if (error) throw error
     return done()
