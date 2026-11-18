@@ -1,13 +1,30 @@
 import type { Metadata, Viewport } from "next"
-import { Inter, JetBrains_Mono, Space_Grotesk } from "next/font/google"
+import localFont from "next/font/local"
 import { Toaster } from "@/components/ui/sonner"
 import { RegisterSW } from "@/components/register-sw"
 import "./globals.css"
 
 // The brand type from the FlipLedger design: Inter for text, Space Grotesk for headings, JetBrains Mono for money.
-const inter = Inter({ variable: "--font-inter", subsets: ["latin"] })
-const spaceGrotesk = Space_Grotesk({ variable: "--font-space-grotesk", subsets: ["latin"], weight: ["500", "600", "700"] })
-const jetbrainsMono = JetBrains_Mono({ variable: "--font-jetbrains-mono", subsets: ["latin"], weight: ["500", "700"] })
+// Self-hosted (latin variable fonts from @fontsource-variable, OFL-1.1) so builds never download from Google Fonts;
+// next/font/google failed Vercel builds whenever that download did.
+const inter = localFont({
+  src: "./fonts/inter-latin-wght-normal.woff2",
+  variable: "--font-inter",
+  weight: "100 900",
+  display: "swap",
+})
+const spaceGrotesk = localFont({
+  src: "./fonts/space-grotesk-latin-wght-normal.woff2",
+  variable: "--font-space-grotesk",
+  weight: "300 700",
+  display: "swap",
+})
+const jetbrainsMono = localFont({
+  src: "./fonts/jetbrains-mono-latin-wght-normal.woff2",
+  variable: "--font-jetbrains-mono",
+  weight: "100 800",
+  display: "swap",
+})
 
 export const metadata: Metadata = {
   title: "FlipLedger",
