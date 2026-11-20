@@ -13,7 +13,7 @@ import { ItemCard } from "@/components/item-card"
 import { dollars, exportCsv } from "@/lib/csv"
 import { daysUntil, inRange, toDateInput, type Range } from "@/lib/dates"
 import { formatCents } from "@/lib/money"
-import { itemSale, presetFor } from "@/lib/profit"
+import { itemSale, presetFor, storeRefundCents } from "@/lib/profit"
 import type { Item } from "@/lib/types"
 import { cn } from "@/lib/utils"
 
@@ -25,10 +25,10 @@ const TIME: { value: Range; label: string }[] = [
   { value: "all", label: "All" },
 ]
 
-const itemDate = (i: Item) => (i.status === "sold" ? i.sold_at : i.purchased_at)
+const itemDate = (i: Item) => (i.status === "sold" ? i.sold_at : i.status === "returned" ? (i.returned_at ?? i.purchased_at) : i.purchased_at)
 const isReturnEligible = (i: Item) =>
   i.status === "inventory" && !!i.return_deadline && daysUntil(i.return_deadline) >= 0
-export type Chip = "all" | "returns" | "unlisted" | "cost" | "stale" | "sync"
+export type Chip = "all" | "returns" | "returned" | "unlisted" | "cost" | "stale" | "sync"
 const isUnlisted = (i: Item) => i.status === "inventory" && !i.listings.some((l) => l.status === "active")
 /** A live listing still waiting for a change (edit once, update everywhere), or one that failed. */
 const needsUpdate = (i: Item) =>
@@ -57,6 +57,9 @@ export function InventoryView({
   const byTab = tab === "sales" ? sales : tab === "stock" ? stock : items
   const timeCounts = Object.fromEntries(TIME.map((t) => [t.value, byTab.filter((i) => inRange(itemDate(i), t.value)).length]))
   const returnCount = byTab.filter(isReturnEligible).length
+  const returnedItems = items.filter((i) => i.status === "returned")
+  const refundPending = returnedItems.filter((i) => !i.store_refund_received_at).reduce((a, i) => a + storeRefundCents(i), 0)
+  const refundReceived = returnedItems.filter((i) => i.store_refund_received_at).reduce((a, i) => a + storeRefundCents(i), 0)
   const unlistedCount = byTab.filter(isUnlisted).length
   const noCostCount = byTab.filter((i) => i.cost_unknown).length
   const staleCount = byTab.filter(isStale).length
@@ -66,6 +69,7 @@ export function InventoryView({
   const visible = byTab.filter((i) => {
     if (!inRange(itemDate(i), time)) return false
     if (chip === "returns" && !isReturnEligible(i)) return false
+    if (chip === "returned" && i.status !== "returned") return false
     if (chip === "unlisted" && !isUnlisted(i)) return false
     if (chip === "cost" && !i.cost_unknown) return false
     if (chip === "stale" && !isStale(i)) return false
@@ -244,6 +248,17 @@ export function InventoryView({
         >
           <RotateCcw className="size-4" /> Return Eligible ({returnCount})
         </button>
+        {tab === "all" && (returnedItems.length > 0 || chip === "returned") && (
+          <button
+            onClick={() => setChip("returned")}
+            className={cn(
+              "flex shrink-0 items-center gap-1.5 rounded-full px-4 py-2 text-sm font-semibold",
+              chip === "returned" ? "bg-ink text-white" : "border bg-card",
+            )}
+          >
+            <RotateCcw className="size-4" /> Returned ({returnedItems.length})
+          </button>
+        )}
         {tab !== "sales" && (
           <button
             onClick={() => setChip("unlisted")}
@@ -311,6 +326,19 @@ export function InventoryView({
               <CheckSquare className="size-4 text-brand" /> Select to reprice
             </button>
           )}
+        </div>
+      )}
+
+      {chip === "returned" && returnedItems.length > 0 && (
+        <div className="grid grid-cols-2 gap-2">
+          <div className="rounded-2xl border bg-card p-3">
+            <p className="text-xs font-semibold text-muted-foreground uppercase">Waiting on refunds</p>
+            <p className="font-mono text-lg font-bold text-brand">{formatCents(refundPending)}</p>
+          </div>
+          <div className="rounded-2xl border bg-card p-3">
+            <p className="text-xs font-semibold text-muted-foreground uppercase">Refunded</p>
+            <p className="font-mono text-lg font-bold text-profit">{formatCents(refundReceived)}</p>
+          </div>
         </div>
       )}
 

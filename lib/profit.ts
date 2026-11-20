@@ -33,6 +33,12 @@ export type SaleInput = {
   feeFixedCents?: number
   /** Refunded to the buyer after the sale. Revenue stays gross; profit drops. */
   refundCents?: number
+  /** A buyer return put the unit back into inventory: its cost isn't this sale's COGS any more. */
+  restocked?: boolean
+  /** Fees the marketplace gave back on a buyer return. */
+  feeCreditCents?: number
+  /** Postage for the buyer's return. */
+  returnLabelCents?: number
 }
 
 export type SaleBreakdown = {
@@ -47,9 +53,10 @@ export type SaleBreakdown = {
 export function calcSale(s: SaleInput): SaleBreakdown {
   const qty = Math.max(1, Math.floor(s.quantity || 1))
   const revenue = s.salePriceCents * qty + (s.buyerShippingCents ?? 0)
-  const fees = revenue > 0 ? Math.round(revenue * (s.feePct ?? 0)) + (s.feeFixedCents ?? 0) : 0
-  const cog = s.costCents * qty
-  const shipping = s.labelCostCents ?? 0
+  const charged = revenue > 0 ? Math.round(revenue * (s.feePct ?? 0)) + (s.feeFixedCents ?? 0) : 0
+  const fees = Math.max(0, charged - (s.feeCreditCents ?? 0))
+  const cog = s.restocked ? 0 : s.costCents * qty
+  const shipping = (s.labelCostCents ?? 0) + (s.returnLabelCents ?? 0)
   const net = revenue - fees - shipping - cog - (s.refundCents ?? 0)
   return { revenue, fees, cog, shipping, net, margin: revenue > 0 ? net / revenue : 0 }
 }
@@ -64,7 +71,25 @@ export function itemSale(i: Item): SaleBreakdown {
     feePct: Number(i.fee_pct),
     feeFixedCents: i.fee_fixed_cents,
     refundCents: i.refund_cents ?? 0,
+    restocked: !!i.restocked,
+    feeCreditCents: i.fee_credit_cents ?? 0,
+    returnLabelCents: i.return_label_cents ?? 0,
   })
+}
+
+/** What the store didn't give back, unit cost × units, plus what the return cost. */
+export function storeRefundCents(i: Pick<Item, "cost_cents" | "quantity" | "store_refund_cents">): number {
+  return i.store_refund_cents ?? i.cost_cents * i.quantity
+}
+
+/**
+ * Money lost taking stock back to the store: cost − refund + return cost. A full, free refund is 0
+ * (rows returned before refunds were recorded count that way). Never negative: a store can't refund
+ * more than was paid as far as the books go.
+ */
+export function returnLoss(i: Pick<Item, "status" | "cost_cents" | "quantity" | "store_refund_cents" | "return_cost_cents">): number {
+  if (i.status !== "returned") return 0
+  return Math.max(0, i.cost_cents * i.quantity - storeRefundCents(i)) + (i.return_cost_cents ?? 0)
 }
 
 export type Summary = {
@@ -81,13 +106,15 @@ export type Summary = {
   inventoryUnits: number
   inventoryItems: number
   totalItems: number
+  /** Restocking fees and other return costs for stock taken back in the range (already in net). */
+  returnLosses: number
   best: { item: Item; sale: SaleBreakdown } | null
 }
 
 /** Sales are filtered by sold_at within range; inventory is always a current snapshot. */
 export function summarize(items: Item[], range: Range, now = new Date()): Summary {
   let net = 0, revenue = 0, cogSold = 0, fees = 0, salesCount = 0, unknownCostSales = 0
-  let inventoryValue = 0, inventoryUnits = 0, inventoryItems = 0, totalItems = 0
+  let inventoryValue = 0, inventoryUnits = 0, inventoryItems = 0, totalItems = 0, returnLosses = 0
   let best: Summary["best"] = null
 
   for (const i of items) {
@@ -107,6 +134,10 @@ export function summarize(items: Item[], range: Range, now = new Date()): Summar
       if (i.cost_unknown) unknownCostSales++
       // A sale with no cost entered would look like the best one just for missing its cost.
       else if (!best || s.net > best.sale.net) best = { item: i, sale: s }
+    } else if (i.status === "returned" && inRange(i.returned_at, range, now)) {
+      const loss = returnLoss(i)
+      returnLosses += loss
+      net -= loss
     }
   }
 
@@ -117,12 +148,13 @@ export function summarize(items: Item[], range: Range, now = new Date()): Summar
     fees,
     salesCount,
     unknownCostSales,
-    avgProfit: salesCount ? Math.round(net / salesCount) : 0,
+    avgProfit: salesCount ? Math.round((net + returnLosses) / salesCount) : 0,
     margin: revenue ? net / revenue : 0,
     inventoryValue,
     inventoryUnits,
     inventoryItems,
     totalItems,
+    returnLosses,
     best,
   }
 }

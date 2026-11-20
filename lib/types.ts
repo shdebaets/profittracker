@@ -46,6 +46,19 @@ export type Item = {
   sold_on: MarketplaceId | null
   /** When the seller shipped it (or handed it over). Null on a sold item = still to ship. */
   shipped_at: string | null
+  /** Returned to the store (status "returned"): when, the refund the store gave (null = full refund,
+   *  not entered), when that refund arrived (null = still pending) and what the return cost. */
+  returned_at?: string | null
+  store_refund_cents?: number | null
+  store_refund_received_at?: string | null
+  return_cost_cents?: number
+  /** A buyer sent this sold item back. restocked = the unit went back into inventory (restocked_item_id). */
+  buyer_returned_at?: string | null
+  restocked?: boolean
+  restocked_item_id?: string | null
+  return_label_cents?: number
+  /** Fees the marketplace gave back on a buyer return. */
+  fee_credit_cents?: number
   /** Cross-listings for this item (filled in by getItems). */
   listings: Listing[]
   created_at: string

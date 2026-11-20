@@ -2,7 +2,7 @@
 // reconciliation and a Schedule C summary. Pure functions, all money in cents.
 // Every figure is an estimate; the UI always says "Not tax advice".
 
-import { itemSale } from "./profit"
+import { itemSale, returnLoss } from "./profit"
 import type { MarketplaceId } from "./marketplaces/registry"
 import type { CancelledSale, Expense, Item, Subscription } from "./types"
 
@@ -118,6 +118,9 @@ export type PlatformTotals = {
   net: number
 }
 
+/** Expense line for stock taken back to the store: cost the refund didn't cover, plus return costs. */
+export const RETURN_LOSSES = "Return losses"
+
 /** Expense categories mapped to Schedule C lines. */
 export const SCHEDULE_C_EXPENSE_LINES: Record<string, { line: string; label: string }> = {
   Packaging: { line: "22", label: "Supplies" },
@@ -129,6 +132,7 @@ export const SCHEDULE_C_EXPENSE_LINES: Record<string, { line: string; label: str
   Travel: { line: "24a", label: "Travel" },
   Meals: { line: "24b", label: "Deductible meals (50%)" },
   Other: { line: "27a", label: "Other expenses" },
+  [RETURN_LOSSES]: { line: "27a", label: "Other expenses (restocking fees, return costs)" },
 }
 
 export type YearReport = {
@@ -218,6 +222,14 @@ export function periodReport(
       expenseCents += e.amount_cents
       expensesByCategory[e.category] = (expensesByCategory[e.category] ?? 0) + e.amount_cents
     }
+  }
+
+  for (const i of items) {
+    if (i.status !== "returned" || !inPeriod(i.returned_at, period)) continue
+    const loss = returnLoss(i)
+    if (!loss) continue
+    expenseCents += loss
+    expensesByCategory[RETURN_LOSSES] = (expensesByCategory[RETURN_LOSSES] ?? 0) + loss
   }
 
   let subscriptionCents = 0

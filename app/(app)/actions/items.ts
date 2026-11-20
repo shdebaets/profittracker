@@ -198,18 +198,6 @@ export async function markShipped(id: string, shipped: boolean): Promise<ActionR
   }
 }
 
-export async function markReturned(id: string): Promise<ActionResult> {
-  try {
-    const { supabase } = await requireMember()
-    await takeDown(supabaseStore(supabase), adapters, id)
-    const { error } = await supabase.from("items").update({ status: "returned" }).eq("id", id)
-    if (error) throw error
-    return done()
-  } catch (e) {
-    return fail(e)
-  }
-}
-
 export async function deleteItem(id: string): Promise<ActionResult> {
   try {
     const { supabase } = await requireMember()
