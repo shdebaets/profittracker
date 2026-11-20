@@ -12,6 +12,40 @@ export const TAX_DISCLAIMER = "Estimates only. Not tax advice. Review with your 
 export const TAX_BRACKETS = [0.1, 0.12, 0.22, 0.24, 0.32, 0.35, 0.37] as const
 export const DEFAULT_TAX_BRACKET = 0.22
 
+export type FilingStatus = "single" | "mfj" | "hoh"
+export const FILING_STATUSES: FilingStatus[] = ["single", "mfj", "hoh"]
+export const FILING_STATUS_LABELS: Record<FilingStatus, string> = {
+  single: "Single",
+  mfj: "Married filing jointly",
+  hoh: "Head of household",
+}
+
+/**
+ * Federal standard deduction and bracket starts for tax year 2026, in cents.
+ * `starts[i]` is the taxable income above which `rates[i + 1]` applies.
+ * Source: IRS Rev. Proc. 2025-32 §4.01 (tax rate tables) and §4.14 (standard deduction),
+ * https://www.irs.gov/pub/irs-drop/rp-25-32.pdf, and IR-2025-103,
+ * https://www.irs.gov/newsroom/irs-releases-tax-inflation-adjustments-for-tax-year-2026-including-amendments-from-the-one-big-beautiful-bill
+ * Update every year when the IRS publishes the next year's numbers (each October).
+ */
+export const FEDERAL_BRACKETS = {
+  taxYear: 2026,
+  rates: TAX_BRACKETS,
+  byStatus: {
+    single: { standardDeduction: 1_610_000, starts: [1_240_000, 5_040_000, 10_570_000, 20_177_500, 25_622_500, 64_060_000] },
+    mfj: { standardDeduction: 3_220_000, starts: [2_480_000, 10_080_000, 21_140_000, 40_355_000, 51_245_000, 76_870_000] },
+    hoh: { standardDeduction: 2_415_000, starts: [1_770_000, 6_745_000, 10_570_000, 20_175_000, 25_620_000, 64_060_000] },
+  } satisfies Record<FilingStatus, { standardDeduction: number; starts: number[] }>,
+} as const
+
+/** The federal bracket for a year's expected income: income minus the standard deduction, then the rate that taxable income falls in. */
+export function bracketFromIncome(incomeCents: number, status: FilingStatus) {
+  const { standardDeduction, starts } = FEDERAL_BRACKETS.byStatus[status]
+  const taxableCents = Math.max(0, Math.round(incomeCents) - standardDeduction)
+  const index = starts.filter((s) => taxableCents > s).length
+  return { rate: FEDERAL_BRACKETS.rates[index], taxableCents, standardDeductionCents: standardDeduction }
+}
+
 /** Self-employment tax: 15.3% on 92.35% of net earnings. */
 const SE_RATE = 0.153
 const SE_BASE = 0.9235

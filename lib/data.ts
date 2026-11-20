@@ -76,10 +76,10 @@ export async function getSettings(): Promise<Settings> {
   const { supabase } = await requireUser()
   const { data } = await supabase
     .from("settings")
-    .select("mileage_rate_cents, default_return_days, tax_bracket, tax_bracket_set, stale_days, email_recap, email_tax_reminders, push_recap, push_tax_reminders, email_alerts")
+    .select("mileage_rate_cents, default_return_days, tax_bracket, tax_bracket_set, tax_filing_status, tax_income_cents, stale_days, email_recap, email_tax_reminders, push_recap, push_tax_reminders, email_alerts")
     .maybeSingle()
   const row = data as Settings | null
-  return row ? { ...row, tax_bracket: Number(row.tax_bracket) } : DEFAULT_SETTINGS
+  return row ? { ...row, tax_bracket: Number(row.tax_bracket), tax_income_cents: row.tax_income_cents == null ? null : Number(row.tax_income_cents) } : DEFAULT_SETTINGS
 }
 
 /** 1099-K gross the seller typed in per platform for a tax year. */

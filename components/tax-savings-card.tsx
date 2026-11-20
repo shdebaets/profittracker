@@ -47,7 +47,10 @@ export function TaxSavingsCard({
       {!settings.tax_bracket_set && (
         <div className="mt-4 rounded-2xl bg-muted/60 p-3">
           <p className="text-sm font-semibold">What&apos;s your tax bracket?</p>
-          <p className="text-xs text-muted-foreground">We&apos;re using 22% until you pick one.</p>
+          <p className="text-xs text-muted-foreground">
+            We&apos;re using 22% until you pick one.{" "}
+            <Link href="/settings" className="font-semibold text-brand">Not sure? Work it out from your income</Link>
+          </p>
           <div className="mt-2 flex flex-wrap gap-2">
             {TAX_BRACKETS.map((b) => (
               <button

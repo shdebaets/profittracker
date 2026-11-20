@@ -27,7 +27,7 @@ export async function loadUserData(admin: SupabaseClient, userId: string): Promi
     expenses: (expenses.data ?? []) as Expense[],
     subs: (subs.data ?? []) as Subscription[],
     settings: s
-      ? { ...s, tax_bracket: Number(s.tax_bracket) }
+      ? { ...s, tax_bracket: Number(s.tax_bracket), tax_income_cents: s.tax_income_cents == null ? null : Number(s.tax_income_cents) }
       : DEFAULT_SETTINGS,
   }
 }

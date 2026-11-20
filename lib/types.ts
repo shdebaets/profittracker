@@ -1,4 +1,5 @@
 import type { ItemCondition, MarketplaceId } from "./marketplaces/registry"
+import type { FilingStatus } from "./tax"
 
 export type ItemStatus = "inventory" | "sold" | "returned"
 export type Platform = "cash" | "card" | "mercari_depop" | "ebay" | "poshmark_amz" | "facebook" | "custom"
@@ -126,6 +127,10 @@ export type Settings = {
   tax_bracket: number
   /** False until the seller picks a bracket (we default to 22%). */
   tax_bracket_set: boolean
+  /** Filing status used to work the bracket out from income; null when the bracket was picked by hand. */
+  tax_filing_status: FilingStatus | null
+  /** Expected yearly income (cents) the bracket was worked out from; null when picked by hand. */
+  tax_income_cents: number | null
   /** Days before an unsold item counts as stale (30/45/60/90/120). */
   stale_days: number
   /** Sunday profit recap email. */

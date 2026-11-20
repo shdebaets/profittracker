@@ -1,6 +1,7 @@
 "use client"
 
 import { PiggyBank } from "lucide-react"
+import Link from "next/link"
 import { useState, useSyncExternalStore, useTransition } from "react"
 import { toast } from "sonner"
 import { saveTaxBracket } from "@/app/(app)/actions/expenses"
@@ -72,8 +73,20 @@ export function TaxBracketOnboarding() {
         ))}
       </div>
       <p className="mt-3 text-xs text-muted-foreground">
-        Your federal income tax bracket. Not sure? 22% is a common middle bracket. You can change it any time in Settings.
+        Your federal income tax bracket. You can change it any time in Settings.
       </p>
+      <Link
+        href="/settings"
+        onClick={() => {
+          // Hide it for this visit so it doesn't sit over the Settings form.
+          try {
+            sessionStorage.setItem(DISMISSED, "1")
+          } catch {}
+          setClosed(true)
+        }}
+        className="mt-2 block text-sm font-semibold text-brand">
+        Not sure? Work it out from your income
+      </Link>
       <button
         type="button"
         disabled={pending || picked === null}
