@@ -9,6 +9,7 @@ import { FieldLabel, MoneyInput, Stepper } from "@/components/fields"
 import { centsToInput, formatCents, formatPct, toCents } from "@/lib/money"
 import { CompCalcTabs } from "@/components/comp-calc-tabs"
 import { CompFill } from "@/components/comp-fill"
+import { ShippingEstimate } from "@/components/shipping-estimate"
 import { calcSale, presetFor } from "@/lib/profit"
 import type { Platform } from "@/lib/types"
 import { cn } from "@/lib/utils"
@@ -50,6 +51,7 @@ export default function CalculatorPage() {
   const [qty, setQty] = useState(1)
   const [buyerShip, setBuyerShip] = useState("")
   const [labelCost, setLabelCost] = useState("")
+  const [estimating, setEstimating] = useState(false)
   const [platform, setPlatform] = useState<Platform>("cash")
   const [customPct, setCustomPct] = useState("")
 
@@ -106,6 +108,14 @@ export default function CalculatorPage() {
         <MoneyInput value={buyerShip} onChange={setBuyerShip} placeholder="0" />
         <FieldLabel className="mt-4 text-foreground">Your Actual Label / Shipping Cost</FieldLabel>
         <MoneyInput value={labelCost} onChange={setLabelCost} placeholder="0" />
+        <button type="button" onClick={() => setEstimating((v) => !v)} className="mt-2 text-sm font-semibold text-brand">
+          {estimating ? "Hide the estimate" : "Don't know the label cost? Estimate it"}
+        </button>
+        {estimating && (
+          <div className="mt-3 rounded-2xl border bg-muted/30 p-3">
+            <ShippingEstimate onUse={(cents) => { setLabelCost(centsToInput(cents)); setEstimating(false) }} />
+          </div>
+        )}
       </div>
 
       <FeePresetGrid

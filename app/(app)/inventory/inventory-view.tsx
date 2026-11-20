@@ -305,7 +305,7 @@ export function InventoryView({
         )}
       </div>
 
-      {tab !== "sales" && (
+      {tab !== "sales" && chip !== "returned" && (
         <div className="flex items-center gap-2">
           {selecting ? (
             <>
@@ -342,7 +342,7 @@ export function InventoryView({
         </div>
       )}
 
-      {tab !== "sales" && <OverpricedCheck />}
+      {tab !== "sales" && chip !== "returned" && <OverpricedCheck />}
 
       {selecting && picked.length > 0 ? (
         <RepricePanel
