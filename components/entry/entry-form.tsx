@@ -7,6 +7,7 @@ import { createItem, markSold, updateItem, type ItemInput } from "@/app/(app)/ac
 import { discardPhotos } from "@/app/(app)/actions/photos"
 import { FeePresetGrid } from "@/components/fee-preset-grid"
 import { FieldLabel, MoneyInput, QtyPicker, Segmented, TextInput, Toggle } from "@/components/fields"
+import { ShippingEstimate } from "@/components/shipping-estimate"
 import { addDays, dateInputToIso, toDateInput } from "@/lib/dates"
 import { centsToInput, formatCents, formatPct, toCents } from "@/lib/money"
 import { calcSale, presetFor } from "@/lib/profit"
@@ -90,6 +91,7 @@ export function EntryForm(props: Props) {
   const [qty, setQty] = useState(props.variant === "sell" ? 1 : init.qty)
   const [buyerShip, setBuyerShip] = useState(init.buyerShip)
   const [labelCost, setLabelCost] = useState(init.labelCost)
+  const [estimating, setEstimating] = useState(false)
   const [salesTax, setSalesTax] = useState(init.salesTax)
   const [platform, setPlatform] = useState<Platform>(init.platform)
   const [customPct, setCustomPct] = useState(init.customPct)
@@ -392,6 +394,20 @@ export function EntryForm(props: Props) {
                   <MoneyInput value={labelCost} onChange={setLabelCost} placeholder="0" />
                 </div>
               </div>
+              <button type="button" onClick={() => setEstimating((v) => !v)} className="-mt-1 self-start text-sm font-semibold text-brand">
+                {estimating ? "Hide the estimate" : "Don't know the label cost? Estimate it"}
+              </button>
+              {estimating && (
+                <div className="rounded-2xl border bg-muted/30 p-3">
+                  <ShippingEstimate
+                    title={title}
+                    onUse={(cents) => {
+                      setLabelCost(centsToInput(cents))
+                      setEstimating(false)
+                    }}
+                  />
+                </div>
+              )}
               <div>
                 <FieldLabel>Sales tax the marketplace collected <span className="font-normal text-muted-foreground">(Optional)</span></FieldLabel>
                 <MoneyInput value={salesTax} onChange={setSalesTax} placeholder="0" />

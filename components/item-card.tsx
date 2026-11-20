@@ -1,9 +1,9 @@
 "use client"
 
 import { Check, CheckCircle2, Clock, Package, RotateCcw, ShoppingBag } from "lucide-react"
-import { useTransition } from "react"
-import { toast } from "sonner"
-import { markReturned } from "@/app/(app)/actions/items"
+import { useState } from "react"
+import { BottomSheet } from "@/components/bottom-sheet"
+import { StoreRefundStatus, StoreReturnForm } from "@/components/returns/return-forms"
 import { daysUntil, formatDateTime, relativeTime } from "@/lib/dates"
 import { formatCents, formatPct, formatSignedCents } from "@/lib/money"
 import { itemSale } from "@/lib/profit"
@@ -13,7 +13,7 @@ import { ListingBadges } from "./crosslist/listing-badges"
 
 /** `selected` (true/false) shows the card as pickable for bulk actions; tapping then calls onOpen to toggle. */
 export function ItemCard({ item, onOpen, selected }: { item: Item; onOpen: () => void; selected?: boolean }) {
-  const [pending, startTransition] = useTransition()
+  const [returning, setReturning] = useState(false)
   const sale = item.status === "sold" ? itemSale(item) : null
   const when = item.status === "sold" ? item.sold_at! : item.purchased_at
   const returnDays = item.status === "inventory" && item.return_deadline ? daysUntil(item.return_deadline) : null
@@ -51,6 +51,9 @@ export function ItemCard({ item, onOpen, selected }: { item: Item; onOpen: () =>
           </span>
           {item.cost_unknown && (
             <span className="rounded-lg border border-brand/40 bg-brand-soft px-2 py-1 text-xs font-bold text-brand">Add cost</span>
+          )}
+          {item.buyer_returned_at && (
+            <span className="rounded-lg border bg-muted px-2 py-1 text-xs font-bold text-muted-foreground">Buyer returned</span>
           )}
           <span className="ml-auto font-mono text-sm text-muted-foreground">#{item.seq}</span>
         </div>
@@ -110,21 +113,32 @@ export function ItemCard({ item, onOpen, selected }: { item: Item; onOpen: () =>
               />
             </div>
             <button
-              disabled={pending}
-              onClick={() => {
-                if (!confirm("Mark this item as returned? It will leave your inventory value.")) return
-                startTransition(async () => {
-                  const res = await markReturned(item.id)
-                  if (res.ok) toast.success("Marked returned")
-                  else toast.error(res.error)
-                })
-              }}
-              className="flex shrink-0 items-center gap-1.5 rounded-xl border bg-card px-3 py-1.5 text-sm font-semibold shadow-sm disabled:opacity-50"
+              onClick={() => setReturning(true)}
+              className="flex shrink-0 items-center gap-1.5 rounded-xl border bg-card px-3 py-1.5 text-sm font-semibold shadow-sm"
             >
               <CheckCircle2 className="size-4 text-profit" /> Mark Returned
             </button>
           </div>
         </div>
+      )}
+
+      {item.status === "returned" && (
+        <div className="mx-4 mb-4">
+          <StoreRefundStatus item={item} compact />
+        </div>
+      )}
+
+      {item.status === "inventory" && (
+        <BottomSheet
+          open={returning}
+          onOpenChange={setReturning}
+          icon={<RotateCcw className="size-5 text-muted-foreground" />}
+          iconClass="bg-muted"
+          title="Return to the store"
+          description={item.title || `Item #${item.seq}`}
+        >
+          {returning && <StoreReturnForm item={item} onDone={() => setReturning(false)} />}
+        </BottomSheet>
       )}
     </div>
   )

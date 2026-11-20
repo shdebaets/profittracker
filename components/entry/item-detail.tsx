@@ -4,8 +4,9 @@ import { ChevronRight, CircleDollarSign, ExternalLink, Layers, Pencil, RotateCcw
 import Link from "next/link"
 import { useState, useTransition } from "react"
 import { toast } from "sonner"
-import { deleteItem, markReturned, setItemCost } from "@/app/(app)/actions/items"
+import { deleteItem, setItemCost } from "@/app/(app)/actions/items"
 import { RefundForm } from "@/components/entry/refund-form"
+import { BuyerReturnForm, StoreRefundStatus, StoreReturnForm, UndoStoreReturn } from "@/components/returns/return-forms"
 import { MoneyInput } from "@/components/fields"
 import { daysUntil, formatDate, formatDateTime } from "@/lib/dates"
 import { formatCents, formatPct, toCents } from "@/lib/money"
@@ -26,6 +27,7 @@ export function ItemDetail({
 }) {
   const [pending, startTransition] = useTransition()
   const [cost, setCost] = useState("")
+  const [returning, setReturning] = useState(false)
   const sale = item.status === "sold" ? itemSale(item) : null
 
   function run(fn: () => Promise<{ ok: boolean; error?: string }>, msg: string) {
@@ -60,6 +62,7 @@ export function ItemDetail({
     if (item.sales_tax_cents) rows.push(["Sales tax (marketplace collected)", formatCents(item.sales_tax_cents)])
     if (item.refund_cents) rows.push(["Refunded to buyer", formatCents(item.refund_cents)])
   }
+  if (item.status === "returned" && item.returned_at) rows.push(["Returned", formatDate(item.returned_at)])
 
   return (
     <div className="flex flex-col gap-4">
@@ -119,7 +122,20 @@ export function ItemDetail({
           </div>
         ))}
       </dl>
-      {sale && <RefundForm item={item} onDone={onDone} />}
+      {sale && !item.buyer_returned_at && <RefundForm item={item} onDone={onDone} />}
+      {sale && <BuyerReturnForm item={item} onDone={onDone} />}
+      {item.status === "returned" && (
+        <>
+          <StoreRefundStatus item={item} onDone={onDone} />
+          <UndoStoreReturn item={item} onDone={onDone} />
+        </>
+      )}
+      {returning && item.status === "inventory" && (
+        <div className="rounded-2xl border bg-card p-4">
+          <p className="mb-3 font-bold">Return to the store</p>
+          <StoreReturnForm item={item} onDone={onDone} />
+        </div>
+      )}
       {item.haul_id && (
         <Link
           href={`/lots?lot=${item.haul_id}#lot-${item.haul_id}`}
@@ -159,13 +175,13 @@ export function ItemDetail({
         <button onClick={onEdit} className="flex h-12 items-center justify-center gap-2 rounded-2xl border bg-card font-semibold">
           <Pencil className="size-4" /> Edit
         </button>
-        {item.status === "inventory" && item.returnable ? (
+        {item.status === "inventory" ? (
           <button
             disabled={pending}
-            onClick={() => run(() => markReturned(item.id), "Marked returned")}
+            onClick={() => setReturning((v) => !v)}
             className="flex h-12 items-center justify-center gap-2 rounded-2xl border bg-card font-semibold"
           >
-            <RotateCcw className="size-4" /> Returned
+            <RotateCcw className="size-4" /> Return to store
           </button>
         ) : (
           <button
@@ -179,7 +195,7 @@ export function ItemDetail({
           </button>
         )}
       </div>
-      {item.status === "inventory" && item.returnable && (
+      {item.status === "inventory" && (
         <button
           disabled={pending}
           onClick={() => {
