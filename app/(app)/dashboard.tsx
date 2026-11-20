@@ -1,6 +1,6 @@
 "use client"
 
-import { Award, Box, ChevronRight, CircleDollarSign, Clock, Plus, Sparkles, TrendingUp, Truck } from "lucide-react"
+import { Award, Box, ChevronRight, CircleDollarSign, Clock, Plus, ShoppingBag, Sparkles, TrendingUp, Truck } from "lucide-react"
 import Link from "next/link"
 import { useState } from "react"
 import { PageTitle } from "@/components/app-header"
@@ -21,8 +21,8 @@ import { cn } from "@/lib/utils"
 const SHORT_RANGE: Record<Range, string> = { all: "All Time", today: "Today", week: "Week", month: "Month" }
 
 export function Dashboard({
-  items, expenses, subs, settings, yearlyBanner,
-}: { items: Item[]; expenses: Expense[]; subs: Subscription[]; settings: Settings; yearlyBanner?: React.ReactNode }) {
+  items, expenses, subs, settings, onTheWay = 0, yearlyBanner,
+}: { items: Item[]; expenses: Expense[]; subs: Subscription[]; settings: Settings; onTheWay?: number; yearlyBanner?: React.ReactNode }) {
   const [range, setRange] = useState<Range>("all")
   const { openEntry, openItem } = useEntry()
   useSyncItems(items)
@@ -54,6 +54,16 @@ export function Dashboard({
           <Truck className="size-5 shrink-0 text-brand" />
           <span className="flex-1 font-bold">
             {toShip} order{toShip === 1 ? "" : "s"} to ship
+          </span>
+          <ChevronRight className="size-5 text-muted-foreground" />
+        </Link>
+      )}
+
+      {onTheWay > 0 && (
+        <Link href="/orders?view=buying" className="flex items-center gap-3 rounded-3xl border bg-card p-4 shadow-sm">
+          <ShoppingBag className="size-5 shrink-0 text-brand" />
+          <span className="flex-1 font-bold">
+            {onTheWay} order{onTheWay === 1 ? "" : "s"} on the way
           </span>
           <ChevronRight className="size-5 text-muted-foreground" />
         </Link>

@@ -1,4 +1,5 @@
 import "server-only"
+import type { IncomingOrder } from "@/lib/incoming"
 import type { Order } from "@/lib/orders"
 import { signPaths } from "@/lib/photos"
 import type { Haul } from "@/lib/lots"
@@ -35,6 +36,26 @@ export async function getOrders(): Promise<Order[]> {
   const rows = data as Omit<Order, "photo_urls">[]
   const urls = await signPaths(supabase, rows.flatMap((r) => r.photo_paths?.slice(0, 1) ?? []))
   return rows.map((r) => ({ ...r, photo_urls: (r.photo_paths ?? []).slice(0, 1).map((p) => urls.get(p) ?? "") }))
+}
+
+/** How many online orders are still on their way (not received, not cancelled), for the dashboard. */
+export async function countIncomingOnTheWay(): Promise<number> {
+  const { supabase } = await requireUser()
+  const { count, error } = await supabase
+    .from("incoming_orders")
+    .select("id", { count: "exact", head: true })
+    .is("received_at", null)
+    .neq("status", "cancelled")
+  if (error) throw error
+  return count ?? 0
+}
+
+/** Online purchases on their way in (Orders → Buying), newest first. */
+export async function getIncoming(): Promise<IncomingOrder[]> {
+  const { supabase } = await requireUser()
+  const { data, error } = await supabase.from("incoming_orders").select("*").order("ordered_at", { ascending: false }).limit(500)
+  if (error) throw error
+  return data as IncomingOrder[]
 }
 
 export async function getItem(id: string): Promise<Item | null> {
@@ -76,7 +97,7 @@ export async function getSettings(): Promise<Settings> {
   const { supabase } = await requireUser()
   const { data } = await supabase
     .from("settings")
-    .select("mileage_rate_cents, default_return_days, tax_bracket, tax_bracket_set, tax_filing_status, tax_income_cents, stale_days, email_recap, email_tax_reminders, push_recap, push_tax_reminders, email_alerts")
+    .select("mileage_rate_cents, default_return_days, tax_bracket, tax_bracket_set, tax_filing_status, tax_income_cents, stale_days, email_recap, email_tax_reminders, push_recap, push_tax_reminders, email_alerts, email_returns, push_returns")
     .maybeSingle()
   const row = data as Settings | null
   return row ? { ...row, tax_bracket: Number(row.tax_bracket), tax_income_cents: row.tax_income_cents == null ? null : Number(row.tax_income_cents) } : DEFAULT_SETTINGS

@@ -14,4 +14,6 @@ export const DEFAULT_SETTINGS: Settings = {
   email_alerts: true,
   push_recap: true,
   push_tax_reminders: true,
+  email_returns: true,
+  push_returns: true,
 }

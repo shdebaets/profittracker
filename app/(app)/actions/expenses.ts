@@ -149,6 +149,8 @@ const settingsSchema = z.object({
   emailAlerts: z.boolean().default(true),
   pushRecap: z.boolean(),
   pushTaxReminders: z.boolean(),
+  emailReturns: z.boolean().default(true),
+  pushReturns: z.boolean().default(true),
 })
 
 export async function saveSettings(input: z.input<typeof settingsSchema>): Promise<ActionResult> {
@@ -170,6 +172,8 @@ export async function saveSettings(input: z.input<typeof settingsSchema>): Promi
       email_alerts: s.emailAlerts,
       push_recap: s.pushRecap,
       push_tax_reminders: s.pushTaxReminders,
+      email_returns: s.emailReturns,
+      push_returns: s.pushReturns,
     })
     if (error) throw error
     return done()

@@ -4,7 +4,7 @@ import { createAdminClient } from "@/lib/supabase/admin"
 
 export const maxDuration = 300
 
-/** Vercel Cron, daily: Sunday recaps and quarterly tax reminders. */
+/** Vercel Cron, daily: Sunday recaps, quarterly tax reminders and return-deadline reminders. */
 export async function GET(request: NextRequest) {
   const secret = process.env.CRON_SECRET
   if (!secret || request.headers.get("authorization") !== `Bearer ${secret}`) {

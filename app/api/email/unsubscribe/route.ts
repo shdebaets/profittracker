@@ -2,7 +2,8 @@ import { NextResponse, type NextRequest } from "next/server"
 import { verifyUnsubscribe } from "@/lib/email/send"
 import { createAdminClient } from "@/lib/supabase/admin"
 
-const COLUMN = { recap: "email_recap", tax: "email_tax_reminders", alerts: "email_alerts" } as const
+const COLUMN = { recap: "email_recap", tax: "email_tax_reminders", alerts: "email_alerts", returns: "email_returns" } as const
+const NAME = { recap: "weekly recaps", tax: "tax reminders", alerts: "weekly stale and overpriced alerts", returns: "return deadline reminders" } as const
 
 async function unsubscribe(request: NextRequest) {
   const p = request.nextUrl.searchParams
@@ -15,7 +16,7 @@ async function unsubscribe(request: NextRequest) {
   const { error } = await createAdminClient().from("settings").upsert({ user_id: userId, [COLUMN[kind]]: false }, { onConflict: "user_id" })
   if (error) return new NextResponse("Couldn't unsubscribe right now. Try again in a minute.", { status: 500 })
   return new NextResponse(
-    `<!doctype html><meta name="viewport" content="width=device-width"><body style="font-family:Arial,sans-serif;padding:32px"><p>You're unsubscribed from FlipLedger ${kind === "recap" ? "weekly recaps" : kind === "alerts" ? "weekly stale and overpriced alerts" : "tax reminders"}. Turn them back on any time in Settings.</p></body>`,
+    `<!doctype html><meta name="viewport" content="width=device-width"><body style="font-family:Arial,sans-serif;padding:32px"><p>You're unsubscribed from FlipLedger ${NAME[kind]}. Turn them back on any time in Settings.</p></body>`,
     { headers: { "Content-Type": "text/html; charset=utf-8" } },
   )
 }

@@ -29,6 +29,8 @@ export function SettingsForm({ settings }: { settings: Settings }) {
   const [alerts, setAlerts] = useState(settings.email_alerts)
   const [recapPush, setRecapPush] = useState(settings.push_recap)
   const [taxPush, setTaxPush] = useState(settings.push_tax_reminders)
+  const [returnsMail, setReturnsMail] = useState(settings.email_returns)
+  const [returnsPush, setReturnsPush] = useState(settings.push_returns)
   const [testing, startTest] = useTransition()
   const [pending, startTransition] = useTransition()
 
@@ -37,7 +39,7 @@ export function SettingsForm({ settings }: { settings: Settings }) {
       onSubmit={(e) => {
         e.preventDefault()
         startTransition(async () => {
-          const res = await saveSettings({ mileageRateCents: toCents(rate), defaultReturnDays: Number(days) || 0, taxBracket: Number(bracket), taxFilingStatus: manual || incomeCents === null ? null : filing, taxIncomeCents: manual ? null : incomeCents, staleDays: Number(stale) as 30 | 45 | 60 | 90 | 120, emailRecap: recap, emailTaxReminders: taxMail, pushRecap: recapPush, pushTaxReminders: taxPush, emailAlerts: alerts })
+          const res = await saveSettings({ mileageRateCents: toCents(rate), defaultReturnDays: Number(days) || 0, taxBracket: Number(bracket), taxFilingStatus: manual || incomeCents === null ? null : filing, taxIncomeCents: manual ? null : incomeCents, staleDays: Number(stale) as 30 | 45 | 60 | 90 | 120, emailRecap: recap, emailTaxReminders: taxMail, pushRecap: recapPush, pushTaxReminders: taxPush, emailAlerts: alerts, emailReturns: returnsMail, pushReturns: returnsPush })
           if (res.ok) toast.success("Settings saved")
           else toast.error(res.error)
         })
@@ -144,6 +146,15 @@ export function SettingsForm({ settings }: { settings: Settings }) {
           <span>Weekly stale &amp; overpriced alert</span>
           <Toggle checked={alerts} onChange={setAlerts} label="Weekly stale and overpriced alert" />
         </label>
+        <label className="flex items-center justify-between gap-3 text-sm">
+          <span>Return deadline emails</span>
+          <Toggle checked={returnsMail} onChange={setReturnsMail} label="Return deadline emails" />
+        </label>
+        <label className="flex items-center justify-between gap-3 text-sm">
+          <span>Return deadline notifications</span>
+          <Toggle checked={returnsPush} onChange={setReturnsPush} label="Return deadline notifications" />
+        </label>
+        <p className="-mt-1 text-xs text-muted-foreground">Sent 3 days and 1 day before an item&apos;s return window closes.</p>
         <p className="-mt-1 text-xs text-muted-foreground">Notifications only reach devices where you turned them on above.</p>
         <button
           type="button"
