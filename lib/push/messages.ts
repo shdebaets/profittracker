@@ -1,5 +1,6 @@
 // Push notification copy. Pure.
 import { formatCents } from "@/lib/money"
+import { dayWord, type ReturnDue } from "@/lib/returns/reminders"
 
 /** `weekKey` (see `recapWeekKey`) makes the tap open the week the push described, not whatever "this week" is by then. */
 export function recapPush(n: { profit: number; itemsSold: number; miles: number; mileageWriteOff: number }, weekKey?: string) {
@@ -30,5 +31,17 @@ export function taxPush(q: { n: number; due: Date }, setAsideCents: number, days
     body: `Due ${due}. Set aside about ${formatCents(setAsideCents)}. Estimate only, not tax advice.`,
     url: "/taxes",
     tag: "tax",
+  }
+}
+
+/** Return windows closing in 3 days or 1 day. `due` is soonest first and never empty. */
+export function returnsPush(due: ReturnDue[]) {
+  const [first, ...rest] = due
+  const more = rest.length ? `, +${rest.length} more` : ""
+  return {
+    title: due.length === 1 ? "Return window closing" : `${due.length} return windows closing`,
+    body: `${first.title} (${dayWord(first.daysLeft)} left)${more}.`,
+    url: "/inventory?filter=returns",
+    tag: "returns",
   }
 }

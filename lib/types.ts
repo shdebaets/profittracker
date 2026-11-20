@@ -143,6 +143,10 @@ export type Settings = {
   push_recap: boolean
   /** Quarterly tax reminders as a push notification. */
   push_tax_reminders: boolean
+  /** Return-deadline reminder email (3 days and 1 day before). */
+  email_returns: boolean
+  /** Return-deadline reminder push. */
+  push_returns: boolean
 }
 
 export const EXPENSE_CATEGORIES = [

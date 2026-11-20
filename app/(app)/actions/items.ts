@@ -6,13 +6,13 @@ import { isMember, requireMember } from "@/lib/supabase/server"
 import { hasChanges, propagateToListings, type ListingChanges } from "@/lib/crosslist/edit"
 import { recordSale, takeDown, type SaleOutcome } from "@/lib/crosslist/engine"
 import { adapters, supabaseStore } from "@/lib/crosslist/store"
+import { insertHaul } from "@/lib/items/haul-insert"
 import type { SaleColumns } from "@/lib/items/sell"
 import type { MarketplaceId } from "@/lib/marketplaces/registry"
 import { getItem } from "@/lib/data"
 import { UserError } from "@/lib/errors"
 import { marketplace } from "@/lib/marketplaces/registry"
 import { PHOTO_BUCKET, removeUnreferencedPhotos } from "@/lib/photos"
-import { distributeHaul } from "@/lib/profit"
 import type { Item } from "@/lib/types"
 import { fail, type ActionResult } from "./result"
 
@@ -251,41 +251,17 @@ export async function createHaul(input: HaulInput): Promise<ActionResult> {
     const h = haulSchema.parse(input)
     const { supabase, userId } = await requireMember()
     if (h.receiptPath && !h.receiptPath.startsWith(`${userId}/`)) throw new Error("Receipt photo belongs to another user")
-    const purchased_at = h.purchasedAt ? new Date(h.purchasedAt).toISOString() : new Date().toISOString()
-    const { data: haul, error } = await supabase
-      .from("hauls")
-      .insert({
-        title: h.title || null,
-        store: h.store || null,
-        total_cents: h.totalCents,
-        purchased_at,
-        split_mode: h.splitMode,
-        receipt_path: h.receiptPath ?? null,
-      })
-      .select("id")
-      .single()
-    if (error) throw error
-
-    // Even split ignores the estimated values: same cost for every unit.
-    const split = distributeHaul(
-      h.totalCents,
-      h.splitMode === "even" ? h.lines.map((l) => ({ ...l, estValueCents: 0 })) : h.lines,
-    )
-    // Insert one at a time so the seq trigger numbers them in order.
-    for (const [idx, line] of h.lines.entries()) {
-      const { error: insErr } = await supabase.from("items").insert({
-        title: line.title,
-        store: h.store || null,
-        quantity: line.quantity,
-        cost_cents: split[idx].unitCostCents,
-        purchased_at,
-        haul_id: haul.id,
-        status: "inventory",
-        returnable: h.returnable,
-        return_deadline: h.returnable ? h.returnDeadline || null : null,
-      })
-      if (insErr) throw insErr
-    }
+    await insertHaul(supabase, {
+      title: h.title || null,
+      store: h.store || null,
+      totalCents: h.totalCents,
+      purchasedAt: h.purchasedAt ? new Date(h.purchasedAt).toISOString() : new Date().toISOString(),
+      returnable: h.returnable,
+      returnDeadline: h.returnDeadline || null,
+      splitMode: h.splitMode,
+      receiptPath: h.receiptPath ?? null,
+      lines: h.lines,
+    })
     return done()
   } catch (e) {
     return fail(e)

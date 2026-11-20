@@ -13,7 +13,7 @@ import { filterOrders, isToShip, orderInfo, type Order, type OrderFilter } from 
 import { itemSale } from "@/lib/profit"
 import { cn } from "@/lib/utils"
 
-export function OrdersView({ orders }: { orders: Order[] }) {
+export function OrdersView({ orders, switcher }: { orders: Order[]; switcher?: React.ReactNode }) {
   const toShipCount = orders.filter(isToShip).length
   const [filter, setFilter] = useState<OrderFilter>(toShipCount ? "to_ship" : "all")
   useSyncItems(orders)
@@ -22,6 +22,7 @@ export function OrdersView({ orders }: { orders: Order[] }) {
   return (
     <>
       <PageTitle title="Orders" subtitle="Every sale, from every marketplace" />
+      {switcher}
 
       <div className="flex gap-1 rounded-2xl bg-muted p-1">
         {([

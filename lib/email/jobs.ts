@@ -1,15 +1,16 @@
-// The daily email + push job: Sunday recaps and quarterly tax reminders (the week before and the day
-// before each due date). `email_log` makes every send idempotent, so re-running the cron never double-sends.
+// The daily email + push job: Sunday recaps, quarterly tax reminders (the week before and the day
+// before each due date) and return-deadline reminders (3 days and 1 day before). `email_log` makes every send idempotent, so re-running the cron never double-sends.
 import "server-only"
-import { recapPush, taxPush } from "@/lib/push/messages"
+import { recapPush, returnsPush, taxPush } from "@/lib/push/messages"
 import { pushToUser } from "@/lib/push/send"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { DEFAULT_SETTINGS } from "@/lib/data-defaults"
 import { quietWeek, recapWeekKey, weekNumbers, weeksEnding } from "@/lib/recap"
+import { returnsDue } from "@/lib/returns/reminders"
 import { daysBetween, estimatedTax, nextQuarter, periodReport, taxReminderWindow } from "@/lib/tax"
 import type { Expense, Item, Settings, Subscription } from "@/lib/types"
 import { APP_URL, sendEmail, unsubscribeUrl } from "./send"
-import { recapEmail, recapSubject, taxReminderEmail } from "./templates"
+import { recapEmail, recapSubject, returnsEmail, taxReminderEmail } from "./templates"
 
 type UserData = { items: Item[]; expenses: Expense[]; subs: Subscription[]; settings: Settings }
 
@@ -134,6 +135,27 @@ export async function sendTaxReminder(
   })
 }
 
+/** Return windows closing in 3 days or 1 day. One send per day (keyed by the UTC date). */
+export async function sendReturnReminder(
+  admin: SupabaseClient,
+  user: { id: string; email: string },
+  data: UserData,
+  now: Date,
+  channels: Channels,
+): Promise<Sent> {
+  const due = returnsDue(data.items, now)
+  if (!due.length) return { email: false, push: false }
+  const key = now.toISOString().slice(0, 10)
+  const unsub = unsubscribeUrl(user.id, "returns")
+  return sendBoth(admin, user.id, "returns", key, channels, false, {
+    email: async () => {
+      const mail = returnsEmail(due, `${APP_URL}/inventory?filter=returns`, unsub)
+      await sendEmail(user.email, mail.subject, mail.html, unsub)
+    },
+    push: () => pushToUser(admin, user.id, returnsPush(due)),
+  })
+}
+
 /** Every user, paged. */
 async function* allUsers(admin: SupabaseClient) {
   for (let page = 1; ; page++) {
@@ -146,7 +168,7 @@ async function* allUsers(admin: SupabaseClient) {
 
 export async function runDailyEmails(admin: SupabaseClient, now = new Date()) {
   const sunday = now.getUTCDay() === 0
-  let recaps = 0, reminders = 0, recapPushes = 0, taxPushes = 0, failures = 0
+  let recaps = 0, reminders = 0, recapPushes = 0, taxPushes = 0, returns = 0, returnPushes = 0, failures = 0
   for await (const user of allUsers(admin)) {
     try {
       const data = await loadUserData(admin, user.id)
@@ -159,10 +181,13 @@ export async function runDailyEmails(admin: SupabaseClient, now = new Date()) {
       const t = await sendTaxReminder(admin, user, data, now, { email: st.email_tax_reminders, push: st.push_tax_reminders })
       if (t.email) reminders++
       if (t.push) taxPushes++
+      const r = await sendReturnReminder(admin, user, data, now, { email: st.email_returns, push: st.push_returns })
+      if (r.email) returns++
+      if (r.push) returnPushes++
     } catch (e) {
       failures++
       console.error("[daily emails] failed for", user.id, e)
     }
   }
-  return { recaps, reminders, recapPushes, taxPushes, failures }
+  return { recaps, reminders, recapPushes, taxPushes, returns, returnPushes, failures }
 }
