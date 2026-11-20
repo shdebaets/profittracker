@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import {
-  estimatedTax, gapBreakdown, irsQuarters, taxReminderWindow, mileageLog, nextQuarter, periodReport, reconcile, salePlatform, scheduleC,
+  bracketFromIncome, estimatedTax, gapBreakdown, irsQuarters, taxReminderWindow, mileageLog, nextQuarter, periodReport, reconcile, salePlatform, scheduleC,
   taxSavings, yearPeriod, yearReport,
 } from "./tax"
 import type { CancelledSale, Expense, Item, Listing, Subscription } from "./types"
@@ -197,5 +197,32 @@ describe("1099-K gap: sales tax, refunds, cancelled sales", () => {
     const lines = scheduleC(r)
     expect(lines.find((l) => l.line === "2")!.cents).toBe(1000)
     expect(lines.find((l) => l.line === "7")!.cents).toBe(r.totals.gross - 1000 - r.totals.cogs)
+  })
+})
+
+describe("bracketFromIncome (2026 IRS tables)", () => {
+  const $ = (d: number) => d * 100
+  it("takes off the standard deduction first", () => {
+    expect(bracketFromIncome($(70_000), "single")).toMatchObject({ rate: 0.22, taxableCents: $(53_900) })
+    expect(bracketFromIncome($(70_000), "mfj")).toMatchObject({ rate: 0.12, taxableCents: $(37_800) })
+    expect(bracketFromIncome($(70_000), "hoh")).toMatchObject({ rate: 0.12, taxableCents: $(45_850) })
+  })
+  it("is 10% when income is under the standard deduction", () => {
+    expect(bracketFromIncome(0, "single")).toMatchObject({ rate: 0.1, taxableCents: 0 })
+    expect(bracketFromIncome($(10_000), "mfj")).toMatchObject({ rate: 0.1, taxableCents: 0 })
+  })
+  it("moves up only once taxable income is over a bracket start", () => {
+    const cases: [Parameters<typeof bracketFromIncome>[1], number, number[]][] = [
+      ["single", 16_100, [12_400, 50_400, 105_700, 201_775, 256_225, 640_600]],
+      ["mfj", 32_200, [24_800, 100_800, 211_400, 403_550, 512_450, 768_700]],
+      ["hoh", 24_150, [17_700, 67_450, 105_700, 201_750, 256_200, 640_600]],
+    ]
+    const rates = [0.1, 0.12, 0.22, 0.24, 0.32, 0.35, 0.37]
+    for (const [status, deduction, starts] of cases) {
+      starts.forEach((start, i) => {
+        expect(bracketFromIncome($(deduction + start), status).rate).toBe(rates[i])
+        expect(bracketFromIncome($(deduction + start) + 1, status).rate).toBe(rates[i + 1])
+      })
+    }
   })
 })

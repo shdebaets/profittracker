@@ -8,6 +8,7 @@ import { reportError, UserError } from "@/lib/errors"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { requireMember, requireUser } from "@/lib/supabase/server"
 import { mileageDeduction } from "@/lib/profit"
+import { bracketFromIncome } from "@/lib/tax"
 import { tripPush } from "@/lib/push/messages"
 import { pushToUser } from "@/lib/push/send"
 import { fail, type ActionResult } from "./result"
@@ -139,6 +140,9 @@ const settingsSchema = z.object({
   mileageRateCents: z.number().int().min(0).max(1000),
   defaultReturnDays: z.number().int().min(0).max(365),
   taxBracket: bracket,
+  /** Both set = work the bracket out from income on the server; otherwise taxBracket was picked by hand. */
+  taxFilingStatus: z.enum(["single", "mfj", "hoh"]).nullable().default(null),
+  taxIncomeCents: z.number().int().min(0).max(100_000_000_000).nullable().default(null),
   staleDays: z.union([z.literal(30), z.literal(45), z.literal(60), z.literal(90), z.literal(120)]),
   emailRecap: z.boolean(),
   emailTaxReminders: z.boolean(),
@@ -151,12 +155,15 @@ export async function saveSettings(input: z.input<typeof settingsSchema>): Promi
   try {
     const s = settingsSchema.parse(input)
     const { supabase, userId } = await requireUser()
+    const fromIncome = s.taxFilingStatus !== null && s.taxIncomeCents !== null
     const { error } = await supabase.from("settings").upsert({
       user_id: userId,
       mileage_rate_cents: s.mileageRateCents,
       default_return_days: s.defaultReturnDays,
-      tax_bracket: s.taxBracket,
+      tax_bracket: fromIncome ? bracketFromIncome(s.taxIncomeCents!, s.taxFilingStatus!).rate : s.taxBracket,
       tax_bracket_set: true,
+      tax_filing_status: fromIncome ? s.taxFilingStatus : null,
+      tax_income_cents: fromIncome ? s.taxIncomeCents : null,
       stale_days: s.staleDays,
       email_recap: s.emailRecap,
       email_tax_reminders: s.emailTaxReminders,
@@ -178,7 +185,7 @@ export async function saveTaxBracket(value: number): Promise<ActionResult> {
     const { supabase, userId } = await requireUser()
     const { data: existing } = await supabase.from("settings").select("user_id").maybeSingle()
     const { error } = existing
-      ? await supabase.from("settings").update({ tax_bracket: b, tax_bracket_set: true }).eq("user_id", userId)
+      ? await supabase.from("settings").update({ tax_bracket: b, tax_bracket_set: true, tax_filing_status: null, tax_income_cents: null }).eq("user_id", userId)
       : await supabase.from("settings").insert({ user_id: userId, tax_bracket: b, tax_bracket_set: true })
     if (error) throw error
     return done()

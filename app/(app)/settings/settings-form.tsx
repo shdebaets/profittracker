@@ -5,15 +5,24 @@ import { toast } from "sonner"
 import { saveSettings, sendTestRecap } from "@/app/(app)/actions/expenses"
 import { FieldLabel, MoneyInput, NativeSelect, Toggle } from "@/components/fields"
 import { PushToggle } from "@/components/push-toggle"
-import { centsToInput, toCents } from "@/lib/money"
+import { centsToInput, formatCents, toCents } from "@/lib/money"
 import { STALE_DAY_OPTIONS } from "@/lib/stale"
-import { TAX_BRACKETS } from "@/lib/tax"
+import { bracketFromIncome, FILING_STATUS_LABELS, FILING_STATUSES, TAX_BRACKETS, type FilingStatus } from "@/lib/tax"
 import type { Settings } from "@/lib/types"
+
+/** $70,000 rather than $70,000.00 for yearly income lines. */
+const dollars = (cents: number) => formatCents(Math.round(cents / 100) * 100).replace(/\.00$/, "")
 
 export function SettingsForm({ settings }: { settings: Settings }) {
   const [rate, setRate] = useState(centsToInput(settings.mileage_rate_cents))
   const [days, setDays] = useState(String(settings.default_return_days))
   const [bracket, setBracket] = useState(String(settings.tax_bracket))
+  // Existing sellers who picked a bracket by hand keep seeing it; everyone else starts from income.
+  const [manual, setManual] = useState(settings.tax_bracket_set && settings.tax_income_cents === null)
+  const [filing, setFiling] = useState<FilingStatus>(settings.tax_filing_status ?? "single")
+  const [income, setIncome] = useState(settings.tax_income_cents === null ? "" : centsToInput(settings.tax_income_cents))
+  const incomeCents = income.trim() === "" ? null : toCents(income)
+  const worked = incomeCents === null ? null : bracketFromIncome(incomeCents, filing)
   const [stale, setStale] = useState(String(settings.stale_days))
   const [recap, setRecap] = useState(settings.email_recap)
   const [taxMail, setTaxMail] = useState(settings.email_tax_reminders)
@@ -28,7 +37,7 @@ export function SettingsForm({ settings }: { settings: Settings }) {
       onSubmit={(e) => {
         e.preventDefault()
         startTransition(async () => {
-          const res = await saveSettings({ mileageRateCents: toCents(rate), defaultReturnDays: Number(days) || 0, taxBracket: Number(bracket), staleDays: Number(stale) as 30 | 45 | 60 | 90 | 120, emailRecap: recap, emailTaxReminders: taxMail, pushRecap: recapPush, pushTaxReminders: taxPush, emailAlerts: alerts })
+          const res = await saveSettings({ mileageRateCents: toCents(rate), defaultReturnDays: Number(days) || 0, taxBracket: Number(bracket), taxFilingStatus: manual || incomeCents === null ? null : filing, taxIncomeCents: manual ? null : incomeCents, staleDays: Number(stale) as 30 | 45 | 60 | 90 | 120, emailRecap: recap, emailTaxReminders: taxMail, pushRecap: recapPush, pushTaxReminders: taxPush, emailAlerts: alerts })
           if (res.ok) toast.success("Settings saved")
           else toast.error(res.error)
         })
@@ -48,17 +57,62 @@ export function SettingsForm({ settings }: { settings: Settings }) {
           className="h-12 w-full rounded-2xl border bg-muted/60 px-4 font-mono font-semibold outline-none"
         />
       </div>
-      <div>
-        <FieldLabel htmlFor="bracket">Federal Tax Bracket</FieldLabel>
-        <NativeSelect id="bracket" value={bracket} onChange={(e) => setBracket(e.target.value)}>
-          {TAX_BRACKETS.map((b) => (
-            <option key={b} value={String(b)}>{Math.round(b * 100)}%</option>
-          ))}
-        </NativeSelect>
-        <p className="mt-1 text-xs text-muted-foreground">
-          Used for your tax savings and quarterly estimates. {settings.tax_bracket_set ? "" : "Not sure? 22% is a common middle bracket."}
-        </p>
-      </div>
+      {manual ? (
+        <div>
+          <FieldLabel htmlFor="bracket">Federal Tax Bracket</FieldLabel>
+          <NativeSelect id="bracket" value={bracket} onChange={(e) => setBracket(e.target.value)}>
+            {TAX_BRACKETS.map((b) => (
+              <option key={b} value={String(b)}>{Math.round(b * 100)}%</option>
+            ))}
+          </NativeSelect>
+          <p className="mt-1 text-xs text-muted-foreground">Used for your tax savings and quarterly estimates.</p>
+          <button type="button" onClick={() => setManual(false)} className="mt-1 text-sm font-semibold text-brand">
+            Not sure? Work it out from my income
+          </button>
+        </div>
+      ) : (
+        <div className="flex flex-col gap-3">
+          <div>
+            <FieldLabel htmlFor="filing">Filing Status</FieldLabel>
+            <NativeSelect id="filing" value={filing} onChange={(e) => setFiling(e.target.value as FilingStatus)}>
+              {FILING_STATUSES.map((f) => (
+                <option key={f} value={f}>{FILING_STATUS_LABELS[f]}</option>
+              ))}
+            </NativeSelect>
+          </div>
+          <div>
+            <FieldLabel htmlFor="income">Expected Yearly Income</FieldLabel>
+            <MoneyInput id="income" value={income} onChange={setIncome} placeholder="0" />
+            <p className="mt-1 text-xs text-muted-foreground">
+              Your total income for the year before deductions: your job plus your reselling profit.{filing === "mfj" ? " Include your spouse's income." : ""}
+            </p>
+          </div>
+          <div className="rounded-2xl bg-muted/60 p-3">
+            {worked ? (
+              <>
+                <p className="text-sm font-semibold">Your federal bracket: <span className="font-mono">{Math.round(worked.rate * 100)}%</span></p>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  {dollars(incomeCents!)} minus the {dollars(worked.standardDeductionCents)} standard deduction = {dollars(worked.taxableCents)} taxable, using the 2026 IRS brackets. Used for your tax savings and quarterly estimates.
+                </p>
+              </>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                Enter your income to work out your bracket. Until then we use {Math.round(settings.tax_bracket * 100)}%.
+              </p>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              if (worked) setBracket(String(worked.rate))
+              setManual(true)
+            }}
+            className="self-start text-sm font-semibold text-brand"
+          >
+            Set bracket manually
+          </button>
+        </div>
+      )}
       <div>
         <FieldLabel htmlFor="stale">Stale Inventory Alert</FieldLabel>
         <NativeSelect id="stale" value={stale} onChange={(e) => setStale(e.target.value)}>

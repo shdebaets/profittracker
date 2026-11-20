@@ -6,6 +6,8 @@ export const DEFAULT_SETTINGS: Settings = {
   default_return_days: 90,
   tax_bracket: DEFAULT_TAX_BRACKET,
   tax_bracket_set: false,
+  tax_filing_status: null,
+  tax_income_cents: null,
   stale_days: 60,
   email_recap: true,
   email_tax_reminders: true,
