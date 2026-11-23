@@ -1,7 +1,7 @@
 import type { Metadata } from "next"
 import { ExternalLink } from "lucide-react"
 import Link from "next/link"
-import { Logo } from "@/components/logo"
+import { Logo, Wordmark } from "@/components/logo"
 import { EXTENSION_STORE_URL } from "@/lib/marketplaces/registry"
 
 export const metadata: Metadata = { title: "Chrome extension guide · FlipLedger" }
@@ -12,8 +12,8 @@ export const metadata: Metadata = { title: "Chrome extension guide · FlipLedger
 export default function ExtensionGuidePage() {
   return (
     <main className="mx-auto flex max-w-2xl flex-col gap-7 px-4 py-10 text-sm leading-relaxed">
-      <Link href="/" className="flex items-center gap-2 self-start font-bold">
-        <Logo size={32} /> FlipLedger
+      <Link href="/" className="flex items-center gap-2 self-start">
+        <Logo size={32} /> <Wordmark height={22} />
       </Link>
       <div className="flex flex-col gap-2">
         <h1 className="text-2xl font-bold tracking-tight">Post to Facebook, Poshmark and Mercari in a few clicks</h1>

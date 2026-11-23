@@ -26,11 +26,19 @@ const jetbrainsMono = localFont({
   display: "swap",
 })
 
+const DESCRIPTION = "Track resale revenue, profit, inventory and business expenses."
+
 export const metadata: Metadata = {
+  metadataBase: new URL(`https://${process.env.CANONICAL_HOST?.trim() || "profit.emoneydeals.com"}`),
   title: "FlipLedger",
-  description: "Track resale revenue, profit, inventory and business expenses.",
+  description: DESCRIPTION,
+  applicationName: "FlipLedger",
+  // The share image is app/opengraph-image.png (picked up automatically).
+  openGraph: { type: "website", siteName: "FlipLedger", title: "FlipLedger", description: DESCRIPTION },
+  twitter: { card: "summary_large_image", title: "FlipLedger", description: DESCRIPTION },
   appleWebApp: { capable: true, title: "FlipLedger", statusBarStyle: "default" },
-  icons: { apple: "/icons/apple-touch-icon.png" },
+  // Icons come from the file conventions: app/favicon.ico, app/icon.svg, app/icon.png, app/apple-icon.png.
+  // (Setting `icons` here would replace them, and the tab would fall back to the low-res favicon.ico.)
 }
 
 export const viewport: Viewport = {

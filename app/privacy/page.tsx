@@ -1,6 +1,6 @@
 import type { Metadata } from "next"
 import Link from "next/link"
-import { Logo } from "@/components/logo"
+import { Logo, Wordmark } from "@/components/logo"
 
 export const metadata: Metadata = { title: "Privacy policy · FlipLedger" }
 
@@ -9,8 +9,8 @@ export const metadata: Metadata = { title: "Privacy policy · FlipLedger" }
 export default function PrivacyPage() {
   return (
     <main className="mx-auto flex max-w-2xl flex-col gap-6 px-4 py-10 text-sm leading-relaxed">
-      <Link href="/" className="flex items-center gap-2 self-start font-bold">
-        <Logo size={32} /> FlipLedger
+      <Link href="/" className="flex items-center gap-2 self-start">
+        <Logo size={32} /> <Wordmark height={22} />
       </Link>
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Privacy policy</h1>
