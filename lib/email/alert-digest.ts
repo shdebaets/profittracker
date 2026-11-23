@@ -10,6 +10,7 @@ import { pushToUser } from "@/lib/push/send"
 import { soldMedians } from "@/lib/sold-medians"
 import { askingPrice, staleItems } from "@/lib/stale"
 import { loadUserData } from "./jobs"
+import { EMAIL_WORDMARK } from "./brand"
 import { APP_URL, sendEmail, unsubscribeUrl } from "./send"
 
 /** Monday (UTC) of the week `now` is in, as YYYY-MM-DD: the digest's once-a-week key. */
@@ -32,7 +33,7 @@ export function alertEmail(n: AlertCounts, top: { title: string; line: string }[
     subject: `${n.stale} stale, ${n.overpriced} overpriced: time to reprice?`,
     html: `<!doctype html><html><body style="margin:0;background:#f5f4f0;font-family:Inter,Arial,sans-serif;color:#1c1917">
 <div style="max-width:520px;padding:24px">
-<p style="font-weight:700;font-size:18px;margin:0 0 16px">Flip<span style="color:#f5982a">Ledger</span></p>
+${EMAIL_WORDMARK}
 <p style="font-size:20px;font-weight:700;margin:0">${esc(alertSummary(n))}.</p>
 <p style="margin:8px 0 16px;color:#57534e">A price drop gets stale stock moving, and pricing near what it sells for gets it seen. One tap reprices them everywhere they're listed.</p>
 ${rows ? `<table style="width:100%;border-collapse:collapse;font-size:14px">${rows}</table>` : ""}

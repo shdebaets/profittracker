@@ -1,15 +1,13 @@
 import Link from "next/link"
 import { HeaderActions } from "@/components/header-actions"
-import { Logo } from "@/components/logo"
+import { Logo, Wordmark } from "@/components/logo"
 
 export function AppHeader() {
   return (
     <header className="flex items-center justify-between pt-safe">
       <Link href="/" className="flex items-center gap-2.5 pt-4">
         <Logo size={40} />
-        <span className="font-heading text-xl font-bold tracking-tight">
-          Flip<span className="text-brand">Ledger</span>
-        </span>
+        <Wordmark height={24} heightClass="h-5 sm:h-6" />
       </Link>
       <div className="pt-4">
         <HeaderActions />

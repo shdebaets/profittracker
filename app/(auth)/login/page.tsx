@@ -1,4 +1,4 @@
-import { Logo } from "@/components/logo"
+import { Logo, Wordmark } from "@/components/logo"
 import { whopConfig } from "@/lib/whop/config"
 import { LoginForm } from "./login-form"
 
@@ -23,9 +23,7 @@ export default async function LoginPage({ searchParams }: PageProps<"/login">) {
       <main className="relative mx-auto flex min-h-dvh max-w-md flex-col justify-center gap-8 px-6 py-12">
         <div className="flex flex-col items-center gap-4 text-center">
           <Logo size={64} />
-          <p className="font-heading text-2xl font-bold tracking-tight">
-            Flip<span className="text-brand">Ledger</span>
-          </p>
+          <Wordmark height={30} />
           <h1 className="text-[2.6rem] leading-[0.95] font-bold tracking-[-0.045em] text-white">
             Know every
             <br />

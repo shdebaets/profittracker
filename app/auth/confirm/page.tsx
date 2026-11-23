@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation"
-import { Logo } from "@/components/logo"
+import { Logo, Wordmark } from "@/components/logo"
 import { confirmEmail } from "./actions"
 import { ConfirmButton } from "./confirm-button"
 
@@ -11,8 +11,8 @@ export default async function ConfirmPage({ searchParams }: PageProps<"/auth/con
     <main className="mx-auto flex min-h-dvh max-w-md flex-col justify-center gap-8 px-6 py-12">
       <div className="flex flex-col items-center gap-3 text-center">
         <Logo size={64} />
-        <h1 className="text-3xl font-bold tracking-tight">
-          Flip<span className="text-brand">Ledger</span>
+        <h1>
+          <Wordmark height={36} />
         </h1>
         <p className="text-muted-foreground">Tap Continue to finish signing in.</p>
       </div>

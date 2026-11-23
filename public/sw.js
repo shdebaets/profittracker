@@ -1,6 +1,6 @@
 // FlipLedger service worker: caches the app shell and static assets so the
 // app opens offline. Data always comes from the network.
-const VERSION = "v2"
+const VERSION = "v3" // bump when cached files under /icons/ change (v3: new logo, Nov 2026)
 const STATIC = `static-${VERSION}`
 const PAGES = `pages-${VERSION}`
 const OFFLINE_URL = "/offline.html"

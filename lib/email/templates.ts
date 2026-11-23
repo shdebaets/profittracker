@@ -3,13 +3,14 @@ import { formatCents } from "@/lib/money"
 import type { WeekNumbers } from "@/lib/recap"
 import { dayWord, type ReturnDue } from "@/lib/returns/reminders"
 import { TAX_DISCLAIMER } from "@/lib/tax"
+import { EMAIL_WORDMARK } from "./brand"
 
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!)
 
 function layout(body: string, unsubscribe: string) {
   return `<!doctype html><html><body style="margin:0;background:#f5f4f0;font-family:Inter,Arial,sans-serif;color:#1c1917">
 <div style="max-width:520px;padding:24px">
-<p style="font-weight:700;font-size:18px;margin:0 0 16px">Flip<span style="color:#f5982a">Ledger</span></p>
+${EMAIL_WORDMARK}
 ${body}
 <p style="font-size:12px;color:#78716c;margin-top:32px">You get this because you use FlipLedger. <a href="${unsubscribe}" style="color:#78716c">Unsubscribe</a></p>
 </div></body></html>`
