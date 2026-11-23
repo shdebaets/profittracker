@@ -11,7 +11,7 @@ export function MembershipBanner() {
       <Lock className="mt-0.5 size-4 shrink-0 text-brand" />
       <span className="min-w-0">
         <b>View-only.</b> You can see and export your history. Get a FlipLedger membership to add items, log sales and
-        cross-list. <span className="font-semibold underline">See plans</span>
+        cross-list. <span className="font-semibold underline">How to get access</span>
       </span>
     </Link>
   )

@@ -17,7 +17,7 @@ export function CrosslistUpsell({ compact = false }: { compact?: boolean }) {
         href="/crosslister"
         className="flex h-11 items-center justify-center rounded-2xl bg-primary font-semibold text-primary-foreground"
       >
-        See plans
+        How to get access
       </Link>
     </div>
   )

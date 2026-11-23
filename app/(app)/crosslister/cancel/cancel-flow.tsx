@@ -1,6 +1,6 @@
 "use client"
 
-import { Car, CirclePause, Package, PiggyBank, Receipt, Share2 } from "lucide-react"
+import { Car, MessageCircle, Package, PiggyBank, Receipt } from "lucide-react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useState, useTransition } from "react"
@@ -8,7 +8,7 @@ import { toast } from "sonner"
 import { NativeSelect } from "@/components/fields"
 import { formatDate } from "@/lib/dates"
 import { formatCents } from "@/lib/money"
-import { cancelCrosslister, takeHalfOff } from "../actions"
+import { cancelCrosslister } from "../actions"
 
 type Stats = { savings: number; year: number; miles: number; expenseCents: number; items: number; liveListings: number }
 
@@ -23,11 +23,10 @@ const REASONS = [
 ]
 
 export function CancelFlow({
-  stats, plan, renewsAt, annualUrl, halfOff,
-}: { stats: Stats; plan: string; renewsAt: string | null; annualUrl: string; halfOff: boolean }) {
+  stats, renewsAt,
+}: { stats: Stats; renewsAt: string | null }) {
   const router = useRouter()
   const [pending, start] = useTransition()
-  const [months, setMonths] = useState("1")
   const [step, setStep] = useState<"offers" | "confirm">("offers")
   const [reason, setReason] = useState("")
   const ends = renewsAt ? formatDate(renewsAt) : "the end of this billing period"
@@ -81,42 +80,13 @@ export function CancelFlow({
 
       {step === "offers" ? (
         <>
-          {halfOff && plan === "monthly" && (
-            <section className="flex flex-col gap-3 rounded-3xl border bg-card p-5">
-              <p className="flex items-center gap-2 font-bold"><CirclePause className="size-5 text-brand" /> Take a break at half price</p>
-              <p className="text-sm text-muted-foreground">
-                Pay 50% for up to 3 months and keep everything working. Full price comes back on its own after that.
-              </p>
-              <div className="flex gap-2">
-                <NativeSelect value={months} onChange={(e) => setMonths(e.target.value)} className="w-36" aria-label="How many months">
-                  <option value="1">1 month</option>
-                  <option value="2">2 months</option>
-                  <option value="3">3 months</option>
-                </NativeSelect>
-                <button
-                  disabled={pending}
-                  onClick={() =>
-                    run(() => takeHalfOff(Number(months)), `Half price for your next ${months === "1" ? "month" : `${months} months`}`)
-                  }
-                  className="h-12 flex-1 rounded-2xl bg-brand font-bold text-ink disabled:opacity-60"
-                >
-                  Pay half price
-                </button>
-              </div>
-            </section>
-          )}
-
-          {annualUrl && plan === "monthly" && (
-            <section className="flex flex-col gap-3 rounded-3xl border bg-card p-5">
-              <p className="flex items-center gap-2 font-bold"><Share2 className="size-5 text-brand" /> Go yearly and save $60</p>
-              <p className="text-sm text-muted-foreground">
-                $300 a year instead of $360. Your monthly plan stops renewing automatically once you switch.
-              </p>
-              <a href={annualUrl} className="flex h-12 items-center justify-center rounded-2xl bg-ink font-bold text-white">
-                Switch to yearly
-              </a>
-            </section>
-          )}
+          {/* Offers here used to quote prices; sales and save offers now go through account managers (row 30). */}
+          <section className="flex flex-col gap-2 rounded-3xl border bg-card p-5">
+            <p className="flex items-center gap-2 font-bold"><MessageCircle className="size-5 text-brand" /> Talk to us first</p>
+            <p className="text-sm text-muted-foreground">
+              If something isn&apos;t working for you, your account manager can help. Message them or your ticket before you go.
+            </p>
+          </section>
 
           <div className="flex flex-col gap-2">
             <Link href="/crosslister" className="flex h-12 items-center justify-center rounded-2xl bg-profit font-bold text-white">

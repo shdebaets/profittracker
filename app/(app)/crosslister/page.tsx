@@ -4,8 +4,7 @@ import { PageTitle } from "@/components/app-header"
 import { formatDate } from "@/lib/dates"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { isMember, requireUser } from "@/lib/supabase/server"
-import { YearlyPlanBanner } from "@/components/yearly-plan-banner"
-import { billingState, showYearlyBanner } from "@/lib/whop/billing"
+import { billingState } from "@/lib/whop/billing"
 import { MANAGE_BILLING_URL, whopConfig } from "@/lib/whop/config"
 import { RecheckButton } from "./recheck-button"
 import { ResumeButton } from "./resume-button"
@@ -30,7 +29,7 @@ const WHOP_ERRORS: Record<string, string> = {
 export default async function CrosslisterPage({ searchParams }: PageProps<"/crosslister">) {
   const [{ userId }, unlocked, { whop_error }] = await Promise.all([requireUser(), isMember(), searchParams])
   const whopError = typeof whop_error === "string" ? (WHOP_ERRORS[whop_error] ?? WHOP_ERRORS.whop) : null
-  const { checkoutUrl, annualUrl, clientId } = whopConfig()
+  const { clientId } = whopConfig()
   // whop_links is service-role only; scoped to this user.
   const { data: link } = await createAdminClient()
     .from("whop_links")
@@ -41,13 +40,12 @@ export default async function CrosslisterPage({ searchParams }: PageProps<"/cros
 
   return (
     <>
-      <PageTitle title="Membership" subtitle="Everything in FlipLedger, one plan" />
+      <PageTitle title="Membership" subtitle="Everything in FlipLedger" />
       {whopError && (
         <p role="alert" className="rounded-2xl border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">
           {whopError}
         </p>
       )}
-      {showYearlyBanner(billing, annualUrl, new Date()) && <YearlyPlanBanner annualUrl={annualUrl} />}
       <div className="flex flex-col gap-4 rounded-3xl border bg-card p-5">
         <span className="flex size-11 items-center justify-center rounded-2xl bg-brand-soft">
           <Share2 className="size-5 text-brand" />
@@ -70,20 +68,11 @@ export default async function CrosslisterPage({ searchParams }: PageProps<"/cros
           </>
         ) : (
           <>
-            {checkoutUrl ? (
-              <div className="grid gap-2">
-                <a href={checkoutUrl} className="flex h-12 items-center justify-center rounded-2xl bg-brand font-bold text-ink">
-                  Get FlipLedger · $30/month
-                </a>
-                {annualUrl && (
-                  <a href={annualUrl} className="flex h-12 items-center justify-center rounded-2xl border font-semibold">
-                    Or $300/year (2 months free)
-                  </a>
-                )}
-              </div>
-            ) : (
-              <p className="text-center text-sm text-muted-foreground">Memberships open soon.</p>
-            )}
+            {/* No self-serve checkout and no prices: account managers sell FlipLedger (tracker row 30, Nov 2026). */}
+            <p className="rounded-2xl bg-brand-soft px-4 py-3 text-sm">
+              Your eMoney account manager sets up FlipLedger with you. To get access, reach out to your account manager or
+              message in your ticket.
+            </p>
             {!billing.linked && clientId ? (
               <a href="/auth/whop/start" className="flex h-12 items-center justify-center rounded-2xl border font-semibold">
                 Already bought it? Connect your Whop account
@@ -119,7 +108,7 @@ export default async function CrosslisterPage({ searchParams }: PageProps<"/cros
           )}
           {billing.canceling && (
             <p className="text-xs text-muted-foreground">
-              Changed your mind? Buy again any time from this page. Your history stays in FlipLedger, and you can still view and export it.
+              Changed your mind? Reach out to your account manager or message in your ticket. Your history stays in FlipLedger, and you can still view and export it.
             </p>
           )}
         </div>
