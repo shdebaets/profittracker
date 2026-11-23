@@ -77,11 +77,6 @@ export function cancelMembership(id: string, reason: string) {
   })
 }
 
-/** Apply a promo code (one of WHOP_HALF_OFF_CODES) to the membership's next renewals. */
-export function applyPromo(id: string, code: string) {
-  return whop(`/memberships/${encodeURIComponent(id)}/apply_promo_code`, { method: "POST", body: { promo_code: code } })
-}
-
 export type BillingState =
   | { linked: false }
   | {
@@ -128,15 +123,4 @@ export async function billingState(whopUserId: string | null): Promise<BillingSt
     console.error("[whop billing] read failed", e)
     return { ...empty, error: true }
   }
-}
-
-/** October through March: year end and tax season, when paying for a year up front is the easiest yes. Pure. */
-export function yearlySeason(now: Date): boolean {
-  const m = now.getMonth()
-  return m >= 9 || m <= 2
-}
-
-/** The seasonal "go yearly" banner: monthly members (not on a pause), in season, with a yearly checkout link. Pure. */
-export function showYearlyBanner(b: BillingState, annualUrl: string, now: Date): boolean {
-  return Boolean(annualUrl) && yearlySeason(now) && b.linked && b.plan === "monthly" && !b.paused
 }

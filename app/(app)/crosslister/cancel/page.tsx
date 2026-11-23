@@ -5,7 +5,6 @@ import { createAdminClient } from "@/lib/supabase/admin"
 import { requireUser } from "@/lib/supabase/server"
 import { periodReport, taxSavings, yearPeriod } from "@/lib/tax"
 import { billingState } from "@/lib/whop/billing"
-import { whopConfig } from "@/lib/whop/config"
 import { CancelFlow } from "./cancel-flow"
 
 export default async function CancelPage() {
@@ -29,7 +28,6 @@ export default async function CancelPage() {
     return t >= period.from && t < period.to
   }).length
   const liveListings = items.reduce((a, i) => a + i.listings.filter((l) => l.status === "active").length, 0)
-  const { annualUrl, halfOffCodes } = whopConfig()
 
   return (
     <>
@@ -43,10 +41,7 @@ export default async function CancelPage() {
           items: itemsThisYear,
           liveListings,
         }}
-        plan={billing.plan}
         renewsAt={billing.renewsAt}
-        annualUrl={billing.plan === "monthly" ? annualUrl : ""}
-        halfOff={halfOffCodes.length > 0}
       />
     </>
   )

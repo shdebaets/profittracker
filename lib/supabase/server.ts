@@ -39,7 +39,7 @@ export const isMember = cache(async () => {
 })
 
 export const MEMBERSHIP_LOCKED =
-  "Your FlipLedger membership isn't active, so you can view and export your history but not change it. Renew in Settings → Membership."
+  "Your FlipLedger membership isn't active, so you can view and export your history but not change it. To renew, reach out to your account manager or message in your ticket."
 
 /**
  * requireUser plus an active membership. FlipLedger is paid: without one, people can only view and

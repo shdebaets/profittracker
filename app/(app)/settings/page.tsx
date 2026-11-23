@@ -45,7 +45,7 @@ export default async function SettingsPage({ searchParams }: PageProps<"/setting
       <Link href="/crosslister" className="rounded-3xl border bg-card p-5 text-sm">
         <span className="font-semibold">Membership</span>
         <span className="mt-1 block text-muted-foreground">
-          {crosslist ? "Active. Manage it or your billing →" : "View-only right now. See plans →"}
+          {crosslist ? "Active. Manage it or your billing →" : "View-only right now. How to get access →"}
         </span>
       </Link>
       <SettingsForm settings={settings} />
