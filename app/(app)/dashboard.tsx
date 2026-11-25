@@ -5,6 +5,7 @@ import Link from "next/link"
 import { useState } from "react"
 import { PageTitle } from "@/components/app-header"
 import { DelistAlerts } from "@/components/crosslist/delist-alerts"
+import { InstallAppCard } from "@/components/install-app-card"
 import { useEntry, useSyncItems } from "@/components/entry/entry-provider"
 import { Segmented } from "@/components/fields"
 import { StatCard } from "@/components/stat-card"
@@ -45,6 +46,8 @@ export function Dashboard({
           <Plus className="size-5" /> New Entry
         </button>
       </PageTitle>
+
+      <InstallAppCard where="home" />
 
       <DelistAlerts items={items} />
 

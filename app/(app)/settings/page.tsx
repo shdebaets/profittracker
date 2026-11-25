@@ -8,6 +8,7 @@ import { createAdminClient } from "@/lib/supabase/admin"
 import { isMember, requireUser } from "@/lib/supabase/server"
 import { CrosslistUpsell } from "@/components/crosslist/crosslist-upsell"
 import { BacklogImport } from "@/components/backlog/backlog-import"
+import { InstallAppCard } from "@/components/install-app-card"
 import { MarketplacesSettings } from "./marketplaces"
 import { SettingsForm } from "./settings-form"
 import { SmartOffers, type OfferLog, type OfferRuleRow } from "./smart-offers"
@@ -35,6 +36,7 @@ export default async function SettingsPage({ searchParams }: PageProps<"/setting
   return (
     <>
       <PageTitle title="Settings" subtitle="Account, tax rates & preferences" />
+      <InstallAppCard where="settings" />
       <p className="flex items-center gap-2 rounded-2xl border border-profit/30 bg-profit-soft px-4 py-3 text-sm">
         <Cloud className="size-4 shrink-0 text-profit" />
         <span className="truncate">
@@ -62,12 +64,6 @@ export default async function SettingsPage({ searchParams }: PageProps<"/setting
         <CrosslistUpsell />
       )}
       {crosslist && <SmartOffers rule={offerRule} log={(offerLog ?? []) as OfferLog[]} report={offerReport(offerTotals ?? [])} ebayConnected={ebayConnected} />}
-      <div className="rounded-3xl border bg-card p-5 text-sm text-muted-foreground">
-        <p className="font-semibold text-foreground">Install on Your Phone</p>
-        <p className="mt-1">
-          iPhone: tap <b>Share</b> → <b>Add to Home Screen</b>. Android: tap the menu → <b>Install app</b>.
-        </p>
-      </div>
       <form action="/auth/signout" method="post">
         <button className="h-12 w-full rounded-2xl border bg-card font-semibold text-destructive">Sign out</button>
       </form>
