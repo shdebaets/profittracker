@@ -16,7 +16,8 @@ import { AD_RATE_DEFAULT, AD_RATE_MAX, AD_RATE_MIN, canPromote, normalizeAdRate,
 import { getUserToken, requireUserToken } from "@/lib/marketplaces/ebay/oauth"
 import { promoteListing } from "@/lib/marketplaces/ebay/promote"
 import { createPolicies, ensureLocation, loadPolicies, saveSettings } from "@/lib/marketplaces/ebay/setup"
-import { syncEbaySales } from "@/lib/marketplaces/ebay/sync"
+import { HISTORY_BATCH } from "@/lib/marketplaces/ebay/history"
+import { planEbayHistoryFor, recordUntrackedLine, syncEbaySales } from "@/lib/marketplaces/ebay/sync"
 import { checkPoshmarkListings } from "@/lib/marketplaces/assisted-sync"
 import { marketplace, type MarketplaceId } from "@/lib/marketplaces/registry"
 import { photoLink } from "@/lib/photo-links"
@@ -375,34 +376,105 @@ export async function promoteEbayListing(listingId: string, rate: number): Promi
   }
 }
 
+/** What "Sync sales now" says about eBay; null when eBay isn't connected or was skipped as fresh. */
+export type EbaySyncInfo = { since: string | null; connectedAt: string } | null
+
 /**
  * Pull new sales now: eBay through its API, Poshmark by reading its public listing pages.
- * `ifOlderThanMs` lets the app call this cheaply on open. `sales` counts eBay; `poshmark` is what
- * changed there. Mercari can't be read from a server, so the extension checks it (checkExtensionSales).
+ * `ifOlderThanMs` lets the app call this cheaply on open (0 = the manual "Sync sales now").
+ * `sales` counts eBay; `poshmark` is what changed there. Mercari can't be read from a server,
+ * so the extension checks it (checkExtensionSales). Every call logs one line (row 81).
  */
-export async function syncSales(ifOlderThanMs = 0): Promise<Result<{ sales: number; poshmark: SaleCheckOutcome }>> {
+export async function syncSales(
+  ifOlderThanMs = 0,
+): Promise<Result<{ sales: number; poshmark: SaleCheckOutcome; ebay: EbaySyncInfo }>> {
+  const kind = ifOlderThanMs ? "auto" : "manual"
+  let userId: string | null = null
   try {
-    const { supabase, userId } = await requireMember()
+    const member = await requireMember()
+    userId = member.userId
     const admin = createAdminClient()
 
     let poshmark: SaleCheckOutcome = { sales: [], delisted: 0 }
     try {
-      poshmark = await checkPoshmarkListings(supabase, admin, { staleMs: Math.max(ifOlderThanMs, 60_000), limit: 50 })
+      poshmark = await checkPoshmarkListings(member.supabase, admin, { staleMs: Math.max(ifOlderThanMs, 60_000), limit: 50 })
     } catch (e) {
       reportError(e, "poshmark check") // Don't let this stop the eBay sync.
     }
 
     let sales = 0
-    const { data: conn } = await supabase
+    let ebay: EbaySyncInfo = null
+    const { data: conn } = await member.supabase
       .from("marketplace_connections")
-      .select("last_synced_at")
+      .select("last_synced_at, created_at")
       .eq("marketplace", "ebay")
       .maybeSingle()
     const fresh = ifOlderThanMs && conn?.last_synced_at && Date.now() - new Date(conn.last_synced_at).getTime() < ifOlderThanMs
-    if (conn && !fresh) sales = (await syncEbaySales(admin, userId)).sales
+    if (conn && !fresh) {
+      sales = (await syncEbaySales(admin, userId)).sales
+      ebay = { since: conn.last_synced_at, connectedAt: conn.created_at }
+    }
 
     if (sales || poshmark.sales.length || poshmark.delisted) revalidatePath("/", "layout")
-    return { ok: true, data: { sales, poshmark } }
+    if (kind === "manual" || sales) {
+      console.log("[sync-sales]", JSON.stringify({ kind, userId, ebayConnected: !!conn, ebaySales: sales, poshmarkSales: poshmark.sales.length }))
+    }
+    return { ok: true, data: { sales, poshmark, ebay } }
+  } catch (e) {
+    const res = fail(e) as { ok: false; error: string }
+    console.log("[sync-sales]", JSON.stringify({ kind, userId, error: res.error }))
+    // A refused eBay refresh just flagged the account; let Settings and the dashboard show it.
+    if (userId) revalidatePath("/", "layout")
+    return res
+  }
+}
+
+export type EbayHistoryPreview = {
+  /** Oldest date the import reads (about 90 days back, eBay's limit). */
+  from: string
+  /** eBay sale lines found in that window. */
+  found: number
+  create: number
+  recorded: number
+  tracked: number
+  likelyLogged: number
+}
+
+/** "Bring in past eBay sales": say what importing the last ~90 days would do. Saves nothing. */
+export async function previewEbayHistory(): Promise<Result<EbayHistoryPreview>> {
+  try {
+    const { userId } = await requireMember()
+    const { since, plan, found } = await planEbayHistoryFor(createAdminClient(), userId)
+    console.log("[ebay-history]", JSON.stringify({ step: "preview", userId, found, create: plan.create.length, likelyLogged: plan.likelyLogged.length }))
+    return {
+      ok: true,
+      data: {
+        from: since.toISOString(), found, create: plan.create.length, recorded: plan.recorded,
+        tracked: plan.tracked, likelyLogged: plan.likelyLogged.length,
+      },
+    }
+  } catch (e) {
+    return fail(e) as { ok: false; error: string }
+  }
+}
+
+/**
+ * Record past eBay sales as sold items marked Add cost, HISTORY_BATCH at a time (call again
+ * while `remaining` > 0). Re-plans on the server each time, and every line is claimed in
+ * marketplace_sales first, so a repeat or a second tab never adds a sale twice.
+ */
+export async function importEbayHistory(): Promise<Result<{ created: number; remaining: number }>> {
+  try {
+    const { userId } = await requireMember()
+    const admin = createAdminClient()
+    const { plan } = await planEbayHistoryFor(admin, userId)
+    const batch = plan.create.slice(0, HISTORY_BATCH)
+    let created = 0
+    for (const line of batch) if (await recordUntrackedLine(admin, userId, line)) created++
+    const remaining = plan.create.length - batch.length
+    console.log("[ebay-history]", JSON.stringify({ step: "import", userId, created, remaining }))
+    if (created) revalidatePath("/", "layout")
+    return { ok: true, data: { created, remaining } }
   } catch (e) {
     return fail(e) as { ok: false; error: string }
   }

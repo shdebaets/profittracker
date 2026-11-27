@@ -85,3 +85,7 @@ export async function ebayFetch<T = unknown>(
   }
   return json as T
 }
+
+/** eBay refused this seller's refresh token (expired, revoked, or issued to another app): only reconnecting fixes it. */
+export const isDeadRefreshToken = (e: unknown) =>
+  e instanceof EbayError && e.status === 400 && /invalid_grant|refresh token/i.test(e.message)
