@@ -95,6 +95,9 @@ export type MarketplaceConnection = {
   settings: EbaySettings
   last_synced_at: string | null
   scopes: string[] | null
+  created_at: string
+  /** Set when eBay refused a token refresh (row 81); cleared on reconnect. */
+  reconnect_needed_at: string | null
 }
 
 export type EbayPolicy = { id: string; name: string }

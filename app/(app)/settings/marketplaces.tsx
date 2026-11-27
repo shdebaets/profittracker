@@ -1,15 +1,19 @@
 "use client"
 
-import { ExternalLink, Link2, Loader2, RefreshCw, Sparkles } from "lucide-react"
+import { AlertTriangle, ExternalLink, History, Link2, Loader2, RefreshCw, Sparkles } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { useEffect, useState, useSyncExternalStore, useTransition } from "react"
 import { toast } from "sonner"
-import { createEbayPolicies, disconnectEbay, refreshEbayPolicies, saveEbaySettings, syncSales } from "@/app/(app)/actions/crosslist"
+import {
+  createEbayPolicies, disconnectEbay, importEbayHistory, previewEbayHistory, refreshEbayPolicies, saveEbaySettings, syncSales,
+  type EbayHistoryPreview,
+} from "@/app/(app)/actions/crosslist"
 import { checkExtensionSales } from "@/components/crosslist/auto-sync"
 import { ImportListings } from "@/components/crosslist/import-listings"
 import { ImportSales } from "@/components/crosslist/import-sales"
 import { FieldLabel, MoneyInput, NativeSelect, Segmented, TextInput, Toggle } from "@/components/fields"
-import { relativeTime } from "@/lib/dates"
+import { formatDate, relativeTime } from "@/lib/dates"
+import { noNewEbaySalesMessage } from "@/lib/marketplaces/ebay/history"
 import { autoDelistEnabled, autoPublishEnabled, setAutoDelist, setAutoPublish, useExtension } from "@/lib/extension"
 import {
   AD_RATE_DEFAULT, AD_RATE_MAX, AD_RATE_MIN, canPromote, missingPolicies, normalizeAdRate, setupGaps,
@@ -66,7 +70,9 @@ export function MarketplacesSettings({
             </p>
             <p className="text-xs text-muted-foreground">
               {ebay
-                ? ebay.last_synced_at
+                ? ebay.reconnect_needed_at
+                  ? "Connection expired. Sales aren't syncing"
+                  : ebay.last_synced_at
                   ? `Sales synced ${relativeTime(ebay.last_synced_at)}`
                   : "Sales not synced yet"
                 : "Lists and ends listings automatically, and imports sales"}
@@ -87,6 +93,10 @@ export function MarketplacesSettings({
           >
             <Link2 className="size-4" /> Connect eBay
           </a>
+        )}
+        {ebay?.reconnect_needed_at && <EbayReconnect configured={configured} since={ebay.reconnect_needed_at} />}
+        {ebay && !ebay.reconnect_needed_at && (
+          <EbayHistoryImport autoPreview={connectStatus === "connected" && !ebay.last_synced_at} />
         )}
         {ebay && (
           // Remount when policies change so the dropdowns pick up ones we just created.
@@ -200,6 +210,7 @@ function PolicySelect({ label, list, value, onChange }: { label: string; list: E
 }
 
 function EbaySetup({ ebay, policiesUrl }: { ebay: MarketplaceConnection; policiesUrl: string }) {
+  const router = useRouter()
   const s = ebay.settings ?? {}
   const [f, setF] = useState(s.fulfillmentPolicyId ?? "")
   const [p, setP] = useState(s.paymentPolicyId ?? "")
@@ -271,9 +282,14 @@ function EbaySetup({ ebay, policiesUrl }: { ebay: MarketplaceConnection; policie
               const res = await syncSales()
               if (res.ok) {
                 const n = res.data.sales + res.data.poshmark.sales.length
-                toast.success(n ? `${n} new sale${n === 1 ? "" : "s"} synced` : "No new sales")
+                const eb = res.data.ebay
+                if (n) toast.success(`${n} new sale${n === 1 ? "" : "s"} synced`)
+                else if (eb) toast.info(noNewEbaySalesMessage(eb.since, eb.connectedAt, formatDate), { duration: 12_000 })
+                else toast.success("No new sales")
+              } else {
+                toast.error(res.error)
+                router.refresh() // an expired eBay link now shows on the card
               }
-              else toast.error(res.error)
               await checkExtensionSales()
             })
           }
@@ -438,6 +454,121 @@ function PolicyStarter({ settings }: { settings: MarketplaceConnection["settings
       >
         {pending && <Loader2 className="size-4 animate-spin" />} Create on eBay
       </button>
+    </div>
+  )
+}
+
+/** Row 81: eBay refused a token refresh, so nothing syncs until the seller reconnects. */
+function EbayReconnect({ configured, since }: { configured: boolean; since: string }) {
+  return (
+    <div className="mt-3 flex flex-col gap-3 rounded-xl border border-loss/40 bg-loss/10 p-3 text-sm">
+      <p className="flex items-start gap-2">
+        <AlertTriangle className="mt-0.5 size-4 shrink-0 text-loss" />
+        <span>
+          <b>Your eBay connection expired</b> ({formatDate(since)}). FlipLedger can&apos;t bring in your eBay sales or end
+          listings until you reconnect. Your data is safe.
+        </span>
+      </p>
+      <a
+        href={configured ? "/api/marketplaces/ebay/connect" : undefined}
+        className="flex h-11 items-center justify-center gap-1.5 rounded-xl bg-blue-600 font-bold text-white"
+      >
+        <Link2 className="size-4" /> Reconnect eBay
+      </a>
+    </div>
+  )
+}
+
+/**
+ * Row 81: the regular sync only reads eBay orders made after the seller connected, so older
+ * sales never came in. This reads the last ~90 days (eBay's limit), shows what it found, and
+ * records the new ones marked Add cost. Opens by itself right after connecting eBay.
+ */
+function EbayHistoryImport({ autoPreview }: { autoPreview: boolean }) {
+  const router = useRouter()
+  const [busy, setBusy] = useState<string | null>(null)
+  const [preview, setPreview] = useState<EbayHistoryPreview | null>(null)
+
+  async function find() {
+    setBusy("Reading your eBay sales from the last 90 days…")
+    const res = await previewEbayHistory()
+    setBusy(null)
+    if (!res.ok) {
+      toast.error(res.error)
+      return router.refresh()
+    }
+    setPreview(res.data)
+  }
+
+  useEffect(() => {
+    if (!autoPreview) return
+    // Right after connecting: look once, after this render.
+    const t = setTimeout(() => void find(), 0)
+    return () => clearTimeout(t)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoPreview])
+
+  async function record() {
+    if (!preview) return
+    let created = 0
+    for (;;) {
+      setBusy(`Bringing in sales… ${created} of ${preview.create}`)
+      const res = await importEbayHistory()
+      if (!res.ok) {
+        setBusy(null)
+        return void toast.error(`${res.error}${created ? ` (${created} brought in before that)` : ""}`)
+      }
+      created += res.data.created
+      if (!res.data.remaining || !res.data.created) break
+    }
+    setBusy(null)
+    setPreview(null)
+    toast.success(`Brought in ${created} eBay sale${created === 1 ? "" : "s"}.${created ? " Add what you paid under Inventory › Needs Cost." : ""}`)
+    router.refresh()
+  }
+
+  const btn = "flex h-11 items-center justify-center gap-1.5 rounded-xl px-4 text-sm font-bold disabled:opacity-60"
+  return (
+    <div className="mt-3 flex flex-col gap-3 rounded-xl border border-blue-600/30 bg-blue-600/5 p-3 text-sm">
+      <div>
+        <p className="flex items-center gap-1.5 font-semibold"><History className="size-4 text-blue-600" /> Bring in past eBay sales</p>
+        <p className="text-xs text-muted-foreground">
+          Sync brings in eBay sales made after you connected eBay. This reads the last 90 days (as far back as eBay allows)
+          and adds the ones FlipLedger doesn&apos;t have yet, marked Add cost.
+        </p>
+      </div>
+      {busy ? (
+        <p className="flex items-center gap-2 text-muted-foreground"><Loader2 className="size-4 animate-spin" /> {busy}</p>
+      ) : preview ? (
+        <div className="flex flex-col gap-2">
+          <p>
+            Found <b>{preview.found}</b> eBay sale{preview.found === 1 ? "" : "s"} since {formatDate(preview.from)}.{" "}
+            {preview.create ? <><b>{preview.create}</b> {preview.create === 1 ? "is" : "are"} new to FlipLedger.</> : "Nothing new to bring in."}
+          </p>
+          {(preview.recorded > 0 || preview.tracked > 0) && (
+            <p className="text-xs text-muted-foreground">{preview.recorded + preview.tracked} already in FlipLedger.</p>
+          )}
+          {preview.likelyLogged > 0 && (
+            <p className="text-xs text-muted-foreground">
+              {preview.likelyLogged} look like sales you already logged yourself (same price within 3 days), so they&apos;re left out.
+            </p>
+          )}
+          <div className="flex gap-2">
+            {preview.create > 0 && (
+              <button onClick={record} className={cn(btn, "flex-1 bg-blue-600 text-white")}>
+                Bring in {preview.create} sale{preview.create === 1 ? "" : "s"}
+              </button>
+            )}
+            <button onClick={() => setPreview(null)} className={cn(btn, "border bg-card", preview.create === 0 && "flex-1")}>
+              {preview.create ? "Not now" : "OK"}
+            </button>
+          </div>
+        </div>
+      ) : (
+        <button onClick={find} className={cn(btn, "border bg-card")}>
+          <History className="size-4" /> Check my past eBay sales
+        </button>
+      )}
     </div>
   )
 }

@@ -17,7 +17,7 @@ export const GENERIC_ERROR = "Something went wrong. Please try again."
 const OUR_SIDE = "Something went wrong on our side. Please try again, and contact support if it keeps happening."
 const OFFLINE = "Can't reach FlipLedger. Check your internet connection and try again."
 const SESSION = "Your session has expired. Please sign in again."
-const RECONNECT_EBAY = "Your eBay connection has expired. Reconnect eBay in Settings → Marketplaces."
+export const RECONNECT_EBAY = "Your eBay connection has expired. Reconnect eBay in Settings → Marketplaces."
 
 type Obj = Record<string, unknown>
 const isObj = (e: unknown): e is Obj => !!e && typeof e === "object"

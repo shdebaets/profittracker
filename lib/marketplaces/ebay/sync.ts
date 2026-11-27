@@ -6,6 +6,8 @@ import { fetchOrders, fetchOrdersByIds } from "./adapter"
 import { adFeeCents, ordersToSales, type EbaySaleLine } from "./mapping"
 import { getUserToken } from "./oauth"
 import { ebaySoldItem, isItemId } from "@/lib/sales/untracked"
+import { UserError } from "@/lib/errors"
+import { DUPLICATE_WINDOW_DAYS, historySince, planEbayHistory, type HistoryPlan } from "./history"
 
 const OVERLAP_MS = 15 * 60_000
 
@@ -100,7 +102,7 @@ export async function syncEbaySales(admin: SupabaseClient, userId: string) {
 }
 
 /** A sale of something not listed through FlipLedger: a new sold item, cost to be added. */
-async function recordUntrackedLine(admin: SupabaseClient, userId: string, line: EbaySaleLine) {
+export async function recordUntrackedLine(admin: SupabaseClient, userId: string, line: EbaySaleLine) {
   const { error: claimErr } = await admin.from("marketplace_sales").insert({
     marketplace: "ebay",
     external_line_id: line.lineItemId,
@@ -166,4 +168,46 @@ async function refreshShipping(admin: SupabaseClient, userId: string, token: str
     const itemIds = open.filter((r) => r.external_order_id === o.orderId).map((r) => r.item_id)
     await admin.from("items").update({ shipped_at: new Date().toISOString() }).in("id", itemIds).eq("user_id", userId).is("shipped_at", null)
   }
+}
+
+/**
+ * What importing the last ~90 days of eBay sales would do (tracker row 81). Reads eBay and the
+ * seller's own rows; writes nothing. Runs on the admin client, so every query is scoped to userId.
+ */
+export async function planEbayHistoryFor(admin: SupabaseClient, userId: string): Promise<{ since: Date; plan: HistoryPlan; found: number }> {
+  const auth = await getUserToken(userId, admin)
+  if (!auth) throw new UserError("Connect eBay first in Settings → Marketplaces.")
+  const since = historySince()
+  const lines = ordersToSales(await fetchOrders(auth.token, since))
+
+  const recorded: string[] = []
+  const ids = lines.map((l) => l.lineItemId)
+  for (let i = 0; i < ids.length; i += 200) {
+    const { data, error } = await admin
+      .from("marketplace_sales")
+      .select("external_line_id")
+      .eq("marketplace", "ebay")
+      .eq("user_id", userId)
+      .in("external_line_id", ids.slice(i, i + 200))
+    if (error) throw error
+    recorded.push(...(data ?? []).map((r) => r.external_line_id as string))
+  }
+
+  // Sold items the seller logged by hand: not linked from any marketplace_sales row.
+  const [{ data: synced, error: syncedErr }, { data: sold, error: soldErr }] = await Promise.all([
+    admin.from("marketplace_sales").select("item_id").eq("user_id", userId).not("item_id", "is", null).limit(20000),
+    admin
+      .from("items")
+      .select("id, sale_price_cents, sold_at")
+      .eq("user_id", userId)
+      .eq("status", "sold")
+      .gte("sold_at", new Date(since.getTime() - DUPLICATE_WINDOW_DAYS * 86_400_000).toISOString())
+      .limit(20000),
+  ])
+  if (syncedErr) throw syncedErr
+  if (soldErr) throw soldErr
+  const fromSync = new Set((synced ?? []).map((r) => r.item_id as string))
+  const handSales = (sold ?? []).filter((r) => !fromSync.has(r.id as string)) as { sale_price_cents: number | null; sold_at: string | null }[]
+
+  return { since, plan: planEbayHistory(lines, { recorded, handSales }), found: new Set(ids).size }
 }

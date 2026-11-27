@@ -1,10 +1,10 @@
 import "server-only"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { decrypt, encrypt } from "@/lib/crypto"
-import { UserError } from "@/lib/errors"
+import { RECONNECT_EBAY, UserError } from "@/lib/errors"
 import { createAdminClient } from "@/lib/supabase/admin"
 import type { EbaySettings } from "@/lib/types"
-import { EBAY_SCOPES, EbayError, ebayConfig, LEGACY_EBAY_SCOPES } from "./client"
+import { EBAY_SCOPES, EbayError, ebayConfig, isDeadRefreshToken, LEGACY_EBAY_SCOPES } from "./client"
 
 export const STATE_COOKIE = "ebay_oauth_state"
 
@@ -66,6 +66,8 @@ export type EbayAccount = {
   created_at: string
   /** Granted OAuth scopes; null for accounts connected before we saved them. */
   scopes: string[] | null
+  /** Set when eBay refused a token refresh; the seller must reconnect. */
+  reconnect_needed_at?: string | null
 }
 
 /** Save tokens from a code exchange (encrypted at rest). */
@@ -89,6 +91,7 @@ export async function saveTokens(
         ? new Date(now + t.refresh_token_expires_in * 1000).toISOString()
         : null,
       scopes: EBAY_SCOPES,
+      reconnect_needed_at: null,
     },
     { onConflict: "user_id,marketplace" },
   )
@@ -121,15 +124,26 @@ export async function getUserToken(
     refresh_token: decrypt(row.refresh_token_enc),
     // eBay rejects a refresh that asks for more than the seller granted.
     scope: (account.scopes ?? LEGACY_EBAY_SCOPES).join(" "),
-  }).catch((e) => {
-    console.error("[ebay] token refresh failed", e)
-    throw new UserError("Your eBay connection has expired. Reconnect eBay in Settings → Marketplaces.")
+  }).catch(async (e) => {
+    console.error("[ebay] token refresh failed", { userId, status: e instanceof EbayError ? e.status : null }, e)
+    // eBay answers 400 invalid_grant ("the provided authorization refresh token is invalid…")
+    // when this seller's link is dead. Only that flags the account: a 5xx, a network error or
+    // a bad app key (invalid_client) isn't the seller's to fix.
+    if (isDeadRefreshToken(e) && !row.reconnect_needed_at) {
+      const { error: markErr } = await admin
+        .from("marketplace_accounts")
+        .update({ reconnect_needed_at: new Date().toISOString() })
+        .eq("id", row.id)
+      if (markErr) console.error("[ebay] couldn't flag reconnect", markErr)
+    }
+    throw new UserError(RECONNECT_EBAY)
   })
   await admin
     .from("marketplace_accounts")
     .update({
       access_token_enc: encrypt(t.access_token),
       access_expires_at: new Date(Date.now() + t.expires_in * 1000).toISOString(),
+      reconnect_needed_at: null,
     })
     .eq("id", row.id)
   return { token: t.access_token, account }

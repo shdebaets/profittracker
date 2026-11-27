@@ -26,6 +26,8 @@ export type SoldItemRow = {
   platform: Platform
   sold_at: string
   sold_on: "ebay" | "mercari"
+  /** eBay already says it shipped (FULFILLED), e.g. an older sale brought in later. */
+  shipped_at?: string
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -58,6 +60,8 @@ export function ebaySoldItem(line: EbaySaleLine, userId: string): SoldItemRow {
     platform: "ebay",
     sold_at: soldAt,
     sold_on: "ebay",
+    // Without this, past sales brought in later (row 81) would all show as "to ship".
+    ...(line.fulfillment === "FULFILLED" ? { shipped_at: soldAt } : {}),
   }
 }
 

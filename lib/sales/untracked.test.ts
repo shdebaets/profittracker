@@ -53,6 +53,12 @@ describe("ebaySoldItem", () => {
     })
   })
 
+  it("counts a sale eBay already shipped (FULFILLED) as shipped, and an open one as to ship", () => {
+    expect(ebaySoldItem({ ...line, fulfillment: "FULFILLED" }, USER).shipped_at).toBe(new Date(line.soldAt).toISOString())
+    expect(ebaySoldItem({ ...line, fulfillment: "NOT_STARTED" }, USER).shipped_at).toBeUndefined()
+    expect(ebaySoldItem({ ...line, fulfillment: null }, USER).shipped_at).toBeUndefined()
+  })
+
   it("names untitled lines after the eBay item or order", () => {
     expect(ebaySoldItem({ ...line, title: "" }, USER).title).toBe("eBay item 1234567890")
     expect(ebaySoldItem({ ...line, title: "", listingId: null }, USER)).toMatchObject({ title: "eBay order 12-34", link_url: null })
